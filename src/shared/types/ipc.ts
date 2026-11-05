@@ -177,6 +177,7 @@ export type RiotDesktopLoginProgressStatus =
   | 'waiting-for-launch-approval'
   | 'launching-client'
   | 'waiting-for-window'
+  | 'connecting-client'
   | 'verifying-window'
   | 'finding-fields'
   | 'entering-credentials'

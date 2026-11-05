@@ -1510,6 +1510,7 @@ export const AccountsPage: React.FC = () => {
                   riotLoginAutomationProgress &&
                   [
                     'waiting-for-window',
+                    'connecting-client',
                     'verifying-window',
                     'finding-fields',
                     'entering-credentials',
@@ -1669,13 +1670,14 @@ export const AccountsPage: React.FC = () => {
                   <div className="flex-1 space-y-1">
                     <p className="font-bold text-sm">
                       {riotLoginAutomationProgress.status === 'checking-client' && 'Checking Riot Client...'}
-                      {riotLoginAutomationProgress.status === 'launching-client' && 'Launching Official Riot Client...'}
+                      {riotLoginAutomationProgress.status === 'launching-client' && 'Starting Riot Client...'}
                       {riotLoginAutomationProgress.status === 'waiting-for-window' && 'Waiting for Login Window...'}
-                      {riotLoginAutomationProgress.status === 'verifying-window' && 'Verifying Official Window...'}
+                      {riotLoginAutomationProgress.status === 'connecting-client' && 'Connecting to Riot Client...'}
+                      {riotLoginAutomationProgress.status === 'verifying-window' && 'Connecting to Riot Client...'}
                       {riotLoginAutomationProgress.status === 'finding-fields' && 'Locating Login Fields via UI Automation...'}
                       {riotLoginAutomationProgress.status === 'entering-credentials' && 'Entering Credentials...'}
-                      {riotLoginAutomationProgress.status === 'waiting-for-user' && 'Credentials Entered! User Verification'}
-                      {riotLoginAutomationProgress.status === 'success' && 'Login Succeeded!'}
+                      {riotLoginAutomationProgress.status === 'waiting-for-user' && 'Waiting for Verification'}
+                      {riotLoginAutomationProgress.status === 'success' && 'Completed'}
                       {riotLoginAutomationProgress.status === 'failed' && 'Automation Failed'}
                       {riotLoginAutomationProgress.status === 'cancelled' && 'Automation Cancelled'}
                     </p>

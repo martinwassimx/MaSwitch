@@ -17,6 +17,8 @@ export interface DesktopAutofillOptions {
   targetPid?: number;
   isSyntheticTest?: boolean;
   timeoutMs?: number;
+  retryBackoffBaseMs?: number;
+  allowRetryInSyntheticTest?: boolean;
   onProgress?: (payload: RiotDesktopLoginProgressPayload) => void;
   signal?: AbortSignal;
 }
@@ -36,6 +38,44 @@ export interface DiscoveredWindowInfo {
   pid: number;
   title: string;
   processName: string;
+  isHung?: boolean;
+}
+
+export interface WorkerRunResult {
+  success: boolean;
+  methodUsed?: string;
+  fieldsIdentified?: boolean;
+  autoSubmitted?: boolean;
+  error?: string;
+  details?: string;
+  retryable?: boolean;
+}
+
+export interface DesktopAutomationAdapters {
+  windowDiscoverer?: () => Promise<DiscoveredWindowInfo[]>;
+  workerRunner?: (
+    targetWindow: DiscoveredWindowInfo,
+    creds: { username: string; password?: string },
+    autoSubmit: boolean
+  ) => Promise<WorkerRunResult>;
+}
+
+export function isRetryableAutomationError(error?: string): boolean {
+  if (!error) return false;
+  const retryable = [
+    'UIA_ATTACH_FAILED',
+    'TARGET_WINDOW_NOT_VISIBLE',
+    'WINDOW_PROCESS_MISMATCH',
+    'FOREIGN_WINDOW_FOCUSED',
+    'INVALID_WINDOW_HANDLE',
+    'STALE_WINDOW_HANDLE',
+    'WINDOW_HUNG',
+    'UIA_ELEMENT_NOT_FOUND',
+    'FIELDS_NOT_FOUND',
+    'WINDOW_NOT_FOUND',
+    'WORKER_PARSE_ERROR',
+  ];
+  return retryable.includes(error);
 }
 
 /**
@@ -76,10 +116,16 @@ public class Win32AutomationHelper {
     public static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount);
 
     [DllImport("user32.dll")]
+    public static extern bool IsWindow(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
     public static extern bool IsWindowVisible(IntPtr hWnd);
 
     [DllImport("user32.dll")]
     public static extern bool IsIconic(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    public static extern bool IsHungAppWindow(IntPtr hWnd);
 
     [DllImport("user32.dll")]
     public static extern void SwitchToThisWindow(IntPtr hWnd, bool fAltTab);
@@ -115,20 +161,25 @@ $method = "none"
 $fieldsIdentified = $false
 
 # 1. Verify Target Window
-if ($targetHwnd -eq [IntPtr]::Zero) {
-  Write-Output (@{ success = $false; error = "INVALID_WINDOW_HANDLE" } | ConvertTo-Json -Compress)
+if ($targetHwnd -eq [IntPtr]::Zero -or -not [Win32AutomationHelper]::IsWindow($targetHwnd)) {
+  Write-Output (@{ success = $false; error = "INVALID_WINDOW_HANDLE"; retryable = $true } | ConvertTo-Json -Compress)
   exit 0
 }
 
 $procId = 0
 [Win32AutomationHelper]::GetWindowThreadProcessId($targetHwnd, [ref]$procId) | Out-Null
 if ($targetPid -gt 0 -and $procId -ne $targetPid) {
-  Write-Output (@{ success = $false; error = "WINDOW_PROCESS_MISMATCH"; details = "Target PID $targetPid != Window PID $procId" } | ConvertTo-Json -Compress)
+  Write-Output (@{ success = $false; error = "WINDOW_PROCESS_MISMATCH"; details = "Target PID $targetPid != Window PID $procId"; retryable = $true } | ConvertTo-Json -Compress)
   exit 0
 }
 
 if (-not [Win32AutomationHelper]::IsWindowVisible($targetHwnd)) {
-  Write-Output (@{ success = $false; error = "TARGET_WINDOW_NOT_VISIBLE" } | ConvertTo-Json -Compress)
+  Write-Output (@{ success = $false; error = "TARGET_WINDOW_NOT_VISIBLE"; retryable = $true } | ConvertTo-Json -Compress)
+  exit 0
+}
+
+if ([Win32AutomationHelper]::IsHungAppWindow($targetHwnd)) {
+  Write-Output (@{ success = $false; error = "WINDOW_HUNG"; details = "Target window thread is hung or not responding to messages"; retryable = $true } | ConvertTo-Json -Compress)
   exit 0
 }
 
@@ -160,20 +211,30 @@ if ($fg -eq $targetHwnd) {
   $isWindowSafe = $true
 } else {
   # An unrelated application is in foreground: abort immediately to protect credentials!
-  Write-Output (@{ success = $false; error = "FOREIGN_WINDOW_FOCUSED"; details = "Unrelated window PID $fgPid has focus. Expected target PID $procId" } | ConvertTo-Json -Compress)
+  Write-Output (@{ success = $false; error = "FOREIGN_WINDOW_FOCUSED"; details = "Unrelated window PID $fgPid has focus. Expected target PID $procId"; retryable = $true } | ConvertTo-Json -Compress)
   exit 0
 }
 
-# 3. Attach UI Automation
-try {
-  $winElem = [System.Windows.Automation.AutomationElement]::FromHandle($targetHwnd)
-} catch {
-  Write-Output (@{ success = $false; error = "UIA_ATTACH_FAILED"; details = $_.Exception.Message } | ConvertTo-Json -Compress)
-  exit 0
+# 3. Attach UI Automation with internal retry for readiness
+$winElem = $null
+$attachAttempts = 0
+$maxAttachAttempts = 4
+$lastAttachError = ""
+
+while ($attachAttempts -lt $maxAttachAttempts -and -not $winElem) {
+  $attachAttempts++
+  try {
+    $winElem = [System.Windows.Automation.AutomationElement]::FromHandle($targetHwnd)
+  } catch {
+    $lastAttachError = $_.Exception.Message
+    if ($attachAttempts -lt $maxAttachAttempts) {
+      Start-Sleep -Milliseconds 250
+    }
+  }
 }
 
 if (-not $winElem) {
-  Write-Output (@{ success = $false; error = "UIA_ELEMENT_NOT_FOUND" } | ConvertTo-Json -Compress)
+  Write-Output (@{ success = $false; error = "UIA_ATTACH_FAILED"; details = $lastAttachError; retryable = $true } | ConvertTo-Json -Compress)
   exit 0
 }
 
@@ -335,7 +396,6 @@ if (-not $usernameSet -or -not $passwordSet) {
   }
 }
 
-
 # 6. Auto-Submit if enabled
 $autoSubmitted = $false
 if (($usernameSet -and $passwordSet) -and $autoSubmit) {
@@ -399,6 +459,11 @@ $response = @{
   passwordSet = $passwordSet
   autoSubmitted = $autoSubmitted
 }
+if (-not $success) {
+  $response["error"] = "FIELDS_NOT_FOUND"
+  $response["details"] = "Username or password input fields could not be filled"
+  $response["retryable"] = $true
+}
 
 Write-Output ($response | ConvertTo-Json -Compress)
 `;
@@ -421,7 +486,13 @@ public class WinFindHelper {
     public static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
 
     [DllImport("user32.dll")]
+    public static extern bool IsWindow(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
     public static extern bool IsWindowVisible(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    public static extern bool IsHungAppWindow(IntPtr hWnd);
 
     [DllImport("user32.dll")]
     public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
@@ -444,12 +515,13 @@ public class WinFindHelper {
         public string ProcessName;
         public int Width;
         public int Height;
+        public bool IsHung;
     }
 
     public static List<WinInfo> FindWindows() {
         var list = new List<WinInfo>();
         EnumWindows((hWnd, lParam) => {
-            if (IsWindowVisible(hWnd)) {
+            if (IsWindow(hWnd) && IsWindowVisible(hWnd)) {
                 RECT rect;
                 GetWindowRect(hWnd, out rect);
                 int width = rect.Right - rect.Left;
@@ -469,13 +541,19 @@ public class WinFindHelper {
                         procName = p.ProcessName;
                     } catch {}
 
+                    bool hung = false;
+                    try {
+                        hung = IsHungAppWindow(hWnd);
+                    } catch {}
+
                     list.Add(new WinInfo {
                         Hwnd = hWnd.ToInt64(),
                         Pid = pid,
                         Title = title,
                         ProcessName = procName,
                         Width = width,
-                        Height = height
+                        Height = height,
+                        IsHung = hung
                     });
                 }
             }
@@ -493,14 +571,21 @@ Write-Output ($windows | ConvertTo-Json -Compress)
 export class RiotDesktopLoginAutomationService {
   private readonly vault: RiotCredentialVault;
   private readonly coordinator: RiotWindowsProcessCoordinator;
+  private readonly adapters?: DesktopAutomationAdapters;
   private activeWorkerProcess: ChildProcess | null = null;
   private isCancelled = false;
+  private isAutomating = false;
   private scriptFilePath: string | null = null;
   private discoveryFilePath: string | null = null;
 
-  constructor(vault: RiotCredentialVault, coordinator?: RiotWindowsProcessCoordinator) {
+  constructor(
+    vault: RiotCredentialVault,
+    coordinator?: RiotWindowsProcessCoordinator,
+    adapters?: DesktopAutomationAdapters
+  ) {
     this.vault = vault;
     this.coordinator = coordinator || new RiotWindowsProcessCoordinator();
+    this.adapters = adapters;
   }
 
   private emitProgress(
@@ -557,6 +642,10 @@ export class RiotDesktopLoginAutomationService {
   }
 
   public async discoverWindows(): Promise<DiscoveredWindowInfo[]> {
+    if (this.adapters?.windowDiscoverer) {
+      return await this.adapters.windowDiscoverer();
+    }
+
     const { discoveryPath } = this.ensureWorkerScriptFiles();
 
     return new Promise((resolve) => {
@@ -582,6 +671,7 @@ export class RiotDesktopLoginAutomationService {
               pid: Number(w.Pid),
               title: String(w.Title || ''),
               processName: String(w.ProcessName || ''),
+              isHung: Boolean(w.IsHung),
             }));
           resolve(results);
         } catch {
@@ -611,6 +701,7 @@ export class RiotDesktopLoginAutomationService {
       }
 
       const windows = await this.discoverWindows();
+      const candidates: { window: DiscoveredWindowInfo; score: number }[] = [];
 
       for (const w of windows) {
         if (options?.isSyntheticTest) {
@@ -622,9 +713,10 @@ export class RiotDesktopLoginAutomationService {
           const pName = w.processName.toLowerCase();
           const title = w.title.toLowerCase();
 
+          const isRiotUx = pName === 'riotclientux';
           const isRiotProcess =
+            isRiotUx ||
             pName === 'riot client' ||
-            pName === 'riotclientux' ||
             pName === 'riotclientservices';
 
           const isRiotTitle =
@@ -634,12 +726,28 @@ export class RiotDesktopLoginAutomationService {
             title.includes('valorant');
 
           if (isRiotProcess && (isRiotTitle || !w.title || title === 'riot client')) {
-            return w;
+            let score = 0;
+            // RiotClientUx is the actual interactive login window (highest preference)
+            if (isRiotUx) score += 100;
+            // Visible title "Riot Client" preferred
+            if (title === 'riot client') score += 50;
+            else if (title.startsWith('riot client')) score += 30;
+            // Penalize hung windows
+            if (w.isHung) score -= 300;
+
+            candidates.push({ window: w, score });
           }
         }
       }
 
-      await new Promise((r) => setTimeout(r, 400));
+      if (candidates.length > 0) {
+        candidates.sort((a, b) => b.score - a.score);
+        if (candidates[0].score >= 0) {
+          return candidates[0].window;
+        }
+      }
+
+      await new Promise((r) => setTimeout(r, 250));
     }
 
     return null;
@@ -657,15 +765,104 @@ export class RiotDesktopLoginAutomationService {
     }
   }
 
+  public async runWorker(
+    targetWindow: DiscoveredWindowInfo,
+    creds: { username: string; password?: string },
+    autoSubmit: boolean
+  ): Promise<WorkerRunResult> {
+    if (this.adapters?.workerRunner) {
+      return await this.adapters.workerRunner(targetWindow, creds, autoSubmit);
+    }
+
+    const { workerPath } = this.ensureWorkerScriptFiles();
+
+    return new Promise<WorkerRunResult>((resolve) => {
+      const proc = spawn('powershell.exe', [
+        '-NoProfile',
+        '-NonInteractive',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-File',
+        workerPath,
+      ]);
+
+      this.activeWorkerProcess = proc;
+
+      const payload = JSON.stringify({
+        targetHwnd: targetWindow.hwnd,
+        targetPid: targetWindow.pid,
+        username: creds.username,
+        password: creds.password,
+        autoSubmit,
+      });
+
+      proc.stdin.write(payload);
+      proc.stdin.end();
+
+      let stdout = '';
+      let stderr = '';
+
+      proc.stdout.on('data', (d) => (stdout += d.toString()));
+      proc.stderr.on('data', (d) => (stderr += d.toString()));
+
+      proc.on('close', () => {
+        this.activeWorkerProcess = null;
+        try {
+          const parsed = JSON.parse(stdout.trim());
+          resolve(parsed);
+        } catch {
+          resolve({
+            success: false,
+            error: 'WORKER_PARSE_ERROR',
+            details: stdout || stderr || 'Failed to parse worker JSON output.',
+            retryable: true,
+          });
+        }
+      });
+
+      proc.on('error', (err) => {
+        this.activeWorkerProcess = null;
+        resolve({
+          success: false,
+          error: 'WORKER_SPAWN_ERROR',
+          details: err.message,
+          retryable: false,
+        });
+      });
+    });
+  }
+
   public async executeAutofill(options: DesktopAutofillOptions): Promise<RiotDesktopLoginResult> {
+    if (this.isAutomating) {
+      return {
+        success: false,
+        profileId: options.profileId,
+        message: 'A Riot login automation is already in progress.',
+        error: 'AUTOMATION_IN_PROGRESS',
+      };
+    }
+    this.isAutomating = true;
     this.isCancelled = false;
-    const { profileId, autoLaunchClient, isSyntheticTest, targetHwnd, targetPid, onProgress, signal } = options;
+
+    const {
+      profileId,
+      autoLaunchClient,
+      isSyntheticTest,
+      targetHwnd: directTargetHwnd,
+      targetPid: directTargetPid,
+      onProgress,
+      signal,
+    } = options;
 
     if (signal) {
       signal.addEventListener('abort', () => this.cancelActiveAutomation());
     }
 
-    const report = (status: RiotDesktopLoginProgressStatus, message: string, extra?: Partial<RiotDesktopLoginProgressPayload>) => {
+    const report = (
+      status: RiotDesktopLoginProgressStatus,
+      message: string,
+      extra?: Partial<RiotDesktopLoginProgressPayload>
+    ) => {
       this.emitProgress(
         {
           profileId,
@@ -694,17 +891,7 @@ export class RiotDesktopLoginAutomationService {
       // 2. Check if Riot Client is Running
       report('checking-client', 'Checking if Riot Client is running...');
 
-      let targetWindow: DiscoveredWindowInfo | null = null;
-
-      if (isSyntheticTest && targetHwnd) {
-        // Direct synthetic test target
-        targetWindow = {
-          hwnd: targetHwnd,
-          pid: targetPid || 0,
-          title: 'Synthetic Riot Client Login Window',
-          processName: 'powershell',
-        };
-      } else {
+      if (!isSyntheticTest) {
         const running = await this.isClientRunning();
 
         if (!running) {
@@ -718,7 +905,7 @@ export class RiotDesktopLoginAutomationService {
             };
           }
 
-          report('launching-client', 'Launching official Riot Client...');
+          report('launching-client', 'Starting Riot Client...');
           const launchRes = await this.launchOfficialClient();
           if (!launchRes.success) {
             report('failed', `Failed to launch Riot Client: ${launchRes.message}`);
@@ -730,149 +917,156 @@ export class RiotDesktopLoginAutomationService {
             };
           }
         }
+      }
 
-        // 3. Wait for Riot Client login window
-        report('waiting-for-window', 'Waiting for official Riot Client login window to appear...');
+      // 3. Retry loop for window readiness and UIA attachment
+      const timeoutMs = options.timeoutMs ?? 30000;
+      const startTime = Date.now();
+      let attempt = 0;
+      let lastError = 'WINDOW_NOT_FOUND';
+      let lastErrorMessage = 'Timed out waiting for Riot Client login window.';
+      const allowRetry = !isSyntheticTest || Boolean(options.allowRetryInSyntheticTest);
 
-        targetWindow = await this.findTargetWindow({
-          isSyntheticTest: false,
-          timeoutMs: options.timeoutMs ?? 30000,
-          cancelToken: () => this.isCancelled,
-        });
+      while (Date.now() - startTime < timeoutMs) {
+        attempt++;
+
+        if (this.isCancelled || (signal && signal.aborted)) {
+          report('cancelled', 'Desktop automation was cancelled.');
+          return { success: false, profileId, message: 'Automation cancelled.', error: 'CANCELLED' };
+        }
+
+        // Revalidate process: ensure Riot Client didn't close unexpectedly during retry
+        if (!isSyntheticTest && attempt > 1) {
+          const clientStillRunning = await this.isClientRunning();
+          if (!clientStillRunning) {
+            report('failed', 'Riot Client closed unexpectedly during login automation.');
+            return {
+              success: false,
+              profileId,
+              message: 'Riot Client closed unexpectedly.',
+              error: 'CLIENT_CLOSED',
+            };
+          }
+        }
+
+        // Determine target window (always reacquire freshly unless static synthetic test)
+        let targetWindow: DiscoveredWindowInfo | null = null;
+
+        if (isSyntheticTest && directTargetHwnd && !options.allowRetryInSyntheticTest) {
+          targetWindow = {
+            hwnd: directTargetHwnd,
+            pid: directTargetPid || 0,
+            title: 'Synthetic Riot Client Login Window',
+            processName: 'powershell',
+          };
+        } else {
+          // Re-discover window with remaining time limit
+          const remainingTime = Math.max(500, timeoutMs - (Date.now() - startTime));
+          const searchTimeout = Math.min(3000, remainingTime);
+
+          if (attempt === 1) {
+            report('waiting-for-window', 'Waiting for official Riot Client login window to appear...');
+          } else {
+            report('connecting-client', 'Waiting for Riot Client to become ready...');
+          }
+
+          targetWindow = await this.findTargetWindow({
+            isSyntheticTest: Boolean(isSyntheticTest),
+            targetHwnd: directTargetHwnd,
+            targetPid: directTargetPid,
+            timeoutMs: searchTimeout,
+            cancelToken: () => this.isCancelled || Boolean(signal && signal.aborted),
+          });
+        }
+
+        if (this.isCancelled || (signal && signal.aborted)) {
+          report('cancelled', 'Desktop automation was cancelled.');
+          return { success: false, profileId, message: 'Automation cancelled.', error: 'CANCELLED' };
+        }
 
         if (!targetWindow) {
-          if (this.isCancelled) {
-            report('cancelled', 'Desktop automation was cancelled.');
-            return { success: false, profileId, message: 'Automation cancelled.', error: 'CANCELLED' };
-          }
-          report('failed', 'Timed out waiting for Riot Client login window.');
+          lastError = 'WINDOW_NOT_FOUND';
+          lastErrorMessage = 'Timed out waiting for Riot Client login window.';
+          if (!allowRetry) break;
+          const backoff = Math.min(2000, (options.retryBackoffBaseMs ?? 500) * Math.min(attempt, 4));
+          const sleepMs = Math.min(backoff, Math.max(50, timeoutMs - (Date.now() - startTime)));
+          await new Promise((r) => setTimeout(r, sleepMs));
+          continue;
+        }
+
+        // Window found! Report progress
+        report('verifying-window', `Verifying target window: HWND ${targetWindow.hwnd} (PID ${targetWindow.pid})...`);
+        report('finding-fields', 'Locating username and password fields via Windows UI Automation...');
+
+        // Execute worker
+        report('entering-credentials', 'Focusing window and securely entering credentials...');
+        const workerResult = await this.runWorker(targetWindow, creds, options.autoSubmit ?? true);
+
+        if (this.isCancelled || (signal && signal.aborted)) {
+          report('cancelled', 'Desktop automation was cancelled.');
+          return { success: false, profileId, message: 'Automation cancelled.', error: 'CANCELLED' };
+        }
+
+        if (workerResult.success) {
+          // Successful autofill!
+          report(
+            'waiting-for-user',
+            workerResult.autoSubmitted
+              ? 'Credentials entered and login submitted! Complete CAPTCHA or two-factor authentication in Riot Client if prompted.'
+              : 'Credentials entered into Riot Client! Click Sign In or complete CAPTCHA / 2FA to finish logging in.',
+            {
+              fieldsIdentified: workerResult.fieldsIdentified,
+              methodUsed: workerResult.methodUsed,
+              autoSubmitted: workerResult.autoSubmitted,
+            }
+          );
+
           return {
-            success: false,
+            success: true,
             profileId,
-            message: 'Timed out waiting for Riot Client login window.',
-            error: 'WINDOW_NOT_FOUND',
+            methodUsed: workerResult.methodUsed,
+            fieldsIdentified: workerResult.fieldsIdentified,
+            autoSubmitted: workerResult.autoSubmitted,
+            message: workerResult.autoSubmitted
+              ? 'Credentials entered and login submitted into Riot Client.'
+              : 'Credentials successfully entered into Riot Client.',
           };
         }
-      }
 
-      if (this.isCancelled) {
-        report('cancelled', 'Desktop automation was cancelled.');
-        return { success: false, profileId, message: 'Automation cancelled.', error: 'CANCELLED' };
-      }
-
-      // 4. Verifying Window and Identifying Fields
-      report('verifying-window', `Verifying target window: HWND ${targetWindow.hwnd} (PID ${targetWindow.pid})...`);
-      report('finding-fields', 'Locating username and password fields via Windows UI Automation...');
-
-      const { workerPath } = this.ensureWorkerScriptFiles();
-
-      report('entering-credentials', 'Focusing window and securely entering credentials...');
-
-      // Run worker with credentials strictly delivered via stdin
-      const workerResult = await new Promise<{
-        success: boolean;
-        methodUsed?: string;
-        fieldsIdentified?: boolean;
-        autoSubmitted?: boolean;
-        error?: string;
-        details?: string;
-      }>((resolve) => {
-        const proc = spawn('powershell.exe', [
-          '-NoProfile',
-          '-NonInteractive',
-          '-ExecutionPolicy',
-          'Bypass',
-          '-File',
-          workerPath,
-        ]);
-
-        this.activeWorkerProcess = proc;
-
-        const payload = JSON.stringify({
-          targetHwnd: targetWindow!.hwnd,
-          targetPid: targetWindow!.pid,
-          username: creds.username,
-          password: creds.password,
-          autoSubmit: options.autoSubmit ?? true,
-        });
-
-        proc.stdin.write(payload);
-        proc.stdin.end();
-
-        let stdout = '';
-        let stderr = '';
-
-        proc.stdout.on('data', (d) => (stdout += d.toString()));
-        proc.stderr.on('data', (d) => (stderr += d.toString()));
-
-        proc.on('close', () => {
-          this.activeWorkerProcess = null;
-          try {
-            const parsed = JSON.parse(stdout.trim());
-            resolve(parsed);
-          } catch {
-            resolve({
-              success: false,
-              error: 'WORKER_PARSE_ERROR',
-              details: stdout || stderr || 'Failed to parse worker JSON output.',
-            });
-          }
-        });
-
-        proc.on('error', (err) => {
-          this.activeWorkerProcess = null;
-          resolve({
-            success: false,
-            error: 'WORKER_SPAWN_ERROR',
-            details: err.message,
-          });
-        });
-      });
-
-      if (this.isCancelled) {
-        report('cancelled', 'Desktop automation was cancelled.');
-        return { success: false, profileId, message: 'Automation cancelled.', error: 'CANCELLED' };
-      }
-
-      if (!workerResult.success) {
-        const errMsg = workerResult.details
+        // Worker failed. Check if retryable!
+        lastError = workerResult.error || 'Autofill execution failed.';
+        lastErrorMessage = workerResult.details
           ? `${workerResult.error}: ${workerResult.details}`
           : workerResult.error || 'Autofill execution failed.';
-        report('failed', `Autofill failed: ${errMsg}`, {
-          error: workerResult.error,
-        });
-        return {
-          success: false,
-          profileId,
-          message: errMsg,
-          error: workerResult.error,
-        };
+
+        const isRetryable = workerResult.retryable || isRetryableAutomationError(workerResult.error);
+        const hasTimeLeft = Date.now() - startTime + 500 < timeoutMs;
+
+        if (isRetryable && hasTimeLeft && allowRetry) {
+          // Silent automatic retry: show calm status, wait bounded backoff, loop!
+          report('connecting-client', 'Waiting for Riot Client to become ready...');
+          const backoff = Math.min(2000, (options.retryBackoffBaseMs ?? 500) * Math.min(attempt, 4));
+          const sleepMs = Math.min(backoff, Math.max(50, timeoutMs - (Date.now() - startTime)));
+          await new Promise((r) => setTimeout(r, sleepMs));
+          continue;
+        }
+
+        // Non-retryable error, synthetic test, or timed out
+        break;
       }
 
-      // 5. Successful autofill -> Guide user for manual 2FA / CAPTCHA
-      report(
-        'waiting-for-user',
-        workerResult.autoSubmitted
-          ? 'Credentials entered and login submitted! Complete CAPTCHA or two-factor authentication in Riot Client if prompted.'
-          : 'Credentials entered into Riot Client! Click Sign In or complete CAPTCHA / 2FA to finish logging in.',
-        {
-          fieldsIdentified: workerResult.fieldsIdentified,
-          methodUsed: workerResult.methodUsed,
-          autoSubmitted: workerResult.autoSubmitted,
-        }
-      );
-
+      // Exhausted retries or non-retryable error
+      report('failed', `Autofill failed: ${lastErrorMessage}`, {
+        error: lastError,
+      });
       return {
-        success: true,
+        success: false,
         profileId,
-        methodUsed: workerResult.methodUsed,
-        fieldsIdentified: workerResult.fieldsIdentified,
-        autoSubmitted: workerResult.autoSubmitted,
-        message: workerResult.autoSubmitted
-          ? 'Credentials entered and login submitted into Riot Client.'
-          : 'Credentials successfully entered into Riot Client.',
+        message: lastErrorMessage,
+        error: lastError,
       };
     } finally {
+      this.isAutomating = false;
       this.activeWorkerProcess = null;
     }
   }
