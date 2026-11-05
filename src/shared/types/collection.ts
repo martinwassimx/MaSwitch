@@ -52,3 +52,4 @@ export interface UpdateCollectionInput {
   rules?: SmartCollectionRules;
   sortOrder?: CollectionSortOrder;
 }
+

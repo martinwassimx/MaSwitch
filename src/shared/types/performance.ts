@@ -18,3 +18,4 @@ export interface PerformanceMonitoringConfig {
   active: boolean;
   intervalMs: number; // 3000, 5000, or 10000
 }
+

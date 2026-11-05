@@ -66,3 +66,4 @@ export interface YearInReviewData {
   comparison: YearInReviewComparison | null;
   hasData: boolean;
 }
+

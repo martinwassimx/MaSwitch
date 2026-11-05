@@ -21,3 +21,4 @@ export interface GameNewsFeedResult {
   unsupportedGamesCount: number;
   isOffline: boolean;
 }
+
