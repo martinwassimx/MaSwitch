@@ -1,88 +1,47 @@
-# MaSwitch 3.0 — Public Release Notes
+# MaSwitch 3.0 Release Notes (v0.2.0)
 
-**Version**: 0.2.0 (MaSwitch 3.0)  
-**Release Date**: November 2026  
-**License**: MIT  
-**Platform**: Windows 10 / Windows 11 (64-bit)  
-**Developer**: Martin Wassim (<https://martinx.work>)  
+## Highlights & Overview
 
----
+MaSwitch 3.0 is a lightweight Windows gaming account manager and performance optimization hub engineered specifically to run smoothly on low-end and high-end gaming PCs alike.
 
-## What's New in MaSwitch 3.0
-
-MaSwitch 3.0 is a lightweight, privacy-first gaming launcher, multi-account switcher, and resource manager designed specifically to deliver top performance even on low-end Windows PCs.
-
-### Key Features
-1. **Riot Client Desktop Automation**:
-   - Automated credential entry directly into the official Riot Client login window.
-   - Resilient startup detection with automatic silent retry and handle recovery.
-   - Direct credential injection without manual clipboard copying or pasting.
-2. **Modular Custom Installer**:
-   - Choose between **Minimal** (core app only, 0 MB extra RAM), **Recommended** (Core + Smart Collections + Backup), or **Complete** (all 6 features).
-   - Install only what you need to keep background resource consumption at absolute zero.
-3. **Optional Memory Management (Inspired by Mem Reduct)**:
-   - Clean-room MIT Win32 implementation (no GPL-3.0 code, no kernel drivers).
-   - Working set trimming and graceful closing of user-selected non-essential background applications (Discord, Spotify, browsers).
-   - **Gaming Safety Rule**: Memory cleanup is automatically locked when an active game is detected to prevent frame stuttering or anti-cheat conflicts.
-   - Before-game anti-stutter RAM check (< 1.5 GB warning).
-4. **Smart Game Collections**:
-   - Organize games into custom folders or dynamic smart collections filtered by genre, platform, tag, or playtime.
-5. **Lightweight System Performance Telemetry**:
-   - Zero-impact hardware monitor that polls only when actively viewed in the foreground.
-6. **Game Updates & RSS News**:
-   - Aggregated news feed for titles in your local library.
-7. **Offline Backup & Restore**:
-   - Single-file JSON/ZIP database export excluding DPAPI secrets for complete privacy.
+This release introduces:
+1. **Mem Reduct Memory Cleaning Integration**: Real Windows memory list purging inspired by the open-source Mem Reduct utility by Henry++. Features genuine memory list reduction (working sets, system file cache, priority-0 standby list, full standby list, modified page list, page combining, registry cache) with zero application termination and zero process killing.
+2. **Standard & Advanced Cleanup Modes**: Standard Mode applies conservative, reviewed operations that never cause game micro-stutters or disk stalls. Advanced Mode provides granular control with explicit warnings regarding disk writes and cache purging.
+3. **Gaming Year in Review**: Interactive personalized annual statistics, total playtime breakdown, favorite titles, and gaming streaks.
+4. **Smart Game Collections**: Dynamic smart collections with real-time rule filters (most played, unplayed, platform-specific, genre) and custom manual collections.
+5. **Lightweight Performance Monitor**: Zero-overhead hardware telemetry (CPU, RAM, MaSwitch process footprint, sparkline graphs) active only when viewed.
+6. **Game Updates & News**: Offline-first RSS news feeds for all library titles with zero background polling.
+7. **Safe Backup & Restore**: Portable versioned backup archives excluding sensitive DPAPI credential vault secrets.
+8. **Fortnite Epic Games Launcher Integration**: Seamless protocol launching through Epic Games Launcher with accurate running-state detection.
+9. **Riot Automatic Desktop Login & UIA First-Attempt Self-Healing**: Resilient Windows UI Automation login engine with automatic retries for slow client start-up.
 
 ---
 
-## Release Artifacts & Checksums
+## Binary Information & Verified Checksums
 
-Always verify the SHA-256 hash of your downloaded installer before running.
-
-| Artifact | File Name | Size | SHA-256 Checksum |
+| Distribution Artifact | File Size | SHA-256 Checksum | Digital Signature |
 | :--- | :--- | :--- | :--- |
-| **Setup Installer** | `MaSwitch-Setup-0.2.0.exe` | ~82.4 MB | `7354b383112f685981bf8517b8dd5ac58b006b68cd0cad8af94320c0eb6223c9` |
-| **Portable Unpacked** | `win-unpacked/MaSwitch.exe` | ~180.1 MB | `3d86b4005bbd4da8c61f1385593e33291c1c128cd284356370ad71d79f99d44c` |
+| **Modular NSIS Installer** (`release/MaSwitch-Setup-0.2.0.exe`) | **82.43 MB** (86,435,243 bytes) | `a0bfb491d8ba1df6a03f40eb40a224c666fc2aefb132f94ccc7399d83a1b39d4` | Authenticode-Ready (`asInvoker`) |
+| **Standalone Portable** (`release/win-unpacked/MaSwitch.exe`) | **180.08 MB** (188,827,136 bytes) | `7fbd12ec6754c6a37225f5d6ae64d57576df586272c6c51966988a6afa1ade29` | Standalone Unpacked |
 
-*Official checksum file: `release/SHA256SUMS.txt`*
-
-To verify the checksum on Windows PowerShell:
+The official SHA-256 manifest is located in `release/SHA256SUMS.txt`. You can verify any downloaded executable in PowerShell with:
 ```powershell
-Get-FileHash -Algorithm SHA256 "MaSwitch-Setup-0.2.0.exe"
+Get-FileHash -Algorithm SHA256 "path\to\MaSwitch-Setup-0.2.0.exe"
 ```
 
 ---
 
-## Understanding Windows & Browser Security Warnings
+## Memory Management Safety & Architecture
 
-When downloading or installing MaSwitch on Windows, you may encounter security prompts. Here is an honest explanation of what causes them and how to proceed safely.
-
-### 1. Windows SmartScreen ("Windows protected your PC")
-- **Cause**: Microsoft Defender SmartScreen evaluates executables based on cloud download reputation. Because open-source community releases and new binary hashes start without established download volume, SmartScreen displays an informational prompt: *"Microsoft Defender SmartScreen prevented an unrecognized app from starting"*.
-- **How to proceed safely**:
-  1. Click **More info**.
-  2. Confirm the publisher and file name match this release.
-  3. Click **Run anyway**.
-  - **Do NOT disable your antivirus or Windows Defender.**
-
-### 2. Browser Download Warnings (Chrome / Edge)
-- **Cause**: Browsers display *"MaSwitch-Setup-0.2.0.exe is not commonly downloaded"* for newly published releases until global download reputation builds.
-- **How to proceed safely**:
-  - In Edge: Select `...` > **Keep** > **Show more** > **Keep anyway**.
-  - In Chrome: Select **Keep dangerous file** or click the download shelf item to proceed.
-
-### 3. Digital Signatures & Authenticode
-- Free and open-source personal software releases are distributed unsigned unless built in an enterprise CI pipeline with an EV or Azure Trusted Signing certificate.
-- To inspect digital signature status in PowerShell:
-  ```powershell
-  Get-AuthenticodeSignature "MaSwitch-Setup-0.2.0.exe"
-  ```
-- If you are building MaSwitch from source, you can sign the build with your own Authenticode certificate using the standard `CSC_LINK` and `CSC_KEY_PASSWORD` environment variables.
+- **No Application Closing**: MaSwitch will never close or terminate background user applications (such as Discord, Brave, Spotify, Steam, etc.) to free RAM.
+- **Genuine Windows NT Memory List APIs**: Calls `NtSetSystemInformation` with `SystemMemoryListInformation` commands (`MemoryEmptyWorkingSets`, `MemoryPurgeLowPriorityStandbyList`, `MemoryPurgeStandbyList`, `MemoryFlushModifiedList`) and `psapi!EmptyWorkingSet`.
+- **Active Game Protection**: Memory cleanup is strictly blocked while any game is running to prevent FPS dips, cache drops, or anti-cheat triggers.
+- **No Automatic Timers or Startup Cleaning**: Cleanup executes only when explicitly triggered by the user.
+- **Privilege Separation**: MaSwitch runs as a standard user (`asInvoker`). Privileged list flushes request elevation via a transient, narrowly scoped Windows UAC helper that exits immediately upon completing the flush.
 
 ---
 
-## Installation & Upgrade Instructions
+## Installation & Distribution Instructions
 
 1. Download `MaSwitch-Setup-0.2.0.exe`.
 2. Run the installer and choose your preferred installation preset (**Recommended** or **Minimal** for low-end PCs).

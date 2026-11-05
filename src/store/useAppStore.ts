@@ -88,7 +88,6 @@ import { localDatabaseService } from '../services/localDatabaseService';
 import { playtimeTrackerService } from '../services/playtimeTrackerService';
 import { memoryManagementService } from '../services/memoryManagementService';
 import type {
-  CleanableAppCandidate,
   MemoryCleanupHistoryEntry,
   MemoryCleanupRequest,
   MemoryCleanupResult,
@@ -332,14 +331,12 @@ export interface AppStoreState {
 
   // Feature 6: Optional Memory Management (Mem Reduct)
   memoryMetrics: SystemMemoryMetrics | null;
-  cleanableApps: CleanableAppCandidate[];
   cleanupHistory: MemoryCleanupHistoryEntry[];
   isCleaningMemory: boolean;
   lastCleanupResult: MemoryCleanupResult | null;
   beforeGamePrompt: { gameId: string; availableMb: number } | null;
   setBeforeGamePrompt: (prompt: { gameId: string; availableMb: number } | null) => void;
   fetchMemoryMetrics: () => Promise<SystemMemoryMetrics | null>;
-  fetchCleanableApps: () => Promise<CleanableAppCandidate[]>;
   performMemoryCleanup: (request: MemoryCleanupRequest) => Promise<MemoryCleanupResult>;
   fetchCleanupHistory: () => Promise<MemoryCleanupHistoryEntry[]>;
   clearCleanupHistory: () => Promise<void>;
@@ -492,7 +489,6 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
 
   // Feature 6: Optional Memory Management (Mem Reduct)
   memoryMetrics: null,
-  cleanableApps: [],
   cleanupHistory: [],
   isCleaningMemory: false,
   lastCleanupResult: null,
@@ -2034,12 +2030,6 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
       set({ memoryMetrics: m });
     }
     return m;
-  },
-
-  fetchCleanableApps: async () => {
-    const apps = await memoryManagementService.getCleanableApps();
-    set({ cleanableApps: apps });
-    return apps;
   },
 
   performMemoryCleanup: async (request) => {

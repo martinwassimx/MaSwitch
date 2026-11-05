@@ -1615,8 +1615,7 @@ export function registerIpcHandlers(
 
   ipcMain.handle(IPC_CHANNELS.MEMORY_GET_CLEANABLE_APPS, async (event) => {
     assertTrustedSender(event, getMainWindow, devServerUrl);
-    const memService = getMemoryService();
-    return await memService.getCleanableAppCandidates();
+    return [];
   });
 
   ipcMain.handle(IPC_CHANNELS.MEMORY_PERFORM_CLEANUP, async (event, request: MemoryCleanupRequest) => {

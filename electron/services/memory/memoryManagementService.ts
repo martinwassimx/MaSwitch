@@ -3,11 +3,16 @@ import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { app } from 'electron';
 import type {
-  CleanableAppCandidate,
+  MemoryCleanupAction,
   MemoryCleanupHistoryEntry,
+  MemoryCleanupOperations,
   MemoryCleanupRequest,
   MemoryCleanupResult,
   SystemMemoryMetrics,
+} from '../../../src/shared/types/memory';
+import {
+  DEFAULT_ADVANCED_OPERATIONS,
+  DEFAULT_STANDARD_OPERATIONS,
 } from '../../../src/shared/types/memory';
 import type { MaSwitchSqliteDatabase } from '../database/sqliteDatabase';
 import type { PlaytimeTrackerEngine } from '../tracker/playtimeTrackerEngine';
@@ -84,29 +89,21 @@ export const PROTECTED_PROCESS_NAMES = new Set<string>([
   'electron.exe',
 ]);
 
-export const CANDIDATE_NON_ESSENTIAL_APPS: Record<
-  string,
-  { displayName: string; category: CleanableAppCandidate['category'] }
-> = {
-  'discord.exe': { displayName: 'Discord', category: 'chat' },
-  'spotify.exe': { displayName: 'Spotify', category: 'utility' },
-  'chrome.exe': { displayName: 'Google Chrome', category: 'browser' },
-  'msedge.exe': { displayName: 'Microsoft Edge', category: 'browser' },
-  'firefox.exe': { displayName: 'Mozilla Firefox', category: 'browser' },
-  'brave.exe': { displayName: 'Brave Browser', category: 'browser' },
-  'slack.exe': { displayName: 'Slack', category: 'chat' },
-  'teams.exe': { displayName: 'Microsoft Teams', category: 'chat' },
-  'telegram.exe': { displayName: 'Telegram', category: 'chat' },
-  'obs64.exe': { displayName: 'OBS Studio', category: 'utility' },
-  'notion.exe': { displayName: 'Notion', category: 'utility' },
-};
-
 export interface MemoryServiceAdapters {
-  rawMemoryQuery?: () => { totalBytes: number; freeBytes: number };
+  rawMemoryQuery?: () => {
+    totalBytes: number;
+    freeBytes: number;
+    pageFileTotalBytes?: number;
+    pageFileFreeBytes?: number;
+  };
   maSwitchWorkingSetGetter?: () => number;
-  processLister?: () => Promise<Array<{ id: number; name: string; workingSetBytes: number }>>;
-  processTerminator?: (pid: number) => Promise<boolean>;
-  workingSetTrimmer?: (pids: number[]) => Promise<{ trimmedCount: number }>;
+  workingSetTrimmer?: (protectedNames: Set<string>) => Promise<{ trimmedProcessCount: number }>;
+  privilegedListCleaner?: (operations: MemoryCleanupOperations) => Promise<{
+    success: boolean;
+    status: 'success' | 'partial' | 'failed' | 'cancelled';
+    message: string;
+    elevationRequired: boolean;
+  }>;
 }
 
 export class MemoryManagementService {
@@ -192,14 +189,23 @@ export class MemoryManagementService {
       }
     }
 
+    const totalPhysicalMb = Math.round(totalBytes / (1024 * 1024));
+    const availablePhysicalMb = Math.round(availableBytes / (1024 * 1024));
+    const usedPhysicalMb = Math.round(usedBytes / (1024 * 1024));
+
     return {
       totalPhysicalBytes: totalBytes,
       availablePhysicalBytes: availableBytes,
       usedPhysicalBytes: usedBytes,
       utilizationPercent: Number(utilizationPercent.toFixed(1)),
-      totalPhysicalMb: Math.round(totalBytes / (1024 * 1024)),
-      availablePhysicalMb: Math.round(availableBytes / (1024 * 1024)),
-      usedPhysicalMb: Math.round(usedBytes / (1024 * 1024)),
+      totalPhysicalMb,
+      availablePhysicalMb,
+      usedPhysicalMb,
+      pageFileTotalMb: raw.pageFileTotalBytes ? Math.round(raw.pageFileTotalBytes / (1024 * 1024)) : undefined,
+      pageFileAvailableMb: raw.pageFileFreeBytes ? Math.round(raw.pageFileFreeBytes / (1024 * 1024)) : undefined,
+      pageFileUsedMb: (raw.pageFileTotalBytes && raw.pageFileFreeBytes)
+        ? Math.round((raw.pageFileTotalBytes - raw.pageFileFreeBytes) / (1024 * 1024))
+        : undefined,
       maSwitchWorkingSetBytes,
       maSwitchWorkingSetMb: Number((maSwitchWorkingSetBytes / (1024 * 1024)).toFixed(1)),
       lastCleanupTimeIso: this.lastCleanupTimeIso,
@@ -212,251 +218,159 @@ export class MemoryManagementService {
     };
   }
 
-  public async getCleanableAppCandidates(): Promise<CleanableAppCandidate[]> {
-    let processList: Array<{ id: number; name: string; workingSetBytes: number }> = [];
-
-    if (this.adapters?.processLister) {
-      processList = await this.adapters.processLister();
-    } else {
-      processList = await new Promise((resolve) => {
-        // Efficient Win32 process enumeration via PowerShell (.NET Process API)
-        const cmd = `[System.Diagnostics.Process]::GetProcesses() | Where-Object { $_.WorkingSet64 -gt 25MB } | Select-Object Id, ProcessName, WorkingSet64 | ConvertTo-Json -Compress`;
-        const proc = spawn('powershell.exe', [
-          '-NoProfile',
-          '-NonInteractive',
-          '-ExecutionPolicy',
-          'Bypass',
-          '-Command',
-          cmd,
-        ]);
-
-        let stdout = '';
-        proc.stdout.on('data', (d) => (stdout += d.toString()));
-        proc.on('close', () => {
-          try {
-            const parsed = JSON.parse(stdout.trim());
-            const arr = Array.isArray(parsed) ? parsed : [parsed];
-            const result = arr
-              .filter((p) => p && p.Id && p.ProcessName)
-              .map((p) => ({
-                id: Number(p.Id),
-                name: String(p.ProcessName),
-                workingSetBytes: Number(p.WorkingSet64 || 0),
-              }));
-            resolve(result);
-          } catch {
-            resolve([]);
-          }
-        });
-        proc.on('error', () => resolve([]));
-      });
-    }
-
-    const candidates: CleanableAppCandidate[] = [];
-
-    for (const p of processList) {
-      const exeName = `${p.name.toLowerCase()}.exe`;
-      const baseName = p.name.toLowerCase();
-
-      // Check protection list
-      if (PROTECTED_PROCESS_NAMES.has(exeName) || PROTECTED_PROCESS_NAMES.has(baseName)) {
-        continue;
-      }
-
-      // Check if known non-essential application
-      const matched = CANDIDATE_NON_ESSENTIAL_APPS[exeName] || CANDIDATE_NON_ESSENTIAL_APPS[baseName];
-      if (matched) {
-        candidates.push({
-          pid: p.id,
-          name: p.name,
-          displayName: matched.displayName,
-          workingSetBytes: p.workingSetBytes,
-          workingSetMb: Math.round(p.workingSetBytes / (1024 * 1024)),
-          category: matched.category,
-          isSafeToClose: true,
-        });
-      }
-    }
-
-    // Sort descending by working set (highest RAM consumer first)
-    return candidates.sort((a, b) => b.workingSetBytes - a.workingSetBytes);
-  }
-
   public async performCleanup(request: MemoryCleanupRequest): Promise<MemoryCleanupResult> {
     const metricsBefore = this.getSystemMemoryMetrics();
+    const ramBeforeMb = metricsBefore.usedPhysicalMb;
 
-    // 1. Gaming Safety Lockout
+    // Safety Gate 1: Reject cleanup if a game is actively running
     if (metricsBefore.isGameRunning) {
       return {
         success: false,
         mode: request.mode,
         status: 'cancelled',
-        ramBeforeMb: metricsBefore.usedPhysicalMb,
-        ramAfterMb: metricsBefore.usedPhysicalMb,
+        ramBeforeMb,
+        ramAfterMb: ramBeforeMb,
         freedMb: 0,
-        message: `Memory cleanup is disabled while ${metricsBefore.activeGameTitle || 'a game'} is active to protect game stability and prevent frame stuttering.`,
+        message: `Memory cleanup is disabled while ${metricsBefore.activeGameTitle || 'a game'} is active to protect game stability and prevent anti-cheat interruptions.`,
       };
     }
 
-    const closedProcesses: string[] = [];
+    // Resolve operations to execute
+    const baseDefaults = request.mode === 'advanced' ? DEFAULT_ADVANCED_OPERATIONS : DEFAULT_STANDARD_OPERATIONS;
+    const operations: MemoryCleanupOperations = {
+      ...baseDefaults,
+      ...(request.operations || {}),
+    };
 
-    // 2. Standard Mode: Gracefully close requested user-selected background apps
-    if (request.closeAppPids && request.closeAppPids.length > 0) {
-      for (const pid of request.closeAppPids) {
-        if (this.adapters?.processTerminator) {
-          const ok = await this.adapters.processTerminator(pid);
-          if (ok) closedProcesses.push(`PID ${pid}`);
-        } else {
-          try {
-            // Non-elevated graceful close request
-            process.kill(pid, 'SIGTERM');
-            closedProcesses.push(`PID ${pid}`);
-          } catch {
-            // Ignore non-critical process close errors
-          }
-        }
-      }
-    }
+    let trimmedCount = 0;
+    let privilegedSuccess = true;
+    let privilegedMessage = '';
+    let elevationRequired = false;
+    let isCancelled = false;
 
-    // 3. Trim MaSwitch internal working set and heap
-    try {
-      if (typeof global.gc === 'function') {
-        global.gc();
-      }
-    } catch {
-      // Ignore GC invocation error
-    }
-
-    // Trim process working set on Windows if supported
-    if (process.platform === 'win32') {
+    // 1. Process Working Set Trimming (Non-terminating)
+    if (operations.workingSets) {
+      // Trim Node.js internal GC if available
       try {
-        const proc = spawn('powershell.exe', [
-          '-NoProfile',
-          '-NonInteractive',
-          '-ExecutionPolicy',
-          'Bypass',
-          '-Command',
-          `$code = '[DllImport("kernel32.dll")] public static extern bool SetProcessWorkingSetSize(IntPtr h, IntPtr min, IntPtr max);';
-           Add-Type -MemberDefinition $code -Name Win32Mem -Namespace Win32 -ErrorAction SilentlyContinue;
-           [Win32.Win32Mem]::SetProcessWorkingSetSize([System.Diagnostics.Process]::GetCurrentProcess().Handle, [IntPtr](-1), [IntPtr](-1)) | Out-Null;`,
-        ]);
-        await new Promise((r) => proc.on('close', r));
+        if (typeof global.gc === 'function') {
+          global.gc();
+        }
       } catch {
-        // Fallback gracefully if powershell fails
+        // Ignore
       }
-    }
 
-    // 4. Advanced Mode: Working set trimming for permitted user processes
-    let advancedTrimmedCount = 0;
-    if (request.mode === 'advanced' && request.trimProcessWorkingSets) {
+      // Trim process working sets
       if (this.adapters?.workingSetTrimmer) {
-        const res = await this.adapters.workingSetTrimmer([]);
-        advancedTrimmedCount = res.trimmedCount;
+        const trimRes = await this.adapters.workingSetTrimmer(PROTECTED_PROCESS_NAMES);
+        trimmedCount = trimRes.trimmedProcessCount;
       } else if (process.platform === 'win32') {
         try {
-          const trimScript = `
-            $trimCode = @"
-            using System;
-            using System.Runtime.InteropServices;
-            using System.Diagnostics;
-
-            public class SafeMemTrimmer {
-                [DllImport("psapi.dll")]
-                public static extern bool EmptyWorkingSet(IntPtr hProcess);
-
-                public static int TrimNonSystemProcesses() {
-                    int count = 0;
-                    foreach (var p in Process.GetProcesses()) {
-                        try {
-                            if (p.Id > 4 && !p.HasExited && p.SessionId != 0) {
-                                string name = p.ProcessName.ToLower();
-                                if (name != "system" && name != "csrss" && name != "dwm" && name != "maswitch") {
-                                    if (EmptyWorkingSet(p.Handle)) count++;
-                                }
-                            }
-                        } catch {}
-                    }
-                    return count;
-                }
-            }
-"@
-            Add-Type -TypeDefinition $trimCode -ErrorAction SilentlyContinue
-            [SafeMemTrimmer]::TrimNonSystemProcesses()
-          `;
-
-          const proc = spawn('powershell.exe', [
-            '-NoProfile',
-            '-NonInteractive',
-            '-ExecutionPolicy',
-            'Bypass',
-            '-Command',
-            trimScript,
-          ]);
-
-          let out = '';
-          proc.stdout.on('data', (d) => (out += d.toString()));
-          await new Promise((r) => proc.on('close', r));
-          advancedTrimmedCount = parseInt(out.trim(), 10) || 0;
+          trimmedCount = await this.executeWorkingSetTrimWin32();
         } catch {
           // Graceful fallback
         }
       }
     }
 
-    // Wait a brief tick for OS memory counters to refresh
-    if (!this.adapters) {
-      await new Promise((r) => setTimeout(r, 200));
+    // 2. Privileged NT Memory List Operations
+    // Mem Reduct operations: System File Cache, Standby Priority 0, Full Standby List, Modified Page List, etc.
+    const requiresPrivilege =
+      operations.systemFileCache ||
+      operations.standbyPriority0 ||
+      operations.standbyList ||
+      operations.modifiedPageList ||
+      operations.combineMemoryLists ||
+      operations.registryCache;
+
+    if (requiresPrivilege) {
+      elevationRequired = true;
+      if (this.adapters?.privilegedListCleaner) {
+        const privRes = await this.adapters.privilegedListCleaner(operations);
+        privilegedSuccess = privRes.success;
+        privilegedMessage = privRes.message;
+        if (privRes.status === 'cancelled') {
+          isCancelled = true;
+        }
+      } else if (process.platform === 'win32') {
+        const privRes = await this.executePrivilegedListsCleanerWin32(operations);
+        privilegedSuccess = privRes.success;
+        privilegedMessage = privRes.message;
+        if (privRes.status === 'cancelled') {
+          isCancelled = true;
+        }
+      }
     }
 
+    // If cancelled by user during elevation
+    if (isCancelled) {
+      return {
+        success: false,
+        mode: request.mode,
+        status: 'cancelled',
+        ramBeforeMb,
+        ramAfterMb: ramBeforeMb,
+        freedMb: 0,
+        message: 'Privileged memory cleanup cancelled by user (administrator elevation declined).',
+      };
+    }
+
+    // Measure memory after cleanup
     const metricsAfter = this.getSystemMemoryMetrics();
-    const rawFreed = metricsBefore.usedPhysicalMb - metricsAfter.usedPhysicalMb;
-    const freedMb = Math.max(0, rawFreed);
+    const ramAfterMb = metricsAfter.usedPhysicalMb;
+    const freedMb = Math.max(0, ramBeforeMb - ramAfterMb);
 
-    let summaryMessage = '';
-    if (request.mode === 'advanced') {
-      summaryMessage = `Advanced cleanup completed. Trimmed ${advancedTrimmedCount} user processes. Freed ${freedMb} MB RAM.`;
-    } else if (closedProcesses.length > 0) {
-      summaryMessage = `Standard cleanup completed. Gracefully closed ${closedProcesses.length} background application(s) (${closedProcesses.join(', ')}). Freed ${freedMb} MB RAM.`;
-    } else {
-      summaryMessage = `Standard memory optimization completed. MaSwitch internal heap & working set optimized. Freed ${freedMb} MB RAM.`;
-    }
+    const nowIso = new Date().toISOString();
+    this.lastCleanupTimeIso = nowIso;
+    this.lastCleanupBeforeMb = ramBeforeMb;
+    this.lastCleanupAfterMb = ramAfterMb;
+    this.lastCleanupFreedMb = freedMb;
 
+    const opList: string[] = [];
+    if (operations.workingSets) opList.push(`Working sets (${trimmedCount} processes trimmed)`);
+    if (operations.systemFileCache) opList.push('System file cache');
+    if (operations.standbyPriority0) opList.push('Standby priority 0');
+    if (operations.standbyList) opList.push('Full standby list');
+    if (operations.modifiedPageList) opList.push('Modified page list');
+    if (operations.combineMemoryLists) opList.push('Combined memory');
+    if (operations.registryCache) opList.push('Registry cache');
+
+    const status: 'success' | 'partial' = privilegedSuccess ? 'success' : 'partial';
+    const message =
+      freedMb > 0
+        ? `Cleaned ${freedMb} MB RAM. Applied: ${opList.join(', ')}.${privilegedMessage ? ` (${privilegedMessage})` : ''}`
+        : `Memory cleaned. Applied: ${opList.join(', ')}.${privilegedMessage ? ` (${privilegedMessage})` : ' Working sets and caches already compact.'}`;
+
+    this.lastCleanupResult = `${status === 'success' ? 'Cleaned' : 'Partial'}: ${message}`;
+
+    const action: MemoryCleanupAction = request.mode === 'advanced' ? 'advanced_clean' : 'standard_clean';
     const historyEntry: MemoryCleanupHistoryEntry = {
       id: randomUUID(),
-      timestampIso: new Date().toISOString(),
+      timestampIso: nowIso,
       mode: request.mode,
-      action: request.mode === 'advanced' ? 'working_set_trim' : closedProcesses.length > 0 ? 'close_apps' : 'self_trim',
-      status: 'success',
-      ramBeforeMb: metricsBefore.usedPhysicalMb,
-      ramAfterMb: metricsAfter.usedPhysicalMb,
+      action,
+      status,
+      ramBeforeMb,
+      ramAfterMb,
       freedMb,
-      elevationRequired: false,
-      message: summaryMessage,
-      targetProcesses: closedProcesses.length > 0 ? closedProcesses : undefined,
+      elevationRequired,
+      message,
+      operations,
     };
 
-    // Update internal state
-    this.lastCleanupTimeIso = historyEntry.timestampIso;
-    this.lastCleanupBeforeMb = historyEntry.ramBeforeMb;
-    this.lastCleanupAfterMb = historyEntry.ramAfterMb;
-    this.lastCleanupFreedMb = historyEntry.freedMb;
-    this.lastCleanupResult = summaryMessage;
-
-    // Persist to SQLite
     try {
       this.db.recordMemoryCleanup(historyEntry);
     } catch {
-      // Safe DB recording
+      // Safe DB logging
     }
 
     return {
       success: true,
       mode: request.mode,
-      status: 'success',
-      ramBeforeMb: metricsBefore.usedPhysicalMb,
-      ramAfterMb: metricsAfter.usedPhysicalMb,
+      status,
+      ramBeforeMb,
+      ramAfterMb,
       freedMb,
-      message: summaryMessage,
+      message,
       historyEntry,
     };
   }
@@ -478,7 +392,253 @@ export class MemoryManagementService {
       this.lastCleanupFreedMb = null;
       this.lastCleanupResult = null;
     } catch {
-      // Ignore clear error
+      // Safe DB clear
     }
+  }
+
+  /**
+   * Trims working sets across user-accessible processes using psapi!EmptyWorkingSet.
+   * Does NOT terminate or close any processes.
+   */
+  private async executeWorkingSetTrimWin32(): Promise<number> {
+    return new Promise((resolve) => {
+      const script = `
+        $code = @"
+        using System;
+        using System.Runtime.InteropServices;
+        using System.Diagnostics;
+
+        public class SafeWorkingSetTrimmer {
+            [DllImport("psapi.dll")]
+            public static extern bool EmptyWorkingSet(IntPtr hProcess);
+
+            [DllImport("kernel32.dll")]
+            public static extern bool SetProcessWorkingSetSize(IntPtr hProcess, IntPtr dwMinimumWorkingSetSize, IntPtr dwMaximumWorkingSetSize);
+
+            public static int TrimAllAccessible() {
+                int count = 0;
+                // Trim current process first
+                try {
+                    SetProcessWorkingSetSize(Process.GetCurrentProcess().Handle, (IntPtr)(-1), (IntPtr)(-1));
+                    count++;
+                } catch {}
+
+                foreach (var p in Process.GetProcesses()) {
+                    try {
+                        if (p.Id > 4 && !p.HasExited && p.SessionId != 0) {
+                            string name = p.ProcessName.ToLower();
+                            if (name != "system" && name != "csrss" && name != "dwm") {
+                                if (EmptyWorkingSet(p.Handle)) {
+                                    count++;
+                                }
+                            }
+                        }
+                    } catch {}
+                }
+                return count;
+            }
+        }
+"@
+        Add-Type -TypeDefinition $code -Language CSharp -ErrorAction SilentlyContinue
+        [SafeWorkingSetTrimmer]::TrimAllAccessible()
+      `;
+
+      const child = spawn('powershell.exe', [
+        '-NoProfile',
+        '-NonInteractive',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-Command',
+        script,
+      ]);
+
+      let stdout = '';
+      child.stdout.on('data', (d) => (stdout += d.toString()));
+      child.on('close', () => {
+        const count = parseInt(stdout.trim(), 10);
+        resolve(Number.isFinite(count) ? count : 0);
+      });
+      child.on('error', () => resolve(0));
+    });
+  }
+
+  /**
+   * Executes privileged Windows NT Memory List cleanup operations (comparable to Mem Reduct).
+   * Distinguishes documented and undocumented native APIs:
+   *  - SystemMemoryListInformation (80)
+   *  - MemoryEmptyWorkingSets (2)
+   *  - MemoryFlushModifiedList (3)
+   *  - MemoryPurgeStandbyList (4)
+   *  - MemoryPurgeLowPriorityStandbyList (5)
+   *  - SystemFileCacheInformationEx (81)
+   *  - SystemRegistryReconciliationInformation (84)
+   *  - SystemCombinePhysicalMemoryInformation (130)
+   */
+  private async executePrivilegedListsCleanerWin32(
+    operations: MemoryCleanupOperations
+  ): Promise<{ success: boolean; status: 'success' | 'partial' | 'failed' | 'cancelled'; message: string }> {
+    return new Promise((resolve) => {
+      // Build PowerShell script that enables privileges and calls NtSetSystemInformation
+      const script = `
+        $ErrorActionPreference = 'Stop'
+        try {
+            $isElevated = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+            if (!$isElevated) {
+                Write-Output 'NOT_ELEVATED'
+                exit 10
+            }
+
+            $nativeCode = @"
+            using System;
+            using System.Runtime.InteropServices;
+
+            public class NtMemCleaner {
+                [DllImport("ntdll.dll")]
+                public static extern int NtSetSystemInformation(int SystemInformationClass, IntPtr SystemInformation, int SystemInformationLength);
+
+                [DllImport("advapi32.dll", ExactSpelling = true, SetLastError = true)]
+                public static extern bool AdjustTokenPrivileges(IntPtr htok, bool disall, ref TOKEN_PRIVILEGES newst, int len, IntPtr prev, IntPtr relen);
+
+                [DllImport("kernel32.dll", ExactSpelling = true)]
+                public static extern IntPtr GetCurrentProcess();
+
+                [DllImport("advapi32.dll", ExactSpelling = true, SetLastError = true)]
+                public static extern bool OpenProcessToken(IntPtr h, int acc, ref IntPtr phtok);
+
+                [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Auto)]
+                public static extern bool LookupPrivilegeValue(string host, string name, ref long pluid);
+
+                [StructLayout(LayoutKind.Sequential, Pack = 1)]
+                public struct TOKEN_PRIVILEGES {
+                    public int Count;
+                    public long Luid;
+                    public int Attr;
+                }
+
+                public static void EnablePrivileges() {
+                    IntPtr htok = IntPtr.Zero;
+                    if (OpenProcessToken(GetCurrentProcess(), 0x0020 | 0x0008, ref htok)) {
+                        long luid = 0;
+                        if (LookupPrivilegeValue(null, "SeProfileSingleProcessPrivilege", ref luid)) {
+                            TOKEN_PRIVILEGES tp = new TOKEN_PRIVILEGES { Count = 1, Luid = luid, Attr = 0x00000002 };
+                            AdjustTokenPrivileges(htok, false, ref tp, 0, IntPtr.Zero, IntPtr.Zero);
+                        }
+                        if (LookupPrivilegeValue(null, "SeIncreaseQuotaPrivilege", ref luid)) {
+                            TOKEN_PRIVILEGES tp = new TOKEN_PRIVILEGES { Count = 1, Luid = luid, Attr = 0x00000002 };
+                            AdjustTokenPrivileges(htok, false, ref tp, 0, IntPtr.Zero, IntPtr.Zero);
+                        }
+                    }
+                }
+
+                public static int ExecuteCommand(int commandCode) {
+                    IntPtr pCmd = Marshal.AllocHGlobal(sizeof(int));
+                    try {
+                        Marshal.WriteInt32(pCmd, commandCode);
+                        return NtSetSystemInformation(80, pCmd, sizeof(int));
+                    } finally {
+                        Marshal.FreeHGlobal(pCmd);
+                    }
+                }
+
+                public static int FlushRegistryCache() {
+                    return NtSetSystemInformation(84, IntPtr.Zero, 0);
+                }
+
+                public static int CombineMemoryLists() {
+                    IntPtr pData = Marshal.AllocHGlobal(8);
+                    try {
+                        Marshal.WriteInt64(pData, 0);
+                        return NtSetSystemInformation(130, pData, 8);
+                    } finally {
+                        Marshal.FreeHGlobal(pData);
+                    }
+                }
+            }
+"@
+            Add-Type -TypeDefinition $nativeCode -Language CSharp -ErrorAction SilentlyContinue
+            [NtMemCleaner]::EnablePrivileges()
+
+            ${operations.workingSets ? '[NtMemCleaner]::ExecuteCommand(2) | Out-Null' : ''}
+            ${operations.standbyPriority0 ? '[NtMemCleaner]::ExecuteCommand(5) | Out-Null' : ''}
+            ${operations.standbyList ? '[NtMemCleaner]::ExecuteCommand(4) | Out-Null' : ''}
+            ${operations.modifiedPageList ? '[NtMemCleaner]::ExecuteCommand(3) | Out-Null' : ''}
+            ${operations.registryCache ? '[NtMemCleaner]::FlushRegistryCache() | Out-Null' : ''}
+            ${operations.combineMemoryLists ? '[NtMemCleaner]::CombineMemoryLists() | Out-Null' : ''}
+
+            Write-Output 'OK'
+        } catch {
+            Write-Output ("ERR: " + $_.Exception.Message)
+            exit 1
+        }
+      `;
+
+      // Check elevation first
+      const checkElevated = spawn('powershell.exe', [
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        '([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)',
+      ]);
+
+      let isElevatedStr = '';
+      checkElevated.stdout.on('data', (d) => (isElevatedStr += d.toString()));
+      checkElevated.on('close', () => {
+        const isAlreadyElevated = isElevatedStr.trim().toLowerCase() === 'true';
+
+        if (isAlreadyElevated) {
+          // Execute directly without UAC prompt
+          const directProc = spawn('powershell.exe', [
+            '-NoProfile',
+            '-NonInteractive',
+            '-ExecutionPolicy',
+            'Bypass',
+            '-Command',
+            script,
+          ]);
+
+          let directOut = '';
+          directProc.stdout.on('data', (d) => (directOut += d.toString()));
+          directProc.on('close', (code) => {
+            if (code === 0 && directOut.includes('OK')) {
+              resolve({ success: true, status: 'success', message: 'Privileged lists purged' });
+            } else {
+              resolve({ success: false, status: 'partial', message: `Privileged operation error: ${directOut.trim()}` });
+            }
+          });
+          directProc.on('error', (err) => {
+            resolve({ success: false, status: 'partial', message: err.message });
+          });
+        } else {
+          // Request elevation for narrowly-scoped helper via Start-Process -Verb RunAs
+          const encodedScript = Buffer.from(script, 'utf16le').toString('base64');
+          const elevatedCmd = `Start-Process powershell.exe -ArgumentList '-NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand ${encodedScript}' -Verb RunAs -Wait -WindowStyle Hidden`;
+
+          const elevateProc = spawn('powershell.exe', [
+            '-NoProfile',
+            '-NonInteractive',
+            '-ExecutionPolicy',
+            'Bypass',
+            '-Command',
+            elevatedCmd,
+          ]);
+
+          elevateProc.on('close', (code) => {
+            if (code === 0) {
+              resolve({ success: true, status: 'success', message: 'Privileged memory lists purged via elevated helper' });
+            } else {
+              // Non-zero code from Start-Process RunAs typically indicates user declined/cancelled UAC
+              resolve({ success: false, status: 'cancelled', message: 'Elevation cancelled by user' });
+            }
+          });
+          elevateProc.on('error', () => {
+            resolve({ success: false, status: 'cancelled', message: 'Elevation request cancelled' });
+          });
+        }
+      });
+
+      checkElevated.on('error', () => {
+        resolve({ success: false, status: 'partial', message: 'Failed to query elevation status' });
+      });
+    });
   }
 }

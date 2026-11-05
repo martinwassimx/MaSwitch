@@ -130,3 +130,4 @@ If you discover a potential security vulnerability in MaSwitch, please report it
 **Martin Wassim** — <https://martinx.work>
 
 Please do not disclose security issues publicly until they have been addressed.
+

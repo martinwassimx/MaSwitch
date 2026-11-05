@@ -1,5 +1,4 @@
 import type {
-  CleanableAppCandidate,
   MemoryCleanupHistoryEntry,
   MemoryCleanupRequest,
   MemoryCleanupResult,
@@ -15,17 +14,6 @@ class MemoryManagementFrontendService {
       return await window.maswitch.memory.getMetrics();
     } catch {
       return null;
-    }
-  }
-
-  public async getCleanableApps(): Promise<CleanableAppCandidate[]> {
-    if (!window.maswitch?.memory?.getCleanableApps) {
-      return [];
-    }
-    try {
-      return await window.maswitch.memory.getCleanableApps();
-    } catch {
-      return [];
     }
   }
 

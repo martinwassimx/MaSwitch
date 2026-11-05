@@ -6,6 +6,9 @@ export interface SystemMemoryMetrics {
   totalPhysicalMb: number;
   availablePhysicalMb: number;
   usedPhysicalMb: number;
+  pageFileTotalMb?: number;
+  pageFileAvailableMb?: number;
+  pageFileUsedMb?: number;
   maSwitchWorkingSetBytes: number;
   maSwitchWorkingSetMb: number;
   lastCleanupTimeIso: string | null;
@@ -17,34 +20,70 @@ export interface SystemMemoryMetrics {
   activeGameTitle: string | null;
 }
 
-export interface CleanableAppCandidate {
-  pid: number;
-  name: string;
-  displayName: string;
-  workingSetBytes: number;
-  workingSetMb: number;
-  category: 'browser' | 'chat' | 'utility' | 'other';
-  isSafeToClose: boolean;
+export interface MemoryCleanupOperations {
+  /** REDUCT_WORKINGSET (0x01): Trims working sets across processes */
+  workingSets: boolean;
+  /** REDUCT_SYSTEMFILECACHE (0x02): Flushes system file cache working sets (elevated) */
+  systemFileCache: boolean;
+  /** REDUCT_STANDBYPRIORITY0LIST (0x04): Purges low-priority (priority 0) standby pages (elevated) */
+  standbyPriority0: boolean;
+  /** REDUCT_STANDBYLIST (0x08): Purges all standby cache pages (elevated, potential micro-stutter) */
+  standbyList: boolean;
+  /** REDUCT_MODIFIEDLIST (0x10): Flushes modified page list to disk (elevated, disk I/O burst) */
+  modifiedPageList: boolean;
+  /** REDUCT_COMBINEMEMORYLISTS (0x20): Physical memory page deduplication (Win 10+) */
+  combineMemoryLists: boolean;
+  /** REDUCT_REGISTRYCACHE (0x40): Flushes Windows registry cache buffers (Win 8.1+) */
+  registryCache: boolean;
 }
+
+export const DEFAULT_STANDARD_OPERATIONS: MemoryCleanupOperations = {
+  workingSets: true,
+  systemFileCache: false,
+  standbyPriority0: true,
+  standbyList: false,
+  modifiedPageList: false,
+  combineMemoryLists: true,
+  registryCache: true,
+};
+
+export const DEFAULT_ADVANCED_OPERATIONS: MemoryCleanupOperations = {
+  workingSets: true,
+  systemFileCache: true,
+  standbyPriority0: true,
+  standbyList: false, // Disabled by default to prevent freeze/stutter
+  modifiedPageList: false, // Disabled by default to prevent disk write burst
+  combineMemoryLists: true,
+  registryCache: true,
+};
+
+export type MemoryCleanupAction =
+  | 'working_set_clean'
+  | 'system_lists_clean'
+  | 'standard_clean'
+  | 'advanced_clean'
+  | 'self_trim'
+  | 'close_apps'
+  | 'working_set_trim';
 
 export interface MemoryCleanupHistoryEntry {
   id: string;
   timestampIso: string;
   mode: 'standard' | 'advanced';
-  action: 'self_trim' | 'close_apps' | 'working_set_trim';
+  action: MemoryCleanupAction;
   status: 'success' | 'partial' | 'failed' | 'cancelled';
   ramBeforeMb: number;
   ramAfterMb: number;
   freedMb: number;
   elevationRequired: boolean;
   message: string;
+  operations?: Partial<MemoryCleanupOperations>;
   targetProcesses?: string[];
 }
 
 export interface MemoryCleanupRequest {
   mode: 'standard' | 'advanced';
-  closeAppPids?: number[];
-  trimProcessWorkingSets?: boolean;
+  operations?: Partial<MemoryCleanupOperations>;
 }
 
 export interface MemoryCleanupResult {
@@ -57,4 +96,3 @@ export interface MemoryCleanupResult {
   message: string;
   historyEntry?: MemoryCleanupHistoryEntry;
 }
-

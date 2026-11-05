@@ -1,26 +1,28 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Activity,
   Cpu,
-  Database,
   HardDrive,
-  Sliders,
-  Thermometer,
-  Zap,
-  AlertCircle,
   Clock,
-  Gauge,
   Sparkles,
-  ShieldCheck,
-  AlertTriangle,
-  RotateCcw,
   Trash2,
   CheckCircle2,
-  Layers,
+  AlertTriangle,
+  Zap,
+  ShieldCheck,
+  Info,
+  Database,
   ArrowRight,
 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
-import type { MemoryCleanupRequest } from '../shared/types/memory';
+import type {
+  MemoryCleanupOperations,
+  MemoryCleanupRequest,
+} from '../shared/types/memory';
+import {
+  DEFAULT_ADVANCED_OPERATIONS,
+  DEFAULT_STANDARD_OPERATIONS,
+} from '../shared/types/memory';
 
 export const PerformancePage: React.FC = () => {
   const performanceMetrics = useAppStore((s) => s.performanceMetrics);
@@ -30,12 +32,9 @@ export const PerformancePage: React.FC = () => {
 
   // Memory management store
   const memoryMetrics = useAppStore((s) => s.memoryMetrics);
-  const cleanableApps = useAppStore((s) => s.cleanableApps);
   const cleanupHistory = useAppStore((s) => s.cleanupHistory);
   const isCleaningMemory = useAppStore((s) => s.isCleaningMemory);
-  const lastCleanupResult = useAppStore((s) => s.lastCleanupResult);
   const fetchMemoryMetrics = useAppStore((s) => s.fetchMemoryMetrics);
-  const fetchCleanableApps = useAppStore((s) => s.fetchCleanableApps);
   const performMemoryCleanup = useAppStore((s) => s.performMemoryCleanup);
   const fetchCleanupHistory = useAppStore((s) => s.fetchCleanupHistory);
   const clearCleanupHistory = useAppStore((s) => s.clearCleanupHistory);
@@ -58,15 +57,37 @@ export const PerformancePage: React.FC = () => {
     return 'telemetry';
   });
 
-  const [intervalChoice, setIntervalChoice] = useState<3000 | 5000 | 10000>(
+  const [intervalChoice] = useState<3000 | 5000 | 10000>(
     (settings.memoryRefreshIntervalMs as 3000 | 5000 | 10000) || 5000
   );
 
-  // Clean memory modal state
-  const [showCleanupModal, setShowCleanupModal] = useState(false);
-  const [selectedPids, setSelectedPids] = useState<number[]>([]);
+  // Clean memory mode and operation toggles (Mem Reduct inspired)
   const [cleanupMode, setCleanupMode] = useState<'standard' | 'advanced'>('standard');
-  const [cleanupError, setCleanupError] = useState<string | null>(null);
+  const [selectedOperations, setSelectedOperations] = useState<MemoryCleanupOperations>({
+    ...DEFAULT_STANDARD_OPERATIONS,
+  });
+  const [showCleanupModal, setShowCleanupModal] = useState(false);
+  const [cleanupFeedback, setCleanupFeedback] = useState<{
+    status: 'success' | 'partial' | 'cancelled' | 'error';
+    message: string;
+  } | null>(null);
+
+  // Sync mode changes with operation defaults
+  const handleModeChange = (mode: 'standard' | 'advanced') => {
+    setCleanupMode(mode);
+    if (mode === 'standard') {
+      setSelectedOperations({ ...DEFAULT_STANDARD_OPERATIONS });
+    } else {
+      setSelectedOperations({ ...DEFAULT_ADVANCED_OPERATIONS });
+    }
+  };
+
+  const handleToggleOperation = (key: keyof MemoryCleanupOperations) => {
+    setSelectedOperations((prev) => ({
+      ...prev,
+      [key]: !prev[key],
+    }));
+  };
 
   // Telemetry polling: Only while telemetry tab is active
   useEffect(() => {
@@ -90,7 +111,6 @@ export const PerformancePage: React.FC = () => {
     if (activeTab !== 'memory' || !isMemMgmtEnabled) return;
 
     void fetchMemoryMetrics();
-    void fetchCleanableApps();
     void fetchCleanupHistory();
 
     const intId = setInterval(() => {
@@ -100,38 +120,46 @@ export const PerformancePage: React.FC = () => {
     return () => {
       clearInterval(intId);
     };
-  }, [activeTab, isMemMgmtEnabled, fetchMemoryMetrics, fetchCleanableApps, fetchCleanupHistory, intervalChoice]);
+  }, [activeTab, isMemMgmtEnabled, fetchMemoryMetrics, fetchCleanupHistory, intervalChoice]);
 
-  // Open cleanup modal
-  const handleOpenCleanupModal = async () => {
-    await fetchCleanableApps();
-    setSelectedPids([]);
-    setCleanupMode(settings.enableAdvancedMemoryMode ? 'advanced' : 'standard');
-    setCleanupError(null);
+  const handleOpenCleanupModal = () => {
+    setCleanupFeedback(null);
     setShowCleanupModal(true);
-  };
-
-  const handleToggleAppPid = (pid: number) => {
-    setSelectedPids((prev) =>
-      prev.includes(pid) ? prev.filter((p) => p !== pid) : [...prev, pid]
-    );
   };
 
   const handleExecuteCleanup = async () => {
     try {
-      setCleanupError(null);
+      setCleanupFeedback(null);
       const req: MemoryCleanupRequest = {
         mode: cleanupMode,
-        closeAppPids: selectedPids.length > 0 ? selectedPids : undefined,
-        trimProcessWorkingSets: cleanupMode === 'advanced',
+        operations: selectedOperations,
       };
-      await performMemoryCleanup(req);
+      const result = await performMemoryCleanup(req);
       setShowCleanupModal(false);
       await fetchMemoryMetrics();
-      await fetchCleanableApps();
       await fetchCleanupHistory();
+
+      if (result.status === 'cancelled') {
+        setCleanupFeedback({
+          status: 'cancelled',
+          message: result.message,
+        });
+      } else if (result.success) {
+        setCleanupFeedback({
+          status: result.status === 'failed' ? 'error' : result.status,
+          message: result.message,
+        });
+      } else {
+        setCleanupFeedback({
+          status: 'error',
+          message: result.message,
+        });
+      }
     } catch (err) {
-      setCleanupError(err instanceof Error ? err.message : String(err));
+      setCleanupFeedback({
+        status: 'error',
+        message: err instanceof Error ? err.message : String(err),
+      });
     }
   };
 
@@ -141,457 +169,397 @@ export const PerformancePage: React.FC = () => {
   const currentRamTotal = performanceMetrics?.ramTotalMb ?? 0;
   const maSwitchCpu = performanceMetrics?.maSwitchCpuPercent ?? 0;
   const maSwitchRam = performanceMetrics?.maSwitchRamMb ?? 0;
-  const perfMode = performanceMetrics?.performanceMode ?? 'standard';
 
-  const isGameRunningNow = inGameMode || performanceMetrics?.isGameRunning;
-  const activeGameTitle = performanceMetrics?.activeGameTitle ?? 'Active Game';
+  const isGameRunningNow = inGameMode || performanceMetrics?.isGameRunning || memoryMetrics?.isGameRunning;
+  const activeGameTitle = performanceMetrics?.activeGameTitle ?? memoryMetrics?.activeGameTitle ?? 'Active Game';
 
   return (
     <div data-testid="page-performance-monitor" className="max-w-6xl mx-auto space-y-8 pb-16 animate-fadeIn select-none">
-      {/* Header with Tab Navigation */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-ms-border/60 pb-6">
+      {/* Page Header with Tab Switcher */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-ms-border/60 pb-6">
         <div>
-          <div className="flex items-center gap-2 mb-2">
-            {isPerfMonitorInstalled && isPerfMonitorEnabled && (
-              <button
-                type="button"
-                data-testid="tab-telemetry"
-                onClick={() => setActiveTab('telemetry')}
-                className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wider transition-all ${
-                  activeTab === 'telemetry'
-                    ? 'bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 shadow-sm'
-                    : 'bg-ms-card hover:bg-ms-elevated text-ms-muted border border-ms-border'
-                }`}
-              >
-                <Gauge className="w-3.5 h-3.5 text-cyan-400" />
-                <span>System Telemetry</span>
-              </button>
-            )}
-
-            {isMemMgmtInstalled && isMemMgmtEnabled && (
-              <button
-                type="button"
-                data-testid="tab-memory-mgmt"
-                onClick={() => setActiveTab('memory')}
-                className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wider transition-all ${
-                  activeTab === 'memory'
-                    ? 'bg-violet-500/20 border border-violet-500/40 text-violet-300 shadow-sm'
-                    : 'bg-ms-card hover:bg-ms-elevated text-ms-muted border border-ms-border'
-                }`}
-              >
-                <Sparkles className="w-3.5 h-3.5 text-violet-400" />
-                <span>Memory Management</span>
-              </button>
+          <div className="flex items-center gap-2">
+            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-violet-500/10 text-violet-400 border border-violet-500/20">
+              Low-End PC Optimizer
+            </span>
+            {isGameRunningNow && (
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20 flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                Active Game: {activeGameTitle}
+              </span>
             )}
           </div>
-
-          <h1 className="text-3xl font-extrabold tracking-tight text-ms-text">
-            {activeTab === 'memory' ? 'Memory Management & Optimization' : 'Performance & Resources'}
+          <h1 className="text-3xl font-extrabold tracking-tight text-ms-text mt-1">
+            {activeTab === 'memory' ? 'Memory Management' : 'Performance & Resources'}
           </h1>
           <p className="text-xs text-ms-muted mt-1">
             {activeTab === 'memory'
-              ? 'Safe, lightweight Windows memory optimizer designed for gaming PCs (zero background polling when inactive)'
-              : 'Real-time Windows telemetry with zero background impact (polls only while this tab is active)'}
+              ? 'Mem Reduct memory cleaning: Working sets, system caches, and standby list reduction.'
+              : 'Zero-overhead hardware metrics and lightweight background monitoring.'}
           </p>
         </div>
 
-        {/* Polling Interval Selector */}
-        <div className="flex items-center gap-2.5 self-start sm:self-auto">
-          <span className="text-xs text-ms-muted font-medium flex items-center gap-1.5">
-            <Clock className="w-3.5 h-3.5" /> Refresh:
-          </span>
-          {([3000, 5000, 10000] as const).map((ms) => (
+        {/* Tab Switcher Pills */}
+        <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-ms-card border border-ms-border">
+          {isPerfMonitorInstalled && (
             <button
-              key={ms}
               type="button"
-              data-testid={`perf-interval-${ms}`}
-              onClick={() => {
-                setIntervalChoice(ms);
-                if (activeTab === 'telemetry') {
-                  void setPerformanceMonitoringActive(true, ms);
-                }
-              }}
-              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
-                intervalChoice === ms
-                  ? activeTab === 'memory'
-                    ? 'bg-violet-600 text-white shadow-sm'
-                    : 'bg-cyan-600 text-white shadow-sm'
-                  : 'bg-ms-card hover:bg-ms-elevated text-ms-muted border border-ms-border'
+              data-testid="tab-telemetry"
+              onClick={() => setActiveTab('telemetry')}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+                activeTab === 'telemetry'
+                  ? 'bg-violet-600 text-white shadow-sm'
+                  : 'text-ms-muted hover:text-ms-text'
               }`}
             >
-              {ms / 1000}s
+              <Activity className="w-3.5 h-3.5" />
+              <span>Telemetry</span>
             </button>
-          ))}
+          )}
+
+          {isMemMgmtInstalled && (
+            <button
+              type="button"
+              data-testid="tab-memory"
+              onClick={() => setActiveTab('memory')}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+                activeTab === 'memory'
+                  ? 'bg-violet-600 text-white shadow-sm'
+                  : 'text-ms-muted hover:text-ms-text'
+              }`}
+            >
+              <HardDrive className="w-3.5 h-3.5" />
+              <span>Memory Cleaner</span>
+            </button>
+          )}
         </div>
       </div>
 
-      {/* ========================================================== */}
-      {/* TAB 1: SYSTEM TELEMETRY VIEW                               */}
-      {/* ========================================================== */}
+      {/* TAB 1: TELEMETRY & RESOURCES */}
       {activeTab === 'telemetry' && (
-        <>
-          {/* Mode Banner */}
-          <div className="p-4 rounded-2xl bg-ms-card border border-ms-border/80 flex items-center justify-between gap-4 shadow-sm">
-            <div className="flex items-center gap-3">
-              <div
-                className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
-                  perfMode === 'low-end'
-                    ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
-                    : perfMode === 'game-aware'
-                    ? 'bg-cyan-500/15 text-cyan-400 border border-cyan-500/30'
-                    : 'bg-violet-500/15 text-violet-400 border border-violet-500/30'
-                }`}
-              >
-                <Zap className="w-5 h-5" />
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-bold text-ms-text">
-                    Current Mode:{' '}
-                    <span className="capitalize text-violet-300">
-                      {perfMode === 'low-end'
-                        ? 'Low-End PC Mode'
-                        : perfMode === 'game-aware'
-                        ? 'Game-Aware Active'
-                        : 'Standard Performance'}
-                    </span>
-                  </span>
-                  <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">
-                    0% FPS Impact
-                  </span>
-                </div>
-                <p className="text-xs text-ms-muted mt-0.5">
-                  {isGameRunningNow
-                    ? `Active Game Running: ${activeGameTitle} (background polling throttled)`
-                    : 'No games currently active. Normal desktop performance profile active.'}
-                </p>
-              </div>
-            </div>
-
-            <div className="text-right hidden sm:block shrink-0">
-              <div className="text-xs text-ms-muted">Live Polling Status</div>
-              <div className="text-xs font-bold text-emerald-400 flex items-center gap-1.5 justify-end mt-0.5">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" /> Active
-              </div>
-            </div>
-          </div>
-
-          {/* Primary Metrics Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {/* System CPU */}
-            <div className="p-6 rounded-3xl bg-ms-card border border-ms-border space-y-3 shadow-sm">
-              <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-ms-muted">
-                <span className="flex items-center gap-1.5">
-                  <Cpu className="w-4 h-4 text-violet-400" />
-                  <span>System CPU</span>
-                </span>
-                <span className="text-violet-400 font-extrabold">{currentCpu}%</span>
-              </div>
-              <div className="text-3xl font-extrabold text-ms-text tracking-tight tabular-nums">
-                {currentCpu.toFixed(1)}%
-              </div>
-              <div className="w-full h-2 bg-ms-elevated rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-gradient-to-r from-violet-600 to-cyan-400 transition-all duration-300"
-                  style={{ width: `${Math.min(100, currentCpu)}%` }}
-                />
-              </div>
-            </div>
-
-            {/* System RAM */}
-            <div className="p-6 rounded-3xl bg-ms-card border border-ms-border space-y-3 shadow-sm">
-              <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-ms-muted">
-                <span className="flex items-center gap-1.5">
-                  <HardDrive className="w-4 h-4 text-cyan-400" />
-                  <span>System RAM</span>
-                </span>
-                <span className="text-cyan-400 font-extrabold">{currentRamPercent}%</span>
-              </div>
-              <div className="text-3xl font-extrabold text-ms-text tracking-tight tabular-nums">
-                {(currentRamUsed / 1024).toFixed(1)}{' '}
-                <span className="text-sm font-normal text-ms-muted">/ {(currentRamTotal / 1024).toFixed(1)} GB</span>
-              </div>
-              <div className="w-full h-2 bg-ms-elevated rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-cyan-400 transition-all duration-300"
-                  style={{ width: `${Math.min(100, currentRamPercent)}%` }}
-                />
-              </div>
-            </div>
-
-            {/* MaSwitch CPU */}
-            <div className="p-6 rounded-3xl bg-ms-card border border-ms-border space-y-3 shadow-sm">
-              <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-ms-muted">
-                <span className="flex items-center gap-1.5">
-                  <Activity className="w-4 h-4 text-emerald-400" />
-                  <span>MaSwitch CPU</span>
-                </span>
-                <span className="text-emerald-400 font-extrabold">{maSwitchCpu}%</span>
-              </div>
-              <div className="text-3xl font-extrabold text-ms-text tracking-tight tabular-nums">
-                {maSwitchCpu.toFixed(2)}%
-              </div>
-              <div className="text-xs text-ms-muted">Ultra-low background usage</div>
-            </div>
-
-            {/* MaSwitch RAM */}
-            <div className="p-6 rounded-3xl bg-ms-card border border-ms-border space-y-3 shadow-sm">
-              <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-ms-muted">
-                <span className="flex items-center gap-1.5">
-                  <Database className="w-4 h-4 text-amber-400" />
-                  <span>MaSwitch RAM</span>
-                </span>
-                <span className="text-amber-400 font-extrabold">{maSwitchRam} MB</span>
-              </div>
-              <div className="text-3xl font-extrabold text-ms-text tracking-tight tabular-nums">
-                {maSwitchRam.toFixed(1)}{' '}
-                <span className="text-sm font-normal text-ms-muted">MB</span>
-              </div>
-              <div className="text-xs text-ms-muted">Working set across processes</div>
-            </div>
-          </div>
-
-          {/* GPU & Temperature Metrics */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* GPU Usage Card */}
-            <div className="p-6 rounded-3xl bg-ms-card border border-ms-border space-y-3 shadow-sm">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold uppercase tracking-wider text-ms-muted flex items-center gap-2">
-                  <Sliders className="w-4 h-4 text-violet-400" />
-                  <span>DirectX / GPU Utilization</span>
-                </span>
-                <span className="text-xs font-semibold text-ms-muted">Hardware Counter</span>
-              </div>
-              <div className="flex items-baseline gap-3">
-                {performanceMetrics?.gpuPercent !== null ? (
-                  <span className="text-3xl font-extrabold text-ms-text">
-                    {performanceMetrics?.gpuPercent}%
-                  </span>
-                ) : (
-                  <div className="flex items-center gap-2 text-ms-muted">
-                    <AlertCircle className="w-4 h-4 text-ms-muted/70" />
-                    <span className="text-base font-bold">Unsupported on Current Hardware</span>
-                  </div>
-                )}
-              </div>
-              <p className="text-xs text-ms-muted">
-                MaSwitch refuses to install intrusive kernel drivers or heavy background polling to fabricate GPU metrics.
-              </p>
-            </div>
-
-            {/* Temperature Card */}
-            <div className="p-6 rounded-3xl bg-ms-card border border-ms-border space-y-3 shadow-sm">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold uppercase tracking-wider text-ms-muted flex items-center gap-2">
-                  <Thermometer className="w-4 h-4 text-rose-400" />
-                  <span>Hardware Temperature</span>
-                </span>
-                <span className="text-xs font-semibold text-ms-muted">Thermal Sensor</span>
-              </div>
-              <div className="flex items-baseline gap-3">
-                {performanceMetrics?.temperatureCelsius !== null ? (
-                  <span className="text-3xl font-extrabold text-ms-text">
-                    {performanceMetrics?.temperatureCelsius}°C
-                  </span>
-                ) : (
-                  <div className="flex items-center gap-2 text-ms-muted">
-                    <AlertCircle className="w-4 h-4 text-ms-muted/70" />
-                    <span className="text-base font-bold">Unsupported on Current Interface</span>
-                  </div>
-                )}
-              </div>
-              <p className="text-xs text-ms-muted">
-                Thermal monitoring is suppressed to avoid WMI query overhead that can cause micro-stuttering in games.
-              </p>
-            </div>
-          </div>
-
-          {/* Rolling CPU History Chart */}
-          <div className="p-6 rounded-3xl bg-ms-card border border-ms-border space-y-4 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-bold text-ms-text flex items-center gap-2">
-                  <Activity className="w-4 h-4 text-cyan-400" />
-                  <span>Rolling CPU History</span>
-                </h3>
-                <p className="text-xs text-ms-muted mt-0.5">
-                  Recent CPU activity samples captured in memory during active view
-                </p>
-              </div>
-              <span className="text-xs text-ms-muted font-medium tabular-nums">
-                {metricsHistory.length} samples
-              </span>
-            </div>
-
-            <div className="h-32 flex items-end gap-1.5 pt-4 border-b border-ms-border/60">
-              {metricsHistory.map((pt, i) => {
-                const h = Math.max(4, Math.min(100, pt.cpuPercent));
-                return (
-                  <div
-                    key={pt.timestamp || i}
-                    title={`CPU: ${pt.cpuPercent.toFixed(1)}%`}
-                    className="flex-1 bg-gradient-to-t from-violet-600 to-cyan-400 rounded-t-sm transition-all duration-200 hover:brightness-125"
-                    style={{ height: `${h}%` }}
-                  />
-                );
-              })}
-
-              {metricsHistory.length === 0 && (
-                <div className="w-full text-center text-xs text-ms-muted py-8">
-                  Collecting in-memory samples...
-                </div>
-              )}
-            </div>
-          </div>
-        </>
-      )}
-
-      {/* ========================================================== */}
-      {/* TAB 2: MEMORY MANAGEMENT VIEW                              */}
-      {/* ========================================================== */}
-      {activeTab === 'memory' && (
         <div className="space-y-6">
-          {/* Feature Gating Check */}
-          {(!isMemMgmtInstalled || !isMemMgmtEnabled) ? (
+          {!isPerfMonitorInstalled ? (
             <div className="p-8 rounded-3xl bg-ms-card border border-ms-border text-center space-y-4">
-              <div className="w-12 h-12 rounded-2xl bg-violet-500/10 border border-violet-500/20 text-violet-400 flex items-center justify-center mx-auto">
-                <Sparkles className="w-6 h-6" />
+              <Activity className="w-10 h-10 text-ms-muted mx-auto" />
+              <div className="space-y-1">
+                <h3 className="text-base font-bold text-ms-text">Performance Monitor Not Installed</h3>
+                <p className="text-xs text-ms-muted max-w-md mx-auto">
+                  The lightweight Performance Monitor component is optional and not included in your current setup.
+                </p>
               </div>
-              <h2 className="text-lg font-bold text-ms-text">Memory Management is Disabled</h2>
-              <p className="text-xs text-ms-muted max-w-md mx-auto">
-                Memory Management is an optional component designed for low-end PCs. You can enable it in Settings or run the MaSwitch installer to manage optional components.
-              </p>
               <button
                 type="button"
                 onClick={() => setActiveSection('settings')}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-xs font-semibold shadow-sm transition-all"
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold bg-violet-600 hover:bg-violet-500 text-white"
               >
-                <span>Go to Settings</span>
+                <span>Manage Optional Components</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ) : !isPerfMonitorEnabled ? (
+            <div className="p-8 rounded-3xl bg-ms-card border border-ms-border text-center space-y-4">
+              <Activity className="w-10 h-10 text-ms-muted mx-auto" />
+              <div className="space-y-1">
+                <h3 className="text-base font-bold text-ms-text">Performance Monitor is Disabled</h3>
+                <p className="text-xs text-ms-muted max-w-md mx-auto">
+                  You disabled this feature to maximize system resources and game FPS.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveSection('settings')}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold bg-violet-600 hover:bg-violet-500 text-white"
+              >
+                <span>Enable in Settings</span>
                 <ArrowRight className="w-3.5 h-3.5" />
               </button>
             </div>
           ) : (
             <>
-              {/* Gaming Safety Warning Banner */}
-              {isGameRunningNow && (
-                <div
-                  data-testid="active-game-warning"
-                  className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-between gap-4"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center shrink-0">
-                      <AlertTriangle className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <div className="text-xs font-bold text-amber-300">
-                        Active Game Detected: {activeGameTitle}
-                      </div>
-                      <div className="text-[11px] text-amber-400/80 mt-0.5">
-                        Disruptive memory cleanup is disabled to protect game process stability, prevent anti-cheat triggers, and avoid FPS drops.
-                      </div>
-                    </div>
-                  </div>
-                  <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 shrink-0">
-                    Safety Lock Active
-                  </span>
-                </div>
-              )}
-
-              {/* Memory Metrics Grid (Violet Accents) */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-                {/* Total RAM */}
-                <div
-                  data-testid="memory-metric-total"
-                  className="p-5 rounded-2xl bg-ms-card border border-violet-500/20 space-y-2 shadow-sm"
-                >
+              {/* Telemetry Metrics Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div data-testid="metric-card-cpu" className="p-5 rounded-2xl bg-ms-card border border-ms-border space-y-3 shadow-sm">
                   <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-ms-muted">
                     <span className="flex items-center gap-1.5">
-                      <HardDrive className="w-3.5 h-3.5 text-violet-400" />
-                      <span>Total RAM</span>
+                      <Cpu className="w-3.5 h-3.5 text-violet-400" />
+                      <span>CPU Utilization</span>
                     </span>
+                    <span className="text-ms-text font-mono tabular-nums">{currentCpu.toFixed(1)}%</span>
                   </div>
-                  <div className="text-2xl font-black text-ms-text tracking-tight tabular-nums">
-                    {memoryMetrics ? (memoryMetrics.totalPhysicalMb / 1024).toFixed(1) : '--'}
-                    <span className="text-xs font-normal text-ms-muted ml-1">GB</span>
+                  <div className="text-3xl font-black text-ms-text tracking-tight tabular-nums">
+                    {currentCpu.toFixed(0)}%
                   </div>
-                  <div className="text-[11px] text-ms-muted">Installed Physical RAM</div>
-                </div>
-
-                {/* Available RAM */}
-                <div
-                  data-testid="memory-metric-available"
-                  className="p-5 rounded-2xl bg-ms-card border border-emerald-500/20 space-y-2 shadow-sm"
-                >
-                  <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-ms-muted">
-                    <span className="flex items-center gap-1.5">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                      <span>Available</span>
-                    </span>
-                    <span className="text-emerald-400 font-extrabold text-[11px]">
-                      {memoryMetrics ? (100 - memoryMetrics.utilizationPercent).toFixed(0) : '--'}%
-                    </span>
-                  </div>
-                  <div className="text-2xl font-black text-ms-text tracking-tight tabular-nums">
-                    {memoryMetrics ? (memoryMetrics.availablePhysicalMb / 1024).toFixed(1) : '--'}
-                    <span className="text-xs font-normal text-ms-muted ml-1">GB</span>
-                  </div>
-                  <div className="text-[11px] text-ms-muted">Free for games & apps</div>
-                </div>
-
-                {/* Used RAM */}
-                <div
-                  data-testid="memory-metric-used"
-                  className="p-5 rounded-2xl bg-ms-card border border-violet-500/20 space-y-2 shadow-sm"
-                >
-                  <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-ms-muted">
-                    <span className="flex items-center gap-1.5">
-                      <Activity className="w-3.5 h-3.5 text-violet-400" />
-                      <span>Used RAM</span>
-                    </span>
-                    <span className="text-violet-400 font-extrabold text-[11px]">
-                      {memoryMetrics ? memoryMetrics.utilizationPercent : '--'}%
-                    </span>
-                  </div>
-                  <div className="text-2xl font-black text-ms-text tracking-tight tabular-nums">
-                    {memoryMetrics ? (memoryMetrics.usedPhysicalMb / 1024).toFixed(1) : '--'}
-                    <span className="text-xs font-normal text-ms-muted ml-1">GB</span>
-                  </div>
-                  <div className="text-[11px] text-ms-muted">Allocated by OS & tasks</div>
-                </div>
-
-                {/* Memory Load */}
-                <div className="p-5 rounded-2xl bg-ms-card border border-violet-500/20 space-y-2 shadow-sm">
-                  <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-ms-muted">
-                    <span className="flex items-center gap-1.5">
-                      <Zap className="w-3.5 h-3.5 text-amber-400" />
-                      <span>Utilization</span>
-                    </span>
-                  </div>
-                  <div className="text-2xl font-black text-ms-text tracking-tight tabular-nums">
-                    {memoryMetrics ? `${memoryMetrics.utilizationPercent}%` : '--'}
-                  </div>
-                  <div className="w-full h-1.5 bg-ms-elevated rounded-full overflow-hidden mt-1">
+                  <div className="w-full h-1.5 bg-ms-elevated rounded-full overflow-hidden">
                     <div
                       className={`h-full transition-all duration-300 ${
-                        (memoryMetrics?.utilizationPercent ?? 0) > 85
-                          ? 'bg-rose-500'
-                          : (memoryMetrics?.utilizationPercent ?? 0) > 70
-                          ? 'bg-amber-400'
-                          : 'bg-violet-500'
+                        currentCpu > 85 ? 'bg-rose-500' : currentCpu > 70 ? 'bg-amber-400' : 'bg-violet-500'
                       }`}
-                      style={{ width: `${Math.min(100, memoryMetrics?.utilizationPercent ?? 0)}%` }}
+                      style={{ width: `${Math.min(100, currentCpu)}%` }}
                     />
                   </div>
                 </div>
 
-                {/* MaSwitch RAM */}
-                <div
-                  data-testid="memory-metric-maswitch"
-                  className="p-5 rounded-2xl bg-ms-card border border-violet-500/20 space-y-2 shadow-sm"
-                >
+                <div data-testid="metric-card-ram" className="p-5 rounded-2xl bg-ms-card border border-ms-border space-y-3 shadow-sm">
                   <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-ms-muted">
                     <span className="flex items-center gap-1.5">
-                      <Database className="w-3.5 h-3.5 text-violet-400" />
+                      <HardDrive className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>System RAM</span>
+                    </span>
+                    <span className="text-ms-text font-mono tabular-nums">{currentRamPercent.toFixed(1)}%</span>
+                  </div>
+                  <div className="text-3xl font-black text-ms-text tracking-tight tabular-nums">
+                    {(currentRamUsed / 1024).toFixed(1)}
+                    <span className="text-sm font-normal text-ms-muted ml-1">/ {(currentRamTotal / 1024).toFixed(1)} GB</span>
+                  </div>
+                  <div className="w-full h-1.5 bg-ms-elevated rounded-full overflow-hidden">
+                    <div
+                      className={`h-full transition-all duration-300 ${
+                        currentRamPercent > 85 ? 'bg-rose-500' : currentRamPercent > 70 ? 'bg-amber-400' : 'bg-emerald-500'
+                      }`}
+                      style={{ width: `${Math.min(100, currentRamPercent)}%` }}
+                    />
+                  </div>
+                </div>
+
+                <div data-testid="metric-card-maswitch-cpu" className="p-5 rounded-2xl bg-ms-card border border-ms-border space-y-3 shadow-sm">
+                  <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-ms-muted">
+                    <span className="flex items-center gap-1.5">
+                      <Zap className="w-3.5 h-3.5 text-amber-400" />
+                      <span>MaSwitch CPU</span>
+                    </span>
+                  </div>
+                  <div className="text-3xl font-black text-ms-text tracking-tight tabular-nums">
+                    {maSwitchCpu.toFixed(1)}%
+                  </div>
+                  <div className="text-[11px] text-ms-muted">Ultra-light background thread</div>
+                </div>
+
+                <div data-testid="metric-card-maswitch-ram" className="p-5 rounded-2xl bg-ms-card border border-ms-border space-y-3 shadow-sm">
+                  <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-ms-muted">
+                    <span className="flex items-center gap-1.5">
+                      <Database className="w-3.5 h-3.5 text-sky-400" />
+                      <span>MaSwitch RAM</span>
+                    </span>
+                  </div>
+                  <div className="text-3xl font-black text-ms-text tracking-tight tabular-nums">
+                    {maSwitchRam.toFixed(0)}
+                    <span className="text-sm font-normal text-ms-muted ml-1">MB</span>
+                  </div>
+                  <div className="text-[11px] text-ms-muted">Zero FPS interference</div>
+                </div>
+              </div>
+
+              {/* Sparkline History Visualizer */}
+              <div className="p-6 rounded-3xl bg-ms-card border border-ms-border space-y-4 shadow-sm">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <h3 className="text-sm font-bold text-ms-text">Activity Sparkline (Last 60s)</h3>
+                    <p className="text-xs text-ms-muted">Discrete snapshots taken only when viewer is active</p>
+                  </div>
+                  <div className="flex items-center gap-4 text-xs font-semibold">
+                    <span className="flex items-center gap-1.5 text-violet-400">
+                      <span className="w-2.5 h-2.5 rounded-sm bg-violet-500" /> CPU
+                    </span>
+                    <span className="flex items-center gap-1.5 text-emerald-400">
+                      <span className="w-2.5 h-2.5 rounded-sm bg-emerald-500" /> RAM
+                    </span>
+                  </div>
+                </div>
+
+                <div className="h-28 flex items-end gap-1.5 pt-4 px-2 bg-ms-elevated/20 rounded-2xl border border-ms-border/40">
+                  {metricsHistory.length === 0 ? (
+                    <div className="w-full text-center text-xs text-ms-muted my-auto">Collecting telemetry samples...</div>
+                  ) : (
+                    metricsHistory.slice(-24).map((pt, idx) => (
+                      <div key={idx} className="flex-1 flex flex-col justify-end items-center gap-1 h-full group relative">
+                        <div
+                          className="w-full bg-violet-500/70 rounded-t-sm transition-all duration-300 group-hover:bg-violet-400"
+                          style={{ height: `${Math.max(4, pt.cpuPercent)}%` }}
+                        />
+                        <div
+                          className="w-full bg-emerald-500/70 rounded-t-sm transition-all duration-300 group-hover:bg-emerald-400"
+                          style={{ height: `${Math.max(4, pt.ramPercent)}%` }}
+                        />
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* TAB 2: MEMORY MANAGEMENT (MEM REDUCT INTEGRATION) */}
+      {activeTab === 'memory' && (
+        <div className="space-y-6">
+          {!isMemMgmtInstalled ? (
+            <div className="p-8 rounded-3xl bg-ms-card border border-ms-border text-center space-y-4">
+              <HardDrive className="w-10 h-10 text-ms-muted mx-auto" />
+              <div className="space-y-1">
+                <h3 className="text-base font-bold text-ms-text">Memory Management Not Installed</h3>
+                <p className="text-xs text-ms-muted max-w-md mx-auto">
+                  The optional Memory Management component (inspired by Mem Reduct) is not installed in this setup.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveSection('settings')}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold bg-violet-600 hover:bg-violet-500 text-white"
+              >
+                <span>Manage Optional Components</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ) : !isMemMgmtEnabled ? (
+            <div className="p-8 rounded-3xl bg-ms-card border border-ms-border text-center space-y-4">
+              <HardDrive className="w-10 h-10 text-ms-muted mx-auto" />
+              <div className="space-y-1">
+                <h3 className="text-base font-bold text-ms-text">Memory Management is Disabled</h3>
+                <p className="text-xs text-ms-muted max-w-md mx-auto">
+                  Enable Memory Management in Settings to activate Mem Reduct-style physical RAM cleaning.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveSection('settings')}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold bg-violet-600 hover:bg-violet-500 text-white"
+              >
+                <span>Enable in Settings</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ) : (
+            <>
+              {/* Active Game Protection Warning Banner */}
+              {isGameRunningNow && (
+                <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center gap-3 text-amber-200 text-xs">
+                  <ShieldCheck className="w-5 h-5 text-amber-400 shrink-0" />
+                  <div>
+                    <span className="font-bold">Active Game Protection: </span>
+                    Memory cleanup is safely locked while &quot;{activeGameTitle}&quot; is running to preserve game FPS, protect against memory paging stalls, and prevent anti-cheat interruptions.
+                  </div>
+                </div>
+              )}
+
+              {/* Feedback Alert Banner */}
+              {cleanupFeedback && (
+                <div
+                  className={`p-4 rounded-2xl border flex items-center justify-between gap-3 text-xs ${
+                    cleanupFeedback.status === 'success'
+                      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-200'
+                      : cleanupFeedback.status === 'cancelled'
+                      ? 'bg-amber-500/10 border-amber-500/30 text-amber-200'
+                      : 'bg-rose-500/10 border-rose-500/30 text-rose-200'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    {cleanupFeedback.status === 'success' ? (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                    ) : cleanupFeedback.status === 'cancelled' ? (
+                      <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                    ) : (
+                      <Info className="w-4 h-4 text-rose-400 shrink-0" />
+                    )}
+                    <span>{cleanupFeedback.message}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setCleanupFeedback(null)}
+                    className="text-xs opacity-60 hover:opacity-100"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              )}
+
+              {/* Live Physical RAM Usage Visualization Bar */}
+              <div className="p-6 rounded-3xl bg-ms-card border border-violet-500/20 space-y-4 shadow-sm">
+                <div className="flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2">
+                    <HardDrive className="w-4 h-4 text-violet-400" />
+                    <span className="font-bold text-ms-text text-sm">Physical Memory Load</span>
+                    <span className="text-[10px] text-ms-muted uppercase tracking-wider">
+                      (GlobalMemoryStatusEx)
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs text-ms-muted">
+                      Used: <strong className="text-ms-text tabular-nums">{memoryMetrics ? (memoryMetrics.usedPhysicalMb / 1024).toFixed(1) : '--'} GB</strong> of{' '}
+                      <strong className="text-ms-text tabular-nums">{memoryMetrics ? (memoryMetrics.totalPhysicalMb / 1024).toFixed(1) : '--'} GB</strong>
+                    </span>
+                    <span
+                      className={`px-2.5 py-0.5 rounded-full text-xs font-black tabular-nums ${
+                        (memoryMetrics?.utilizationPercent ?? 0) >= 85
+                          ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                          : (memoryMetrics?.utilizationPercent ?? 0) >= 70
+                          ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                          : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                      }`}
+                    >
+                      {memoryMetrics ? memoryMetrics.utilizationPercent.toFixed(1) : '--'}%
+                    </span>
+                  </div>
+                </div>
+
+                {/* Progress bar gauge */}
+                <div className="w-full h-3.5 bg-ms-elevated/60 rounded-full overflow-hidden p-0.5 border border-ms-border/40">
+                  <div
+                    className={`h-full rounded-full transition-all duration-500 ${
+                      (memoryMetrics?.utilizationPercent ?? 0) >= 85
+                        ? 'bg-gradient-to-r from-amber-500 to-rose-500'
+                        : (memoryMetrics?.utilizationPercent ?? 0) >= 70
+                        ? 'bg-gradient-to-r from-violet-500 to-amber-500'
+                        : 'bg-gradient-to-r from-violet-600 to-emerald-400'
+                    }`}
+                    style={{ width: `${Math.min(100, Math.max(1, memoryMetrics?.utilizationPercent ?? 0))}%` }}
+                  />
+                </div>
+              </div>
+
+              {/* Statistics Cards (Accurate Measurements) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                {/* Physical Memory Used */}
+                <div data-testid="memory-metric-used" className="p-5 rounded-2xl bg-ms-card border border-violet-500/20 space-y-2 shadow-sm">
+                  <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-ms-muted">
+                    <span className="flex items-center gap-1.5">
+                      <Activity className="w-3.5 h-3.5 text-violet-400" />
+                      <span>Physical In Use</span>
+                    </span>
+                    <span className="text-violet-300 font-extrabold text-[11px] tabular-nums">
+                      {memoryMetrics ? `${memoryMetrics.utilizationPercent}%` : '--'}
+                    </span>
+                  </div>
+                  <div className="text-2xl font-black text-ms-text tracking-tight tabular-nums">
+                    {memoryMetrics ? (memoryMetrics.usedPhysicalMb / 1024).toFixed(2) : '--'}
+                    <span className="text-xs font-normal text-ms-muted ml-1">GB</span>
+                  </div>
+                  <div className="text-[11px] text-ms-muted">Total: {memoryMetrics ? (memoryMetrics.totalPhysicalMb / 1024).toFixed(1) : '--'} GB</div>
+                </div>
+
+                {/* Available Physical Memory */}
+                <div data-testid="memory-metric-available" className="p-5 rounded-2xl bg-ms-card border border-emerald-500/20 space-y-2 shadow-sm">
+                  <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-ms-muted">
+                    <span className="flex items-center gap-1.5">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Available RAM</span>
+                    </span>
+                    <span className="text-emerald-400 font-extrabold text-[11px] tabular-nums">
+                      {memoryMetrics ? (100 - memoryMetrics.utilizationPercent).toFixed(1) : '--'}%
+                    </span>
+                  </div>
+                  <div className="text-2xl font-black text-ms-text tracking-tight tabular-nums">
+                    {memoryMetrics ? (memoryMetrics.availablePhysicalMb / 1024).toFixed(2) : '--'}
+                    <span className="text-xs font-normal text-ms-muted ml-1">GB</span>
+                  </div>
+                  <div className="text-[11px] text-ms-muted">Instant headroom for games</div>
+                </div>
+
+                {/* MaSwitch RAM Footprint */}
+                <div data-testid="memory-metric-maswitch" className="p-5 rounded-2xl bg-ms-card border border-violet-500/20 space-y-2 shadow-sm">
+                  <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-ms-muted">
+                    <span className="flex items-center gap-1.5">
+                      <Database className="w-3.5 h-3.5 text-sky-400" />
                       <span>MaSwitch RAM</span>
                     </span>
                   </div>
@@ -599,115 +567,248 @@ export const PerformancePage: React.FC = () => {
                     {memoryMetrics ? memoryMetrics.maSwitchWorkingSetMb.toFixed(1) : '--'}
                     <span className="text-xs font-normal text-ms-muted ml-1">MB</span>
                   </div>
-                  <div className="text-[11px] text-ms-muted">App process working set</div>
+                  <div className="text-[11px] text-ms-muted">Working set footprint</div>
                 </div>
-              </div>
 
-              {/* Memory Action Bar */}
-              <div className="p-6 rounded-3xl bg-ms-card border border-violet-500/30 flex flex-col md:flex-row md:items-center justify-between gap-5 shadow-sm">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <Sparkles className="w-4 h-4 text-violet-400" />
-                    <h2 className="text-base font-bold text-ms-text">Quick Memory Optimization</h2>
-                    <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-violet-500/20 text-violet-300 border border-violet-500/30">
-                      Standard & Advanced Modes
+                {/* Last Cleanup Reclaimed */}
+                <div data-testid="memory-metric-reclaimed" className="p-5 rounded-2xl bg-ms-card border border-violet-500/20 space-y-2 shadow-sm">
+                  <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-ms-muted">
+                    <span className="flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-violet-400" />
+                      <span>Last Reclaimed</span>
                     </span>
                   </div>
-                  <p className="text-xs text-ms-muted max-w-xl">
-                    Trims background working sets, frees dormant memory caches, and safely releases RAM locked by non-essential desktop applications before launching your games.
-                  </p>
-                </div>
-
-                <div className="flex items-center gap-3">
-                  <button
-                    type="button"
-                    data-testid="btn-clean-memory"
-                    disabled={isCleaningMemory || Boolean(isGameRunningNow)}
-                    onClick={handleOpenCleanupModal}
-                    className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-xs shadow-md transition-all ${
-                      isCleaningMemory || isGameRunningNow
-                        ? 'bg-ms-elevated text-ms-muted cursor-not-allowed opacity-60'
-                        : 'bg-violet-600 hover:bg-violet-500 text-white active:scale-95'
-                    }`}
-                  >
-                    <Sparkles className={`w-4 h-4 ${isCleaningMemory ? 'animate-spin' : ''}`} />
-                    <span>{isCleaningMemory ? 'Optimizing Memory...' : 'Clean Memory'}</span>
-                  </button>
+                  <div className="text-2xl font-black text-ms-text tracking-tight tabular-nums">
+                    {memoryMetrics?.lastCleanupFreedMb !== null && memoryMetrics?.lastCleanupFreedMb !== undefined
+                      ? `${memoryMetrics.lastCleanupFreedMb.toFixed(0)} MB`
+                      : '--'}
+                  </div>
+                  <div className="text-[11px] text-ms-muted truncate">
+                    {memoryMetrics?.lastCleanupBeforeMb && memoryMetrics?.lastCleanupAfterMb
+                      ? `Before: ${memoryMetrics.lastCleanupBeforeMb} MB → After: ${memoryMetrics.lastCleanupAfterMb} MB`
+                      : 'No cleanups run yet'}
+                  </div>
                 </div>
               </div>
 
-              {/* Last Cleanup Banner (if any) */}
-              {lastCleanupResult && (
-                <div className="p-4 rounded-2xl bg-violet-950/20 border border-violet-500/30 flex items-center justify-between gap-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-violet-500/20 text-violet-400 flex items-center justify-center shrink-0">
-                      <CheckCircle2 className="w-4 h-4" />
+              {/* Memory Cleanup Command Center */}
+              <div className="p-6 rounded-3xl bg-ms-card border border-violet-500/30 space-y-6 shadow-sm">
+                {/* Header with Mode Toggle and Clean Button */}
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-5 border-b border-ms-border/50 pb-5">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-violet-400" />
+                      <h2 className="text-base font-bold text-ms-text">Mem Reduct Memory Cleaning</h2>
+                      <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-violet-500/20 text-violet-300 border border-violet-500/30">
+                        Zero App Closures
+                      </span>
                     </div>
-                    <div className="space-y-0.5">
-                      <div className="text-xs font-bold text-violet-200">
-                        Last Cleanup: Freed {lastCleanupResult.freedMb.toFixed(1)} MB RAM
-                      </div>
-                      <div className="text-[11px] text-ms-muted">
-                        Before: {(lastCleanupResult.ramBeforeMb / 1024).toFixed(1)} GB → After:{' '}
-                        {(lastCleanupResult.ramAfterMb / 1024).toFixed(1)} GB ({lastCleanupResult.message})
-                      </div>
-                    </div>
-                  </div>
-                  <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-violet-500/20 text-violet-300 border border-violet-500/30">
-                    Mode: {lastCleanupResult.mode}
-                  </span>
-                </div>
-              )}
-
-              {/* Cleanable Background Apps Table */}
-              <div className="p-6 rounded-3xl bg-ms-card border border-ms-border space-y-4 shadow-sm">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="text-sm font-bold text-ms-text flex items-center gap-2">
-                      <Layers className="w-4 h-4 text-violet-400" />
-                      <span>Non-Essential Background Applications</span>
-                    </h3>
-                    <p className="text-xs text-ms-muted mt-0.5">
-                      Candidate desktop apps that consume significant memory (never closed automatically without your approval)
+                    <p className="text-xs text-ms-muted max-w-xl">
+                      Purges memory lists and working sets using Windows NT memory management APIs without terminating user applications or modifying game files.
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => void fetchCleanableApps()}
-                    className="text-xs text-violet-400 hover:text-violet-300 font-semibold flex items-center gap-1"
-                  >
-                    <RotateCcw className="w-3 h-3" /> Refresh Candidates
-                  </button>
+
+                  <div className="flex items-center gap-3 shrink-0">
+                    {/* Clean Memory Button */}
+                    <button
+                      type="button"
+                      data-testid="btn-clean-memory"
+                      disabled={isCleaningMemory || Boolean(isGameRunningNow)}
+                      onClick={handleOpenCleanupModal}
+                      className={`inline-flex items-center gap-2 px-6 py-3 rounded-xl font-bold text-xs shadow-md transition-all ${
+                        isCleaningMemory || isGameRunningNow
+                          ? 'bg-ms-elevated text-ms-muted cursor-not-allowed opacity-60'
+                          : 'bg-violet-600 hover:bg-violet-500 text-white active:scale-95'
+                      }`}
+                    >
+                      <Sparkles className={`w-4 h-4 ${isCleaningMemory ? 'animate-spin' : ''}`} />
+                      <span>{isCleaningMemory ? 'Cleaning Memory...' : 'Clean Memory'}</span>
+                    </button>
+                  </div>
                 </div>
 
-                {cleanableApps.length === 0 ? (
-                  <div className="p-6 text-center text-xs text-ms-muted bg-ms-elevated/20 rounded-2xl">
-                    No heavy non-essential background applications currently detected.
+                {/* Mode Selector */}
+                <div className="space-y-3">
+                  <div className="text-xs font-bold text-ms-muted uppercase tracking-wider">Cleanup Method Selection:</div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {/* Standard Mode Card */}
+                    <div
+                      data-testid="mode-card-standard"
+                      onClick={() => handleModeChange('standard')}
+                      className={`p-4 rounded-2xl border cursor-pointer transition-all space-y-1.5 ${
+                        cleanupMode === 'standard'
+                          ? 'bg-violet-600/10 border-violet-500/50 shadow-sm'
+                          : 'bg-ms-elevated/20 border-ms-border/40 hover:bg-ms-elevated/40'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="radio"
+                            name="cleanupMode"
+                            checked={cleanupMode === 'standard'}
+                            onChange={() => handleModeChange('standard')}
+                            className="accent-violet-600"
+                          />
+                          <span className="font-bold text-xs text-ms-text">Standard Mode (Conservative)</span>
+                        </div>
+                        <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                          Recommended
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-ms-muted pl-5">
+                        Trims process working sets, purges priority-0 standby pages, and runs memory combining. Prevents game micro-stutters and protects disk read caches.
+                      </p>
+                    </div>
+
+                    {/* Advanced Mode Card */}
+                    <div
+                      data-testid="mode-card-advanced"
+                      onClick={() => handleModeChange('advanced')}
+                      className={`p-4 rounded-2xl border cursor-pointer transition-all space-y-1.5 ${
+                        cleanupMode === 'advanced'
+                          ? 'bg-violet-600/10 border-violet-500/50 shadow-sm'
+                          : 'bg-ms-elevated/20 border-ms-border/40 hover:bg-ms-elevated/40'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="radio"
+                            name="cleanupMode"
+                            checked={cleanupMode === 'advanced'}
+                            onChange={() => handleModeChange('advanced')}
+                            className="accent-violet-600"
+                          />
+                          <span className="font-bold text-xs text-ms-text">Advanced Mode (Granular Lists)</span>
+                        </div>
+                        <span className="text-[10px] font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+                          Granular Control
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-ms-muted pl-5">
+                        Select supported Windows NT memory list operations individually. Allows purging full standby and modified page lists with explicit safety warnings.
+                      </p>
+                    </div>
                   </div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs">
-                      <thead>
-                        <tr className="border-b border-ms-border/60 text-ms-muted uppercase tracking-wider text-[10px]">
-                          <th className="pb-2">Application</th>
-                          <th className="pb-2">Process</th>
-                          <th className="pb-2">PID</th>
-                          <th className="pb-2 text-right">RAM Footprint</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-ms-border/30">
-                        {cleanableApps.map((app) => (
-                          <tr key={`${app.pid}-${app.name}`} className="hover:bg-ms-elevated/20">
-                            <td className="py-2.5 font-bold text-ms-text">{app.displayName}</td>
-                            <td className="py-2.5 font-mono text-[11px] text-ms-muted">{app.name}</td>
-                            <td className="py-2.5 font-mono text-[11px] text-ms-muted">{app.pid}</td>
-                            <td className="py-2.5 text-right font-extrabold text-violet-300 tabular-nums">
-                              {app.workingSetMb.toFixed(1)} MB
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                </div>
+
+                {/* Advanced Operations Settings Grid */}
+                {cleanupMode === 'advanced' && (
+                  <div className="p-4 rounded-2xl bg-ms-elevated/30 border border-ms-border/60 space-y-4">
+                    <div className="flex items-center gap-2 text-xs font-bold text-amber-300">
+                      <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                      <span>Advanced Memory Operations Warning</span>
+                    </div>
+                    <p className="text-[11px] text-amber-200/80 leading-relaxed">
+                      Purging the entire Standby List or flushing the Modified Page List flushes system disk caches back to storage. While this maximizes immediate free RAM numbers, it can temporarily reduce disk read performance and cause brief micro-stutters in open applications while file pages are re-read from SSD/HDD.
+                    </p>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2 border-t border-ms-border/30">
+                      {/* Working Sets */}
+                      <label className="flex items-center gap-2 p-2 rounded-xl hover:bg-ms-elevated/40 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={selectedOperations.workingSets}
+                          onChange={() => handleToggleOperation('workingSets')}
+                          className="accent-violet-600 rounded"
+                        />
+                        <div className="text-xs">
+                          <div className="font-bold text-ms-text">Process Working Sets</div>
+                          <div className="text-[10px] text-ms-muted">EmptyWorkingSet across user processes</div>
+                        </div>
+                      </label>
+
+                      {/* System File Cache */}
+                      <label className="flex items-center gap-2 p-2 rounded-xl hover:bg-ms-elevated/40 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={selectedOperations.systemFileCache}
+                          onChange={() => handleToggleOperation('systemFileCache')}
+                          className="accent-violet-600 rounded"
+                        />
+                        <div className="text-xs">
+                          <div className="font-bold text-ms-text">System File Cache</div>
+                          <div className="text-[10px] text-ms-muted">SystemFileCacheInformationEx (Elevated)</div>
+                        </div>
+                      </label>
+
+                      {/* Standby Priority 0 */}
+                      <label className="flex items-center gap-2 p-2 rounded-xl hover:bg-ms-elevated/40 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={selectedOperations.standbyPriority0}
+                          onChange={() => handleToggleOperation('standbyPriority0')}
+                          className="accent-violet-600 rounded"
+                        />
+                        <div className="text-xs">
+                          <div className="font-bold text-ms-text">Standby List (Priority 0)</div>
+                          <div className="text-[10px] text-ms-muted">MemoryPurgeLowPriorityStandbyList (Safe)</div>
+                        </div>
+                      </label>
+
+                      {/* Standby List (All) */}
+                      <label className="flex items-center gap-2 p-2 rounded-xl hover:bg-ms-elevated/40 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={selectedOperations.standbyList}
+                          onChange={() => handleToggleOperation('standbyList')}
+                          className="accent-violet-600 rounded"
+                        />
+                        <div className="text-xs">
+                          <div className="font-bold text-rose-300 flex items-center gap-1">
+                            <span>Standby List (All Priorities) *</span>
+                            <span className="text-[9px] uppercase px-1 py-0.2 rounded bg-rose-500/20 text-rose-300">Stutter Risk</span>
+                          </div>
+                          <div className="text-[10px] text-ms-muted">MemoryPurgeStandbyList (Flushes all cached files)</div>
+                        </div>
+                      </label>
+
+                      {/* Modified Page List */}
+                      <label className="flex items-center gap-2 p-2 rounded-xl hover:bg-ms-elevated/40 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={selectedOperations.modifiedPageList}
+                          onChange={() => handleToggleOperation('modifiedPageList')}
+                          className="accent-violet-600 rounded"
+                        />
+                        <div className="text-xs">
+                          <div className="font-bold text-rose-300 flex items-center gap-1">
+                            <span>Modified Page List *</span>
+                            <span className="text-[9px] uppercase px-1 py-0.2 rounded bg-rose-500/20 text-rose-300">Disk I/O</span>
+                          </div>
+                          <div className="text-[10px] text-ms-muted">MemoryFlushModifiedList (Writes dirty pages to disk)</div>
+                        </div>
+                      </label>
+
+                      {/* Combine Memory Lists */}
+                      <label className="flex items-center gap-2 p-2 rounded-xl hover:bg-ms-elevated/40 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={selectedOperations.combineMemoryLists}
+                          onChange={() => handleToggleOperation('combineMemoryLists')}
+                          className="accent-violet-600 rounded"
+                        />
+                        <div className="text-xs">
+                          <div className="font-bold text-ms-text">Combine Memory Lists</div>
+                          <div className="text-[10px] text-ms-muted">SystemCombinePhysicalMemoryInformation (Win 10+)</div>
+                        </div>
+                      </label>
+
+                      {/* Registry Cache */}
+                      <label className="flex items-center gap-2 p-2 rounded-xl hover:bg-ms-elevated/40 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={selectedOperations.registryCache}
+                          onChange={() => handleToggleOperation('registryCache')}
+                          className="accent-violet-600 rounded"
+                        />
+                        <div className="text-xs">
+                          <div className="font-bold text-ms-text">Registry Cache</div>
+                          <div className="text-[10px] text-ms-muted">SystemRegistryReconciliationInformation (Win 8.1+)</div>
+                        </div>
+                      </label>
+                    </div>
                   </div>
                 )}
               </div>
@@ -721,7 +822,7 @@ export const PerformancePage: React.FC = () => {
                       <span>Cleanup History</span>
                     </h3>
                     <p className="text-xs text-ms-muted mt-0.5">
-                      Log of past memory cleanup events and RAM reclamation metrics
+                      Verified record of past memory cleanups and measured RAM reclamation
                     </p>
                   </div>
                   {cleanupHistory.length > 0 && (
@@ -739,7 +840,7 @@ export const PerformancePage: React.FC = () => {
 
                 {cleanupHistory.length === 0 ? (
                   <div className="p-6 text-center text-xs text-ms-muted bg-ms-elevated/20 rounded-2xl">
-                    No cleanup operations recorded yet. Use &quot;Clean Memory&quot; to optimize RAM.
+                    No cleanup operations recorded yet. Click &quot;Clean Memory&quot; to optimize RAM.
                   </div>
                 ) : (
                   <div className="overflow-x-auto" data-testid="cleanup-history-table">
@@ -748,43 +849,40 @@ export const PerformancePage: React.FC = () => {
                         <tr className="border-b border-ms-border/60 text-ms-muted uppercase tracking-wider text-[10px]">
                           <th className="pb-2">Time</th>
                           <th className="pb-2">Mode</th>
-                          <th className="pb-2">Freed</th>
-                          <th className="pb-2">Before → After</th>
-                          <th className="pb-2">Details</th>
-                          <th className="pb-2 text-right">Status</th>
+                          <th className="pb-2">Before RAM</th>
+                          <th className="pb-2">After RAM</th>
+                          <th className="pb-2 text-right">Reclaimed</th>
+                          <th className="pb-2 pl-4">Status & Details</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-ms-border/30">
-                        {cleanupHistory.map((item) => (
-                          <tr key={item.id} className="hover:bg-ms-elevated/20">
-                            <td className="py-2.5 text-ms-muted">
-                              {new Date(item.timestampIso).toLocaleTimeString([], {
-                                hour: '2-digit',
-                                minute: '2-digit',
-                                second: '2-digit',
-                              })}
+                        {cleanupHistory.map((entry) => (
+                          <tr key={entry.id} className="hover:bg-ms-elevated/20">
+                            <td className="py-2.5 font-mono text-[11px] text-ms-muted">
+                              {new Date(entry.timestampIso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                             </td>
-                            <td className="py-2.5 capitalize font-semibold text-ms-text">
-                              {item.mode}
-                            </td>
-                            <td className="py-2.5 font-bold text-emerald-400 tabular-nums">
-                              +{item.freedMb.toFixed(1)} MB
-                            </td>
-                            <td className="py-2.5 tabular-nums text-ms-muted">
-                              {(item.ramBeforeMb / 1024).toFixed(1)} GB →{' '}
-                              {(item.ramAfterMb / 1024).toFixed(1)} GB
-                            </td>
-                            <td className="py-2.5 text-ms-muted truncate max-w-xs">{item.message}</td>
-                            <td className="py-2.5 text-right">
+                            <td className="py-2.5">
                               <span
-                                className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                                  item.status === 'success'
-                                    ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
-                                    : 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
+                                className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded border ${
+                                  entry.mode === 'advanced'
+                                    ? 'bg-amber-500/10 text-amber-300 border-amber-500/20'
+                                    : 'bg-violet-500/10 text-violet-300 border-violet-500/20'
                                 }`}
                               >
-                                {item.status}
+                                {entry.mode}
                               </span>
+                            </td>
+                            <td className="py-2.5 font-mono text-ms-muted tabular-nums">
+                              {(entry.ramBeforeMb / 1024).toFixed(2)} GB
+                            </td>
+                            <td className="py-2.5 font-mono text-ms-muted tabular-nums">
+                              {(entry.ramAfterMb / 1024).toFixed(2)} GB
+                            </td>
+                            <td className="py-2.5 text-right font-extrabold text-emerald-400 tabular-nums">
+                              {entry.freedMb > 0 ? `+${entry.freedMb} MB` : '0 MB'}
+                            </td>
+                            <td className="py-2.5 pl-4 text-ms-muted text-[11px] max-w-xs truncate" title={entry.message}>
+                              {entry.message}
                             </td>
                           </tr>
                         ))}
@@ -798,140 +896,110 @@ export const PerformancePage: React.FC = () => {
         </div>
       )}
 
-      {/* ========================================================== */}
-      {/* CLEAN MEMORY MODAL                                         */}
-      {/* ========================================================== */}
+      {/* Confirmation & Execution Modal */}
       {showCleanupModal && (
-        <div
-          data-testid="clean-memory-modal"
-          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn"
-        >
-          <div className="w-full max-w-lg rounded-3xl bg-ms-card border border-violet-500/40 p-6 space-y-5 shadow-2xl animate-scaleUp">
-            <div className="flex items-center justify-between">
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-lg rounded-3xl bg-ms-card border border-violet-500/40 p-6 space-y-5 shadow-2xl animate-scaleIn">
+            <div className="flex items-center justify-between border-b border-ms-border/60 pb-3">
               <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-violet-500/20 text-violet-400 border border-violet-500/30 flex items-center justify-center">
+                <div className="w-9 h-9 rounded-xl bg-violet-600/20 text-violet-400 flex items-center justify-center">
                   <Sparkles className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-ms-text">Clean & Optimize Memory</h3>
-                  <p className="text-[11px] text-ms-muted">Review cleanup settings before proceeding</p>
+                  <h3 className="text-sm font-bold text-ms-text">Confirm Memory Cleanup</h3>
+                  <p className="text-[11px] text-ms-muted">Mem Reduct memory list purge</p>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => setShowCleanupModal(false)}
-                className="text-xs text-ms-muted hover:text-ms-text"
-              >
-                ✕
-              </button>
+              <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-violet-500/20 text-violet-300 border border-violet-500/30">
+                Mode: {cleanupMode}
+              </span>
             </div>
 
-            {/* Mode Selector */}
+            {/* Current RAM status before cleaning */}
+            <div className="p-4 rounded-2xl bg-ms-elevated/40 border border-ms-border/40 flex items-center justify-between text-xs">
+              <div>
+                <span className="text-ms-muted">Current Physical RAM In Use:</span>
+                <div className="text-lg font-black text-ms-text tabular-nums mt-0.5">
+                  {memoryMetrics ? (memoryMetrics.usedPhysicalMb / 1024).toFixed(2) : '--'} GB{' '}
+                  <span className="text-xs font-normal text-ms-muted">({memoryMetrics ? memoryMetrics.utilizationPercent : '--'}%)</span>
+                </div>
+              </div>
+              <div>
+                <span className="text-ms-muted">Available Headroom:</span>
+                <div className="text-lg font-black text-emerald-400 tabular-nums mt-0.5">
+                  {memoryMetrics ? (memoryMetrics.availablePhysicalMb / 1024).toFixed(2) : '--'} GB
+                </div>
+              </div>
+            </div>
+
+            {/* Selected Operations List */}
             <div className="space-y-2">
-              <label className="text-xs font-bold text-ms-muted uppercase tracking-wider">
-                Cleanup Mode
-              </label>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setCleanupMode('standard')}
-                  className={`p-3 rounded-xl border text-left transition-all ${
-                    cleanupMode === 'standard'
-                      ? 'bg-violet-500/15 border-violet-500 text-violet-200'
-                      : 'bg-ms-elevated/40 border-ms-border text-ms-muted hover:bg-ms-elevated'
-                  }`}
-                >
-                  <div className="text-xs font-bold text-ms-text">Standard Mode</div>
-                  <div className="text-[10px] text-ms-muted mt-0.5">
-                    Close selected apps + trim MaSwitch working set
+              <div className="text-[11px] font-bold text-ms-muted uppercase tracking-wider">
+                Operations to be applied:
+              </div>
+              <div className="p-3 rounded-2xl bg-ms-elevated/20 border border-ms-border/40 space-y-1.5 text-xs text-ms-text">
+                {selectedOperations.workingSets && (
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Process Working Sets (Trims process heap and working set)</span>
                   </div>
-                </button>
-
-                <button
-                  type="button"
-                  disabled={!settings.enableAdvancedMemoryMode}
-                  onClick={() => setCleanupMode('advanced')}
-                  className={`p-3 rounded-xl border text-left transition-all ${
-                    cleanupMode === 'advanced'
-                      ? 'bg-violet-500/15 border-violet-500 text-violet-200'
-                      : !settings.enableAdvancedMemoryMode
-                      ? 'opacity-40 cursor-not-allowed bg-ms-elevated/20 border-ms-border text-ms-muted'
-                      : 'bg-ms-elevated/40 border-ms-border text-ms-muted hover:bg-ms-elevated'
-                  }`}
-                >
-                  <div className="text-xs font-bold text-ms-text flex items-center gap-1.5">
-                    <span>Advanced Mode</span>
-                    {!settings.enableAdvancedMemoryMode && (
-                      <span className="text-[9px] uppercase px-1.5 py-0.2 rounded bg-ms-border text-ms-muted">
-                        Disabled in Settings
-                      </span>
-                    )}
+                )}
+                {selectedOperations.systemFileCache && (
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>System File Cache (Trims kernel file cache working set)</span>
                   </div>
-                  <div className="text-[10px] text-ms-muted mt-0.5">
-                    Trim working sets via Win32 EmptyWorkingSet
+                )}
+                {selectedOperations.standbyPriority0 && (
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Low-Priority Standby List (Safely purges priority-0 pages)</span>
                   </div>
-                </button>
+                )}
+                {selectedOperations.standbyList && (
+                  <div className="flex items-center gap-2 text-rose-300">
+                    <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
+                    <span>Full Standby List * (Flushes all cached files; brief micro-stutter possible)</span>
+                  </div>
+                )}
+                {selectedOperations.modifiedPageList && (
+                  <div className="flex items-center gap-2 text-rose-300">
+                    <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
+                    <span>Modified Page List * (Flushes dirty pages to disk)</span>
+                  </div>
+                )}
+                {selectedOperations.combineMemoryLists && (
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Combine Physical Memory Lists (Page deduplication)</span>
+                  </div>
+                )}
+                {selectedOperations.registryCache && (
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Registry Cache (Reconciles registry buffers)</span>
+                  </div>
+                )}
               </div>
             </div>
 
-            {/* Performance Trade-Off Explanation */}
-            <div className="p-3.5 rounded-xl bg-violet-950/20 border border-violet-500/20 text-[11px] text-violet-300 space-y-1">
-              <div className="font-bold flex items-center gap-1.5 text-violet-200">
-                <ShieldCheck className="w-3.5 h-3.5 text-violet-400" />
-                <span>Performance & Safety Notice</span>
-              </div>
-              <p className="text-violet-300/80 leading-relaxed">
-                Trimming memory reduces RAM utilization by paging idle data. Note that more free RAM does not guarantee higher FPS, and trimmed apps may experience minor disk reads when re-focused. System files and games are protected.
-              </p>
-            </div>
-
-            {/* Cleanable Background Apps Checkbox List */}
-            {cleanableApps.length > 0 && (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-bold text-ms-muted uppercase tracking-wider text-[10px]">
-                    Optionally Close Background Apps:
-                  </span>
-                  <span className="text-ms-muted text-[11px]">
-                    {selectedPids.length} selected
-                  </span>
-                </div>
-                <div className="max-h-40 overflow-y-auto rounded-xl border border-ms-border divide-y divide-ms-border/40 bg-ms-elevated/30 p-1">
-                  {cleanableApps.map((app) => (
-                    <label
-                      key={app.pid}
-                      data-testid={`cleanable-app-item-${app.pid}`}
-                      className="p-2 flex items-center justify-between gap-3 hover:bg-ms-elevated/40 rounded-lg cursor-pointer transition-colors"
-                    >
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          checked={selectedPids.includes(app.pid)}
-                          onChange={() => handleToggleAppPid(app.pid)}
-                          className="w-4 h-4 accent-violet-600 rounded"
-                        />
-                        <div>
-                          <div className="text-xs font-bold text-ms-text">{app.displayName}</div>
-                          <div className="text-[10px] text-ms-muted">{app.name} (PID: {app.pid})</div>
-                        </div>
-                      </div>
-                      <span className="text-xs font-bold text-violet-300 tabular-nums">
-                        {app.workingSetMb.toFixed(0)} MB
-                      </span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {cleanupError && (
-              <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs">
-                {cleanupError}
+            {/* Administrator elevation notice */}
+            {(selectedOperations.systemFileCache ||
+              selectedOperations.standbyPriority0 ||
+              selectedOperations.standbyList ||
+              selectedOperations.modifiedPageList ||
+              selectedOperations.combineMemoryLists ||
+              selectedOperations.registryCache) && (
+              <div className="p-3 rounded-xl bg-violet-950/20 border border-violet-500/30 text-violet-300 text-xs flex items-center gap-2">
+                <Info className="w-4 h-4 text-violet-400 shrink-0" />
+                <span>
+                  Privileged memory list operations may trigger a standard Windows UAC administrator elevation prompt for a transient helper process.
+                </span>
               </div>
             )}
 
             {/* Modal Actions */}
-            <div className="flex justify-end gap-3 pt-2">
+            <div className="flex justify-end gap-3 pt-2 border-t border-ms-border/40">
               <button
                 type="button"
                 onClick={() => setShowCleanupModal(false)}
@@ -947,7 +1015,7 @@ export const PerformancePage: React.FC = () => {
                 className="px-5 py-2 text-xs font-bold bg-violet-600 hover:bg-violet-500 text-white rounded-xl shadow-md transition-all flex items-center gap-2"
               >
                 <Sparkles className={`w-3.5 h-3.5 ${isCleaningMemory ? 'animate-spin' : ''}`} />
-                <span>{isCleaningMemory ? 'Optimizing...' : 'Confirm & Optimize'}</span>
+                <span>{isCleaningMemory ? 'Cleaning Memory...' : 'Confirm & Clean'}</span>
               </button>
             </div>
           </div>

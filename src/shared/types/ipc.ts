@@ -398,7 +398,6 @@ export interface MaSwitchBridge {
   };
   memory?: {
     getMetrics: () => Promise<import('./memory').SystemMemoryMetrics>;
-    getCleanableApps: () => Promise<import('./memory').CleanableAppCandidate[]>;
     performCleanup: (request: import('./memory').MemoryCleanupRequest) => Promise<import('./memory').MemoryCleanupResult>;
     getHistory: () => Promise<import('./memory').MemoryCleanupHistoryEntry[]>;
     clearHistory: () => Promise<void>;
