@@ -83,11 +83,7 @@ function extractAccountRegion(profile: AccountProfile): string | null {
 
 export const AccountsPage: React.FC = () => {
   const accountProfiles = useAppStore((s) => s.accountProfiles);
-  const activePlatformProfiles = useAppStore((s) =>
-    s.settings.demoModeEnabled ? s.demoActiveProfiles : s.activePlatformProfiles
-  );
   const launcherStatuses = useAppStore((s) => s.launcherStatuses);
-  const gameAccountAssociations = useAppStore((s) => s.gameAccountAssociations);
   const isDemoMode = useAppStore((s) => s.settings.demoModeEnabled);
 
   // Riot DPAPI Credential Vault & Desktop Automation Store Hooks (Unchanged Backend Logic)
@@ -434,9 +430,6 @@ export const AccountsPage: React.FC = () => {
     sortBy,
   ]);
 
-  const getAssociatedGameCount = (profileId: string) =>
-    gameAccountAssociations.filter((a) => a.accountId === profileId).length;
-
   const isRiotTabSelected = selectedPlatformFilter === 'riot';
 
   return (
@@ -447,8 +440,8 @@ export const AccountsPage: React.FC = () => {
         if (openMenuProfileId) setOpenMenuProfileId(null);
       }}
     >
-      {/* 1. Top Header */}
-      <header className="flex flex-wrap items-center justify-between gap-4 border-b border-ms-border/80 pb-5">
+      {/* 1. Accounts Page Title, Subtitle & Header Actions */}
+      <header className="flex flex-wrap items-center justify-between gap-4 border-b border-ms-border/80 pb-4">
         <div className="space-y-1">
           <div className="flex flex-wrap items-center gap-2.5">
             <h1 className="text-2xl font-extrabold text-ms-text tracking-tight">Accounts</h1>
@@ -470,14 +463,26 @@ export const AccountsPage: React.FC = () => {
           </p>
         </div>
 
-        <div className="flex items-center gap-2.5">
+        <div className="flex flex-wrap items-center gap-2">
+          {isRiotTabSelected && (
+            <button
+              type="button"
+              data-testid="riot-section-open-launcher-btn"
+              onClick={() => void openPlatformLauncher('riot')}
+              className="h-9 px-3.5 rounded-xl bg-ms-card hover:bg-ms-elevated border border-ms-border text-ms-text text-xs font-semibold inline-flex items-center gap-1.5 transition-colors"
+            >
+              <ExternalLink className="w-3.5 h-3.5 text-violet-400" />
+              <span>Open Riot Client</span>
+            </button>
+          )}
+
           <button
             type="button"
             data-testid="refresh-launcher-status-btn"
             onClick={() => void handleRefreshStatuses()}
             disabled={isRefreshingStatuses}
             title="Check Riot Client status"
-            className="h-10 px-3.5 rounded-xl bg-ms-card hover:bg-ms-elevated border border-ms-border text-ms-text text-xs font-semibold inline-flex items-center gap-2 transition-colors shadow-sm"
+            className="h-9 px-3.5 rounded-xl bg-ms-card hover:bg-ms-elevated border border-ms-border text-ms-text text-xs font-semibold inline-flex items-center gap-1.5 transition-colors"
           >
             <RefreshCw
               className={`w-3.5 h-3.5 ${isRefreshingStatuses ? 'animate-spin text-ms-accent' : ''}`}
@@ -490,7 +495,7 @@ export const AccountsPage: React.FC = () => {
               type="button"
               data-testid="add-account-profile-btn"
               onClick={openCreateModal}
-              className="h-10 px-4 rounded-xl bg-ms-accent hover:bg-ms-accentHover text-white text-xs font-bold inline-flex items-center gap-2 transition-transform active:scale-95 shadow-md"
+              className="h-9 px-4 rounded-xl bg-ms-accent hover:bg-ms-accentHover text-white text-xs font-bold inline-flex items-center gap-1.5 transition-colors shadow-sm"
             >
               <Plus className="w-4 h-4" />
               <span>Add Riot Account</span>
@@ -506,10 +511,10 @@ export const AccountsPage: React.FC = () => {
         />
       )}
 
-      {/* 2. Horizontal Platform Selector */}
+      {/* 2. Compact Platform Navigation (Fits on one row at desktop widths, wraps cleanly on narrow windows) */}
       <nav
         aria-label="Platform Filter"
-        className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar"
+        className="flex flex-wrap items-center gap-1.5"
       >
         {SUPPORTED_ACCOUNT_PLATFORMS.map((platformId) => {
           const isRiot = platformId === 'riot';
@@ -523,16 +528,16 @@ export const AccountsPage: React.FC = () => {
               type="button"
               data-testid={`accounts-filter-${platformId}`}
               onClick={() => setSelectedPlatformFilter(platformId)}
-              className={`h-10 px-3.5 rounded-xl text-xs font-semibold transition-all shrink-0 inline-flex items-center gap-2 ${
+              className={`h-9 px-2.5 rounded-xl text-xs font-semibold transition-colors inline-flex items-center gap-1.5 ${
                 active
                   ? isRiot
-                    ? 'bg-violet-600/25 border border-violet-500/80 text-white shadow-sm ring-1 ring-violet-500/30'
+                    ? 'bg-violet-600/25 border border-violet-500/80 text-white shadow-sm'
                     : 'bg-ms-elevated border border-ms-border text-white shadow-sm'
                   : 'bg-ms-card hover:bg-ms-elevated border border-ms-border text-ms-muted hover:text-ms-text'
               }`}
             >
               <span className="relative flex items-center justify-center">
-                <PlatformLogo platformId={platformId} size={16} colorMode="brand" />
+                <PlatformLogo platformId={platformId} size={14} colorMode="brand" />
                 {isRiot && isRunning && (
                   <span
                     title="Riot Client Running"
@@ -554,7 +559,7 @@ export const AccountsPage: React.FC = () => {
               ) : (
                 <span
                   data-testid={`coming-soon-badge-${platformId}`}
-                  className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-md bg-ms-elevated/80 text-ms-muted border border-ms-border/70"
+                  className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-ms-elevated/80 text-ms-muted border border-ms-border/70"
                 >
                   Soon
                 </span>
@@ -566,19 +571,19 @@ export const AccountsPage: React.FC = () => {
 
       {/* 3. Active Riot Games View vs Non-Riot Coming Soon View */}
       {!isRiotTabSelected ? (
-        /* Premium Coming Soon State for Non-Riot Platforms */
+        /* Coming Soon State for Non-Riot Platforms */
         <div
           data-testid="platform-coming-soon-state"
-          className="rounded-2xl bg-gradient-to-b from-ms-card via-ms-card to-ms-bg border border-ms-border p-8 sm:p-12 text-center max-w-2xl mx-auto my-4 space-y-6 shadow-card"
+          className="rounded-2xl bg-ms-card border border-ms-border p-8 sm:p-10 text-center max-w-2xl mx-auto my-2 space-y-5 shadow-card"
         >
-          <div className="relative w-16 h-16 rounded-2xl bg-ms-elevated border border-ms-border flex items-center justify-center mx-auto shadow-md">
-            <PlatformLogo platformId={selectedPlatformFilter} size={36} colorMode="brand" />
+          <div className="relative w-14 h-14 rounded-2xl bg-ms-elevated border border-ms-border flex items-center justify-center mx-auto">
+            <PlatformLogo platformId={selectedPlatformFilter} size={32} colorMode="brand" />
             <span className="absolute -bottom-1.5 -right-1.5 w-6 h-6 rounded-lg bg-violet-500/20 border border-violet-500/40 flex items-center justify-center text-violet-300">
               <Clock className="w-3.5 h-3.5" />
             </span>
           </div>
 
-          <div className="space-y-2.5">
+          <div className="space-y-2">
             <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider bg-violet-500/15 text-violet-300 border border-violet-500/30">
               <Clock className="w-3 h-3" />
               <span>Coming Soon</span>
@@ -600,7 +605,7 @@ export const AccountsPage: React.FC = () => {
             </p>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-left max-w-lg mx-auto pt-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-left max-w-lg mx-auto pt-1">
             <div className="p-3.5 rounded-xl bg-ms-bg/80 border border-ms-border/80 space-y-1">
               <div className="flex items-center gap-2 text-xs font-bold text-emerald-400">
                 <Gamepad2 className="w-4 h-4 shrink-0" />
@@ -625,7 +630,7 @@ export const AccountsPage: React.FC = () => {
             </div>
           </div>
 
-          <div className="pt-2">
+          <div className="pt-1">
             <button
               type="button"
               data-testid="return-to-riot-btn"
@@ -640,180 +645,103 @@ export const AccountsPage: React.FC = () => {
       ) : (
         <>
           {/* Search, Filter & Sort Toolbar for Riot Games */}
-          <div className="flex flex-wrap items-center justify-between gap-3 bg-ms-card/60 border border-ms-border/80 rounded-2xl p-3">
-            {/* Search Input */}
-            <div className="relative flex-1 min-w-[220px]">
-              <Search className="w-3.5 h-3.5 text-ms-muted absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-              <input
-                type="text"
-                data-testid="accounts-search-input"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search Riot accounts by display name, username, Riot ID, or region..."
-                className="w-full h-9 bg-ms-bg hover:bg-ms-elevated/60 border border-ms-border focus:border-ms-accent rounded-xl pl-9 pr-8 text-xs text-ms-text placeholder:text-ms-muted focus:outline-none transition-colors"
-              />
-              {searchQuery && (
-                <button
-                  type="button"
-                  data-testid="accounts-search-clear-btn"
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ms-muted hover:text-ms-text text-xs"
-                >
-                  ×
-                </button>
-              )}
-            </div>
-
-            {/* Filter & Sort Controls */}
-            <div className="flex flex-wrap items-center gap-2">
-              {/* Preferred Filter Toggle */}
-              <button
-                type="button"
-                data-testid="accounts-filter-favorites"
-                onClick={() => setFavoritesOnly(!favoritesOnly)}
-                className={`h-9 px-3 rounded-xl text-xs font-semibold transition-all inline-flex items-center gap-1.5 border ${
-                  favoritesOnly
-                    ? 'bg-amber-500/15 text-amber-300 border-amber-500/40'
-                    : 'bg-ms-bg hover:bg-ms-elevated border-ms-border text-ms-muted hover:text-ms-text'
-                }`}
-              >
-                <Star
-                  className={`w-3.5 h-3.5 ${favoritesOnly ? 'fill-amber-400 text-amber-400' : ''}`}
+          {riotProfiles.length > 0 && (
+            <div className="flex flex-wrap items-center justify-between gap-3 bg-ms-card/70 border border-ms-border/80 rounded-2xl p-3">
+              {/* Search Input */}
+              <div className="relative flex-1 min-w-[200px]">
+                <Search className="w-3.5 h-3.5 text-ms-muted absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  type="text"
+                  data-testid="accounts-search-input"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search Riot accounts by display name, username, or region..."
+                  className="w-full h-9 bg-ms-bg hover:bg-ms-elevated/60 border border-ms-border focus:border-ms-accent rounded-xl pl-9 pr-8 text-xs text-ms-text placeholder:text-ms-muted focus:outline-none transition-colors"
                 />
-                <span>Preferred</span>
-              </button>
-
-              {/* Credential Status Filter */}
-              <div className="relative inline-flex items-center">
-                <SlidersHorizontal className="w-3.5 h-3.5 text-ms-muted absolute left-3 pointer-events-none" />
-                <select
-                  data-testid="accounts-credential-filter"
-                  aria-label="Filter by credential status"
-                  value={credentialFilter}
-                  onChange={(e) => setCredentialFilter(e.target.value as CredentialFilterMode)}
-                  className="h-9 pl-8 pr-7 rounded-xl bg-ms-bg hover:bg-ms-elevated border border-ms-border text-xs font-semibold text-ms-text focus:outline-none focus:border-ms-accent cursor-pointer"
-                >
-                  <option value="all">All Credentials</option>
-                  <option value="configured">Credentials Saved</option>
-                  <option value="missing">Credentials Missing</option>
-                </select>
-              </div>
-
-              {/* Sort Order Selector */}
-              <div className="relative inline-flex items-center">
-                <ArrowUpDown className="w-3.5 h-3.5 text-ms-muted absolute left-3 pointer-events-none" />
-                <select
-                  data-testid="accounts-sort-select"
-                  aria-label="Sort accounts"
-                  value={sortBy}
-                  onChange={(e) => setSortBy(e.target.value as AccountSortMode)}
-                  className="h-9 pl-8 pr-7 rounded-xl bg-ms-bg hover:bg-ms-elevated border border-ms-border text-xs font-semibold text-ms-text focus:outline-none focus:border-ms-accent cursor-pointer"
-                >
-                  <option value="platform">Sort: Default</option>
-                  <option value="name">Sort: Name (A–Z)</option>
-                  <option value="recent">Sort: Recently Used</option>
-                </select>
-              </div>
-            </div>
-          </div>
-
-          {/* Riot Games Quick Status & Client Control Bar */}
-          {riotProfiles.length > 0 && (() => {
-            const riotActive = activePlatformProfiles['riot'];
-            const lastSelectedProfile =
-              riotProfiles.find((p) => p.isLastSelected) ||
-              riotProfiles.find((p) => p.id === riotActive?.accountId) ||
-              riotProfiles[0];
-            const confirmedProfile = riotProfiles.find((p) => p.id === riotActive?.accountId);
-
-            return (
-              <div
-                data-testid="riot-account-status-panel"
-                className="px-5 py-3.5 rounded-2xl bg-gradient-to-r from-violet-950/30 via-ms-card to-ms-card border border-violet-500/25 text-xs shadow-sm"
-              >
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex flex-wrap items-center gap-4 text-ms-muted">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-xl bg-ms-elevated border border-ms-border flex items-center justify-center shrink-0">
-                        <PlatformLogo platformId="riot" size={18} colorMode="brand" />
-                      </div>
-                      <div>
-                        <span className="text-[10px] uppercase font-bold text-ms-muted/70 block">
-                          Riot Vault Security
-                        </span>
-                        <span className="font-semibold text-emerald-400 inline-flex items-center gap-1">
-                          <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                          Windows DPAPI Encrypted
-                        </span>
-                      </div>
-                    </div>
-                    <div className="w-px h-6 bg-ms-border/80 hidden sm:block" />
-                    <div>
-                      <span className="text-[10px] uppercase font-bold text-ms-muted/70 block">
-                        Saved Credentials
-                      </span>
-                      <span className="font-bold text-white">
-                        {securityStats.configuredCount} of {riotProfiles.length} Profiles Configured
-                      </span>
-                    </div>
-                    <div className="w-px h-6 bg-ms-border/80 hidden sm:block" />
-                    <div>
-                      <span className="text-[10px] uppercase font-bold text-ms-muted/70 block">
-                        Selected Profile
-                      </span>
-                      <span className="font-bold text-white">
-                        {lastSelectedProfile ? lastSelectedProfile.displayName : 'None'}
-                      </span>
-                    </div>
-                    <div className="w-px h-6 bg-ms-border/80 hidden sm:block" />
-                    <div>
-                      <span className="text-[10px] uppercase font-bold text-ms-muted/70 block">
-                        Last User-Confirmed
-                      </span>
-                      <span className="font-medium text-slate-300">
-                        {confirmedProfile ? confirmedProfile.displayName : 'None'} • Authentication
-                        Unknown • Manual Sign-In Required
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      data-testid="riot-section-open-launcher-btn"
-                      onClick={() => void openPlatformLauncher('riot')}
-                      className="h-8.5 px-3.5 rounded-xl bg-ms-elevated hover:bg-ms-border border border-ms-border text-ms-text text-xs font-semibold inline-flex items-center gap-1.5 transition-colors"
-                    >
-                      <ExternalLink className="w-3.5 h-3.5 text-violet-400" />
-                      <span>Open Riot Client</span>
-                    </button>
-                  </div>
-                </div>
-
-                {riotCredentialError && (
-                  <div className="mt-2.5 flex items-center justify-between gap-3 p-2.5 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-200 text-xs">
-                    <div className="flex items-center gap-2">
-                      <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
-                      <span>{riotCredentialError}</span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => clearRiotCredentialError()}
-                      className="p-1 text-rose-300 hover:text-white"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
+                {searchQuery && (
+                  <button
+                    type="button"
+                    data-testid="accounts-search-clear-btn"
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ms-muted hover:text-ms-text text-xs"
+                  >
+                    ×
+                  </button>
                 )}
               </div>
-            );
-          })()}
 
-          {/* 4. Riot Account Cards Grid OR Single Compact Empty State */}
+              {/* Filter & Sort Controls */}
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  data-testid="accounts-filter-favorites"
+                  onClick={() => setFavoritesOnly(!favoritesOnly)}
+                  className={`h-9 px-3 rounded-xl text-xs font-semibold transition-colors inline-flex items-center gap-1.5 border ${
+                    favoritesOnly
+                      ? 'bg-amber-500/15 text-amber-300 border-amber-500/40'
+                      : 'bg-ms-bg hover:bg-ms-elevated border-ms-border text-ms-muted hover:text-ms-text'
+                  }`}
+                >
+                  <Star
+                    className={`w-3.5 h-3.5 ${favoritesOnly ? 'fill-amber-400 text-amber-400' : ''}`}
+                  />
+                  <span>Preferred</span>
+                </button>
+
+                <div className="relative inline-flex items-center">
+                  <SlidersHorizontal className="w-3.5 h-3.5 text-ms-muted absolute left-3 pointer-events-none" />
+                  <select
+                    data-testid="accounts-credential-filter"
+                    aria-label="Filter by credential status"
+                    value={credentialFilter}
+                    onChange={(e) => setCredentialFilter(e.target.value as CredentialFilterMode)}
+                    className="h-9 pl-8 pr-7 rounded-xl bg-ms-bg hover:bg-ms-elevated border border-ms-border text-xs font-semibold text-ms-text focus:outline-none focus:border-ms-accent cursor-pointer"
+                  >
+                    <option value="all">All Credentials</option>
+                    <option value="configured">Credentials Saved</option>
+                    <option value="missing">Setup Required</option>
+                  </select>
+                </div>
+
+                <div className="relative inline-flex items-center">
+                  <ArrowUpDown className="w-3.5 h-3.5 text-ms-muted absolute left-3 pointer-events-none" />
+                  <select
+                    data-testid="accounts-sort-select"
+                    aria-label="Sort accounts"
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value as AccountSortMode)}
+                    className="h-9 pl-8 pr-7 rounded-xl bg-ms-bg hover:bg-ms-elevated border border-ms-border text-xs font-semibold text-ms-text focus:outline-none focus:border-ms-accent cursor-pointer"
+                  >
+                    <option value="platform">Sort: Default</option>
+                    <option value="name">Sort: Name (A–Z)</option>
+                    <option value="recent">Sort: Recently Used</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {riotCredentialError && (
+            <div className="flex items-center justify-between gap-3 p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-200 text-xs">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                <span>{riotCredentialError}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => clearRiotCredentialError()}
+                className="p-1 text-rose-300 hover:text-white"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+
+          {/* 3. Riot Account Cards Grid OR Single Compact Empty State */}
           {filteredAndSortedRiotProfiles.length === 0 ? (
             <div
               data-testid="accounts-empty-state"
-              className="rounded-2xl bg-ms-card border border-ms-border p-10 text-center max-w-xl mx-auto my-4 space-y-4 shadow-card"
+              className="rounded-2xl bg-ms-card border border-ms-border p-10 text-center max-w-xl mx-auto my-2 space-y-4 shadow-card"
             >
               <div className="w-12 h-12 rounded-2xl bg-violet-500/15 border border-violet-500/30 flex items-center justify-center mx-auto">
                 <PlatformLogo platformId="riot" size={26} colorMode="brand" />
@@ -851,7 +779,7 @@ export const AccountsPage: React.FC = () => {
                   type="button"
                   data-testid="empty-state-add-account-btn"
                   onClick={openCreateModal}
-                  className="h-9 px-4 rounded-xl bg-ms-accent hover:bg-ms-accentHover text-white text-xs font-bold inline-flex items-center gap-1.5 shadow-md transition-transform active:scale-95"
+                  className="h-9 px-4 rounded-xl bg-ms-accent hover:bg-ms-accentHover text-white text-xs font-bold inline-flex items-center gap-1.5 shadow-sm transition-colors"
                 >
                   <Plus className="w-4 h-4" />
                   <span>Add Riot Games Account</span>
@@ -861,12 +789,11 @@ export const AccountsPage: React.FC = () => {
           ) : (
             <div
               data-testid="accounts-card-grid"
-              className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-4"
+              className={`grid grid-cols-1 md:grid-cols-2 ${
+                filteredAndSortedRiotProfiles.length >= 3 ? '2xl:grid-cols-3' : ''
+              } gap-5`}
             >
               {filteredAndSortedRiotProfiles.map((profile) => {
-                const confirmedRecord = activePlatformProfiles['riot'];
-                const confirmed = confirmedRecord?.accountId === profile.id;
-                const gameCount = getAssociatedGameCount(profile.id);
                 const credStatus = riotCredentialStatuses[profile.id];
                 const hasCredentials = Boolean(credStatus?.hasSavedCredentials);
                 const region = extractAccountRegion(profile);
@@ -882,17 +809,17 @@ export const AccountsPage: React.FC = () => {
                   <article
                     key={profile.id}
                     data-testid={`account-card-${profile.id}`}
-                    className={`group relative rounded-2xl bg-ms-card border transition-all duration-150 p-5 flex flex-col justify-between gap-4 shadow-card ${
+                    className={`group relative rounded-2xl bg-ms-card border transition-colors p-5 flex flex-col justify-between gap-4 shadow-card ${
                       profile.isPreferred
-                        ? 'border-violet-500/40 hover:border-violet-500/70'
-                        : 'border-ms-border hover:border-ms-border/90 hover:bg-ms-card/90'
+                        ? 'border-violet-500/45 hover:border-violet-500/70'
+                        : 'border-ms-border hover:border-ms-border/90'
                     }`}
                   >
-                    {/* Top Identity Header */}
-                    <div className="space-y-3">
+                    {/* Card Header & Status */}
+                    <div className="space-y-3.5">
+                      {/* Header: Riot Icon/Avatar, Display Name, Username, Region, Compact Overflow Menu */}
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex items-start gap-3.5 min-w-0 flex-1">
-                          {/* Avatar / Platform Brand Badge */}
                           <div className="relative w-11 h-11 rounded-xl bg-ms-elevated border border-ms-border flex items-center justify-center shrink-0">
                             {profile.avatarUrl ? (
                               <img
@@ -903,173 +830,122 @@ export const AccountsPage: React.FC = () => {
                             ) : (
                               <PlatformLogo platformId="riot" size={22} colorMode="brand" />
                             )}
-                            <span
-                              title="Riot Games"
-                              className="absolute -bottom-1 -right-1 w-5 h-5 rounded-md bg-ms-bg border border-ms-border flex items-center justify-center shadow-sm"
-                            >
-                              <PlatformLogo platformId="riot" size={11} colorMode="brand" />
-                            </span>
                           </div>
 
-                          {/* Account Name, Username & Region */}
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-1.5">
+                          <div className="min-w-0 flex-1 space-y-1">
+                            <div className="flex items-center gap-2 min-w-0">
                               <h3
                                 data-testid={`riot-display-name-${profile.id}`}
-                                className="text-sm font-bold text-ms-text truncate"
+                                className="text-[15px] font-bold text-ms-text truncate"
                                 title={profile.displayName}
                               >
                                 {profile.displayName}
                               </h3>
-                            </div>
-
-                            <div className="flex flex-wrap items-center gap-1.5 mt-0.5 text-xs text-ms-muted">
-                              <span className="font-semibold text-ms-text/80">Riot Games</span>
                               {region && (
-                                <>
-                                  <span>•</span>
-                                  <span
-                                    data-testid={`account-region-${profile.id}`}
-                                    className="inline-flex items-center gap-1 text-[11px] font-bold text-violet-300"
-                                  >
-                                    <Globe className="w-3 h-3" />
-                                    {region}
-                                  </span>
-                                </>
-                              )}
-                            </div>
-
-                            <div className="mt-1 flex items-center gap-1.5 text-[11px] text-ms-muted truncate">
-                              <span className="font-mono text-ms-muted/90 truncate">
-                                {credStatus?.username
-                                  ? `User: ${credStatus.username}`
-                                  : profile.username}
-                              </span>
-                              {profile.nickname && (
-                                <span className="text-ms-muted/70 truncate">
-                                  • {profile.nickname}
+                                <span
+                                  data-testid={`account-region-${profile.id}`}
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-violet-500/15 border border-violet-500/30 text-[10px] font-bold text-violet-300 shrink-0"
+                                >
+                                  <Globe className="w-2.5 h-2.5" />
+                                  {region}
                                 </span>
                               )}
                             </div>
+
+                            <div className="flex items-center gap-2 text-xs text-ms-muted min-w-0">
+                              <span
+                                data-testid={`account-username-${profile.id}`}
+                                className="font-mono text-ms-muted/90 truncate"
+                              >
+                                {credStatus?.username || profile.username}
+                              </span>
+                            </div>
                           </div>
                         </div>
 
-                        {/* Top-Right Controls: Preferred Toggle + More Menu */}
-                        <div className="flex items-center gap-1 shrink-0">
+                        {/* Compact Overflow Menu (Contains Make Preferred & Delete) */}
+                        <div
+                          className="relative shrink-0"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                          }}
+                        >
                           <button
                             type="button"
-                            data-testid={`preferred-toggle-${profile.id}`}
-                            onClick={() => void setPreferredAccount(profile.id)}
-                            title={
-                              profile.isPreferred
-                                ? 'Preferred account'
-                                : 'Set as preferred account'
+                            data-testid={`more-menu-btn-${profile.id}`}
+                            aria-label="More account actions"
+                            onClick={() =>
+                              setOpenMenuProfileId(isMenuOpen ? null : profile.id)
                             }
-                            className={`w-8 h-8 rounded-lg border flex items-center justify-center transition-colors ${
-                              profile.isPreferred
-                                ? 'bg-amber-400/15 border-amber-400/40 text-amber-400'
-                                : 'bg-ms-bg hover:bg-ms-elevated border-ms-border text-ms-muted hover:text-ms-text'
-                            }`}
+                            className="w-8 h-8 rounded-lg bg-ms-bg hover:bg-ms-elevated border border-ms-border text-ms-muted hover:text-ms-text flex items-center justify-center transition-colors"
                           >
-                            <Star
-                              className={`w-3.5 h-3.5 ${
-                                profile.isPreferred ? 'fill-amber-400' : ''
-                              }`}
-                            />
+                            <MoreVertical className="w-4 h-4" />
                           </button>
 
-                          {/* More Dropdown Trigger */}
-                          <div
-                            className="relative"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                            }}
-                          >
-                            <button
-                              type="button"
-                              data-testid={`more-menu-btn-${profile.id}`}
-                              aria-label="More account actions"
-                              onClick={() =>
-                                setOpenMenuProfileId(isMenuOpen ? null : profile.id)
-                              }
-                              className="w-8 h-8 rounded-lg bg-ms-bg hover:bg-ms-elevated border border-ms-border text-ms-muted hover:text-ms-text flex items-center justify-center transition-colors"
+                          {isMenuOpen && (
+                            <div
+                              data-testid={`more-menu-dropdown-${profile.id}`}
+                              className="absolute right-0 top-9 z-30 w-48 rounded-xl bg-ms-elevated border border-ms-border shadow-2xl py-1.5 text-xs"
                             >
-                              <MoreVertical className="w-3.5 h-3.5" />
-                            </button>
-
-                            {isMenuOpen && (
-                              <div
-                                data-testid={`more-menu-dropdown-${profile.id}`}
-                                className="absolute right-0 top-9 z-30 w-48 rounded-xl bg-ms-elevated border border-ms-border shadow-2xl py-1.5 text-xs"
+                              <button
+                                type="button"
+                                data-testid={`preferred-toggle-${profile.id}`}
+                                onClick={() => {
+                                  setOpenMenuProfileId(null);
+                                  void setPreferredAccount(profile.id);
+                                }}
+                                className="w-full px-3 py-2 text-left text-ms-text hover:bg-ms-card flex items-center gap-2"
                               >
-                                <button
-                                  type="button"
-                                  onClick={() => openEditModal(profile)}
-                                  className="w-full px-3 py-2 text-left text-ms-text hover:bg-ms-card flex items-center gap-2"
-                                >
-                                  <Edit3 className="w-3.5 h-3.5 text-ms-muted" />
-                                  <span>Edit Profile Info</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => openCredentialModal(profile)}
-                                  className="w-full px-3 py-2 text-left text-ms-text hover:bg-ms-card flex items-center gap-2"
-                                >
-                                  <Key className="w-3.5 h-3.5 text-violet-400" />
-                                  <span>
-                                    {hasCredentials
-                                      ? 'Manage DPAPI Credentials'
-                                      : 'Set Up Credentials'}
-                                  </span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setOpenMenuProfileId(null);
-                                    void setPreferredAccount(profile.id);
-                                  }}
-                                  className="w-full px-3 py-2 text-left text-ms-text hover:bg-ms-card flex items-center gap-2"
-                                >
-                                  <Star className="w-3.5 h-3.5 text-amber-400" />
-                                  <span>
-                                    {profile.isPreferred
-                                      ? 'Preferred Account'
-                                      : 'Set as Preferred'}
-                                  </span>
-                                </button>
-                                <div className="my-1 border-t border-ms-border/60" />
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setOpenMenuProfileId(null);
-                                    setDeletingProfile(profile);
-                                  }}
-                                  className="w-full px-3 py-2 text-left text-rose-400 hover:bg-rose-500/10 flex items-center gap-2"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                  <span>Delete Account</span>
-                                </button>
-                              </div>
-                            )}
-                          </div>
+                                <Star
+                                  className={`w-3.5 h-3.5 text-amber-400 ${
+                                    profile.isPreferred ? 'fill-amber-400' : ''
+                                  }`}
+                                />
+                                <span>
+                                  {profile.isPreferred
+                                    ? 'Preferred Account'
+                                    : 'Make Preferred'}
+                                </span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => openEditModal(profile)}
+                                className="w-full px-3 py-2 text-left text-ms-text hover:bg-ms-card flex items-center gap-2"
+                              >
+                                <Edit3 className="w-3.5 h-3.5 text-ms-muted" />
+                                <span>Edit Account</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => openCredentialModal(profile)}
+                                className="w-full px-3 py-2 text-left text-ms-text hover:bg-ms-card flex items-center gap-2"
+                              >
+                                <Key className="w-3.5 h-3.5 text-violet-400" />
+                                <span>Set Up Credentials</span>
+                              </button>
+                              <div className="my-1 border-t border-ms-border/60" />
+                              <button
+                                type="button"
+                                data-testid={`delete-profile-${profile.id}`}
+                                onClick={() => {
+                                  setOpenMenuProfileId(null);
+                                  setDeletingProfile(profile);
+                                }}
+                                className="w-full px-3 py-2 text-left text-rose-400 hover:bg-rose-500/10 flex items-center gap-2"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                                <span>Delete Account</span>
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </div>
 
-                      {/* Status Badges Row */}
-                      <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                        {profile.isPreferred && (
-                          <span
-                            data-testid={`status-badge-preferred-${profile.id}`}
-                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30"
-                          >
-                            <Star className="w-2.5 h-2.5 fill-amber-400" />
-                            <span>Preferred Profile</span>
-                          </span>
-                        )}
-
+                      {/* Status Row: Credentials Saved or Setup Required + Last Selected indicator */}
+                      <div className="flex flex-wrap items-center gap-2">
                         <span
                           data-testid={`status-badge-credentials-${profile.id}`}
-                          className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-semibold border ${
+                          className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-[11px] font-semibold border ${
                             hasCredentials
                               ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
                               : 'bg-amber-500/10 text-amber-300 border-amber-500/25'
@@ -1081,114 +957,82 @@ export const AccountsPage: React.FC = () => {
                             }`}
                           />
                           <span>
-                            {hasCredentials ? 'Credentials Saved' : 'Credentials Missing'}
+                            {hasCredentials ? 'Credentials Saved' : 'Setup Required'}
                           </span>
                         </span>
 
+                        {profile.isLastSelected && (
+                          <span
+                            data-testid={`status-badge-selected-${profile.id}`}
+                            className="px-2.5 py-0.5 rounded-md text-[11px] font-semibold bg-cyan-500/10 text-cyan-300 border border-cyan-500/25"
+                          >
+                            Last Selected
+                          </span>
+                        )}
+
+                        {profile.isPreferred && (
+                          <span
+                            data-testid={`status-badge-preferred-${profile.id}`}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-amber-500/15 text-amber-300 border border-amber-500/30"
+                          >
+                            <Star className="w-2.5 h-2.5 fill-amber-400" />
+                            <span>Preferred</span>
+                          </span>
+                        )}
+
                         {isThisRiotAutomating && (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-violet-500/20 text-violet-300 border border-violet-500/30">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-violet-500/20 text-violet-300 border border-violet-500/30">
                             <Loader2 className="w-2.5 h-2.5 animate-spin" />
                             <span>Login in Progress</span>
                           </span>
                         )}
 
                         {isThisRiotWaitingMfa && (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/30">
                             <span>Verification Required</span>
                           </span>
                         )}
-
-                        {confirmed && (
-                          <span
-                            data-testid={`status-badge-confirmed-${profile.id}`}
-                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-cyan-500/15 text-cyan-300 border border-cyan-500/30"
-                          >
-                            <CheckCircle2 className="w-3 h-3" />
-                            <span>User-Confirmed Profile</span>
-                          </span>
-                        )}
-
-                        {profile.isLastSelected && (
-                          <span
-                            data-testid={`status-badge-selected-${profile.id}`}
-                            className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-cyan-500/10 text-cyan-300 border border-cyan-500/25"
-                          >
-                            Last Selected Profile
-                          </span>
-                        )}
                       </div>
-
-                      {/* Metadata Line (Last confirmed login / Linked games / Notes) */}
-                      {(confirmed || gameCount > 0 || profile.notes) && (
-                        <div className="flex flex-wrap items-center gap-2 text-[11px] text-ms-muted pt-0.5">
-                          {confirmed && confirmedRecord?.confirmedAt && (
-                            <span>
-                              Last Confirmed Login:{' '}
-                              {new Date(confirmedRecord.confirmedAt).toLocaleDateString()}
-                            </span>
-                          )}
-                          {gameCount > 0 && (
-                            <span className="text-violet-300 font-medium">
-                              {gameCount} {gameCount === 1 ? 'game' : 'games'} linked
-                            </span>
-                          )}
-                          {profile.notes && (
-                            <span className="truncate max-w-[220px] text-ms-muted/80">
-                              {profile.notes}
-                            </span>
-                          )}
-                        </div>
-                      )}
                     </div>
 
-                    {/* Card Footer: Prominent Primary Login Action + Secondary Edit & Delete */}
-                    <div className="pt-3 border-t border-ms-border/60 flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex flex-wrap items-center gap-2 flex-1 min-w-0">
+                    {/* Actions: Full-width Primary Login + Separate Secondary Row */}
+                    <div className="pt-3.5 border-t border-ms-border/60 space-y-2.5">
+                      <button
+                        type="button"
+                        data-testid={`riot-login-btn-${profile.id}`}
+                        onClick={() => void handleInitiateRiotLogin(profile)}
+                        className="w-full h-10 px-4 rounded-xl bg-ms-accent hover:bg-ms-accentHover text-white text-xs font-bold inline-flex items-center justify-center gap-2 transition-colors shadow-sm"
+                        title="Open official Riot Client and automatically enter credentials"
+                      >
+                        <Play className="w-3.5 h-3.5 fill-current" />
+                        <span>Login</span>
+                      </button>
+
+                      <div className="grid grid-cols-2 gap-2.5">
                         <button
                           type="button"
-                          data-testid={`riot-login-btn-${profile.id}`}
-                          onClick={() => void handleInitiateRiotLogin(profile)}
-                          className="h-9 px-4 rounded-xl bg-ms-accent hover:bg-ms-accentHover text-white text-xs font-bold inline-flex items-center justify-center gap-1.5 transition-transform active:scale-95 shadow-md min-w-[92px] flex-1"
-                          title="Open official Riot Client and automatically enter credentials"
+                          data-testid={`setup-credentials-btn-${profile.id}`}
+                          onClick={() => openCredentialModal(profile)}
+                          className={`w-full h-9 px-3 rounded-xl text-xs font-semibold inline-flex items-center justify-center gap-1.5 transition-colors border ${
+                            hasCredentials
+                              ? 'bg-ms-bg hover:bg-ms-elevated border-ms-border text-ms-text'
+                              : 'bg-amber-500/15 hover:bg-amber-500/25 border-amber-500/30 text-amber-300'
+                          }`}
+                          title="Configure Windows DPAPI encrypted credentials"
                         >
-                          <Play className="w-3.5 h-3.5 fill-current" />
-                          <span>Login</span>
+                          <Key className="w-3.5 h-3.5 shrink-0" />
+                          <span className="truncate">Set Up Credentials</span>
                         </button>
 
-                        {!hasCredentials && (
-                          <button
-                            type="button"
-                            data-testid={`setup-credentials-btn-${profile.id}`}
-                            onClick={() => openCredentialModal(profile)}
-                            className="h-9 px-3 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 text-xs font-semibold inline-flex items-center gap-1.5 transition-colors shrink-0"
-                            title="Configure Windows DPAPI encrypted credentials"
-                          >
-                            <Key className="w-3.5 h-3.5" />
-                            <span>Set Up Credentials</span>
-                          </button>
-                        )}
-                      </div>
-
-                      <div className="flex items-center gap-1.5 shrink-0">
                         <button
                           type="button"
                           data-testid={`edit-profile-${profile.id}`}
-                          onClick={() => openCredentialModal(profile)}
-                          title="Edit Riot credentials"
-                          className="h-9 px-3 rounded-xl bg-ms-bg hover:bg-ms-elevated border border-ms-border text-ms-text text-xs font-semibold inline-flex items-center gap-1.5 transition-colors"
+                          onClick={() => openEditModal(profile)}
+                          title="Edit Riot account details"
+                          className="w-full h-9 px-3 rounded-xl bg-ms-bg hover:bg-ms-elevated border border-ms-border text-ms-text text-xs font-semibold inline-flex items-center justify-center gap-1.5 transition-colors"
                         >
-                          <Key className="w-3.5 h-3.5 text-violet-400" />
-                          <span>Edit</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          data-testid={`delete-profile-${profile.id}`}
-                          onClick={() => setDeletingProfile(profile)}
-                          title="Delete profile"
-                          className="h-9 w-9 rounded-xl bg-ms-bg hover:bg-rose-500/10 border border-ms-border hover:border-rose-500/30 text-ms-muted hover:text-rose-400 flex items-center justify-center transition-colors"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
+                          <Edit3 className="w-3.5 h-3.5 text-ms-muted shrink-0" />
+                          <span className="truncate">Edit Account</span>
                         </button>
                       </div>
                     </div>
@@ -1197,21 +1041,47 @@ export const AccountsPage: React.FC = () => {
               })}
             </div>
           )}
+
+          {/* 4. Add Riot Account Action */}
+          {riotProfiles.length > 0 && (
+            <div className="rounded-2xl bg-ms-card/40 border border-dashed border-ms-border/80 px-5 py-3.5 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-3 text-xs text-ms-muted">
+                <div className="w-8 h-8 rounded-xl bg-ms-elevated border border-ms-border flex items-center justify-center shrink-0">
+                  <Plus className="w-4 h-4 text-violet-400" />
+                </div>
+                <div>
+                  <span className="font-bold text-ms-text block">Add Another Riot Account</span>
+                  <span className="text-[11px] text-ms-muted">
+                    Store multiple EUW, EUNE, NA, or KR profiles with encrypted Windows DPAPI credentials.
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                data-testid="add-riot-account-section-btn"
+                onClick={openCreateModal}
+                className="h-9 px-4 rounded-xl bg-ms-elevated hover:bg-ms-border border border-ms-border text-ms-text text-xs font-bold inline-flex items-center gap-1.5 transition-colors"
+              >
+                <Plus className="w-3.5 h-3.5 text-violet-400" />
+                <span>Add Riot Account</span>
+              </button>
+            </div>
+          )}
         </>
       )}
 
-      {/* 8. Compact Security Overview Panel (Visually Secondary) */}
+      {/* 5. Compact Security Overview (Visually Secondary, Single Unified Section) */}
       <section
         data-testid="security-overview-panel"
         aria-label="Security Overview"
-        className="rounded-2xl bg-ms-card/60 border border-ms-border/70 px-5 py-4 flex flex-wrap items-center justify-between gap-4 text-xs"
+        className="rounded-2xl bg-ms-card/50 border border-ms-border/70 px-5 py-3.5 flex flex-wrap items-center justify-between gap-4 text-xs"
       >
         <div className="flex items-center gap-3 min-w-0">
-          <div className="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/25 flex items-center justify-center shrink-0">
+          <div className="w-8 h-8 rounded-xl bg-emerald-500/10 border border-emerald-500/25 flex items-center justify-center shrink-0">
             <Lock className="w-4 h-4 text-emerald-400" />
           </div>
           <div className="min-w-0">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <span className="font-bold text-ms-text">Security Overview</span>
               <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
                 Windows DPAPI Active
@@ -1219,12 +1089,11 @@ export const AccountsPage: React.FC = () => {
             </div>
             <p className="text-ms-muted text-[11px] truncate">
               Riot credentials are encrypted with Windows DPAPI bound to your OS user account.
-              Plaintext passwords and tokens are never stored in SQLite.
             </p>
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-4 text-[11px]">
+        <div className="flex flex-wrap items-center gap-3 text-[11px]">
           <div className="px-3 py-1.5 rounded-xl bg-ms-bg border border-ms-border/70">
             <span className="text-ms-muted">Configured Credentials: </span>
             <strong

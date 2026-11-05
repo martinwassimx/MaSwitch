@@ -77,14 +77,18 @@ describe('Accounts page non-Riot preservation & backend service integrity', () =
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
-  it('defaults to Riot Games and displays active Riot account cards with Login, Edit, and Delete', () => {
+  it('defaults to Riot Games and displays active Riot account cards with Login, Set Up Credentials, Edit Account, and overflow menu Delete', () => {
     render(<AccountsPage />);
     expect(screen.getByTestId(`account-card-${riotId}`)).toBeInTheDocument();
     expect(screen.getByTestId(`status-badge-preferred-${riotId}`)).toHaveTextContent(
-      'Preferred Profile'
+      'Preferred'
     );
     expect(screen.getByTestId(`riot-login-btn-${riotId}`)).toBeInTheDocument();
+    expect(screen.getByTestId(`setup-credentials-btn-${riotId}`)).toBeInTheDocument();
     expect(screen.getByTestId(`edit-profile-${riotId}`)).toBeInTheDocument();
+
+    // Open overflow menu to access Delete and Make Preferred
+    fireEvent.click(screen.getByTestId(`more-menu-btn-${riotId}`));
     expect(screen.getByTestId(`delete-profile-${riotId}`)).toBeInTheDocument();
   });
 

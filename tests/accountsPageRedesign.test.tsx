@@ -270,11 +270,12 @@ describe('MaSwitch 3.0 — Accounts Page Redesign & Riot-First Account Managemen
       'Credentials Saved'
     );
     expect(screen.getByTestId('status-badge-credentials-riot-na-2')).toHaveTextContent(
-      'Credentials Missing'
+      'Setup Required'
     );
 
-    // Quick "Set Up Credentials" button appears only when credentials are missing
-    expect(screen.queryByTestId('setup-credentials-btn-riot-euw-1')).not.toBeInTheDocument();
+    // Secondary action row contains Set Up Credentials and Edit Account on every card
+    expect(screen.getByTestId('setup-credentials-btn-riot-euw-1')).toBeInTheDocument();
+    expect(screen.getByTestId('edit-profile-riot-euw-1')).toHaveTextContent('Edit Account');
     const setupBtn = screen.getByTestId('setup-credentials-btn-riot-na-2');
     expect(setupBtn).toBeInTheDocument();
 
@@ -362,17 +363,17 @@ describe('MaSwitch 3.0 — Accounts Page Redesign & Riot-First Account Managemen
   it('6. renders compact Security Overview panel and More actions dropdown menu', () => {
     render(<AccountsPage />);
 
-    // Compact Security Overview Panel
+    // Compact Security Overview Panel (single unified security section)
     const securityPanel = screen.getByTestId('security-overview-panel');
     expect(securityPanel).toBeInTheDocument();
     expect(screen.getByText('Windows DPAPI Active')).toBeInTheDocument();
     expect(screen.getByTestId('security-configured-count')).toHaveTextContent('1');
     expect(screen.getByTestId('security-missing-count')).toHaveTextContent('1');
 
-    // Open More menu on a card
+    // Open More menu on a card (contains Make Preferred and Delete Account)
     fireEvent.click(screen.getByTestId('more-menu-btn-riot-euw-1'));
     expect(screen.getByTestId('more-menu-dropdown-riot-euw-1')).toBeInTheDocument();
-    expect(screen.getByText('Edit Profile Info')).toBeInTheDocument();
-    expect(screen.getByText('Manage DPAPI Credentials')).toBeInTheDocument();
+    expect(screen.getByTestId('preferred-toggle-riot-euw-1')).toBeInTheDocument();
+    expect(screen.getByTestId('delete-profile-riot-euw-1')).toBeInTheDocument();
   });
 });

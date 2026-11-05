@@ -5,11 +5,11 @@
 
   **Lightweight Windows Gaming Launcher & Account Manager**
 
-  [![Release](https://img.shields.io/badge/Release-v1.0.0-8b5cf6?style=for-the-badge)](https://github.com/martinwassimx/MaSwitch/releases/latest)
-  [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011%20(x64)-0ea5e9?style=for-the-badge)](https://github.com/martinwassimx/MaSwitch/releases/latest)
+  [![Release](https://img.shields.io/badge/Release-v1.0.1-8b5cf6?style=for-the-badge)](https://github.com/martinwassimx/MaSwitch/releases/tag/v1.0.1)
+  [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011%20(x64)-0ea5e9?style=for-the-badge)](https://github.com/martinwassimx/MaSwitch/releases/tag/v1.0.1)
   [![License](https://img.shields.io/badge/License-MIT-10b981?style=for-the-badge)](LICENSE)
 
-  [**Download Latest Windows Installer (`MaSwitch-Setup-1.0.0.exe`)**](https://github.com/martinwassimx/MaSwitch/releases/latest) · [Report Issue](https://github.com/martinwassimx/MaSwitch/issues) · [Security Policy](SECURITY.md) · [Changelog](CHANGELOG.md)
+  [**Download Latest Windows Installer (`MaSwitch-Setup-1.0.1.exe`)**](https://github.com/martinwassimx/MaSwitch/releases/tag/v1.0.1) · [Report Issue](https://github.com/martinwassimx/MaSwitch/issues) · [Security Policy](SECURITY.md) · [Changelog](CHANGELOG.md)
 </div>
 
 ---
@@ -89,15 +89,15 @@ Account management is currently active exclusively for **Riot Games**. Multi-acc
 
 ## Installation
 
-1. Go to the [**Latest GitHub Release**](https://github.com/martinwassimx/MaSwitch/releases/latest).
-2. Download **`MaSwitch-Setup-1.0.0.exe`** (and optionally `SHA256SUMS.txt` to verify file integrity).
-3. Run **`MaSwitch-Setup-1.0.0.exe`**.
+1. Go to the [**Latest GitHub Release (`v1.0.1`)**](https://github.com/martinwassimx/MaSwitch/releases/tag/v1.0.1).
+2. Download **`MaSwitch-Setup-1.0.1.exe`** (and optionally `SHA256SUMS.txt` to verify file integrity).
+3. Run **`MaSwitch-Setup-1.0.1.exe`**.
 4. Choose your preferred setup preset (**Minimal**, **Recommended**, **Complete**, or **Custom**).
 5. Complete installation and launch **MaSwitch** from your Desktop or Start Menu.
 
 > **Note on Windows SmartScreen**: Because this open-source release is built without a commercial EV/OV Authenticode certificate, Windows Defender SmartScreen may display an *"Unknown Publisher"* prompt on first download. You can verify the installer's SHA-256 hash against `SHA256SUMS.txt` before running:
 > ```powershell
-> Get-FileHash -Algorithm SHA256 .\MaSwitch-Setup-1.0.0.exe
+> Get-FileHash -Algorithm SHA256 .\MaSwitch-Setup-1.0.1.exe
 > ```
 
 ---

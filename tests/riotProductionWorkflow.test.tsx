@@ -150,14 +150,15 @@ describe('Riot Games Production Account Switching Workflow', () => {
     expect(openLauncher).toHaveBeenCalledTimes(1); // not called again
   });
 
-  it('4. renders the focused Riot Account Switcher Status Panel in the UI', () => {
+  it('4. renders the unified Security Overview Panel and Open Riot Client control in the UI', () => {
     render(<AccountsPage />);
 
-    const panel = screen.getByTestId('riot-account-status-panel');
+    const panel = screen.getByTestId('security-overview-panel');
     expect(panel).toBeInTheDocument();
-    expect(panel).toHaveTextContent('Selected Profile');
-    expect(panel).toHaveTextContent('Last User-Confirmed');
-    expect(panel).toHaveTextContent('Authentication Unknown • Manual Sign-In Required');
+    expect(panel).toHaveTextContent('Security Overview');
+    expect(panel).toHaveTextContent('Windows DPAPI Active');
+    expect(panel).toHaveTextContent('Configured Credentials:');
+    expect(panel).toHaveTextContent('Requiring Setup:');
     expect(screen.getByTestId('riot-section-open-launcher-btn')).toBeInTheDocument();
   });
 

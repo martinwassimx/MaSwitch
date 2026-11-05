@@ -1,4 +1,4 @@
-# MaSwitch — First Public Release (`v1.0.0`)
+# MaSwitch v1.0.1 — Riot Accounts Layout Polish & Windows Release
 
 ## About MaSwitch
 
@@ -6,22 +6,30 @@
 
 ---
 
+## What's New in `v1.0.1`
+
+- **Redesigned Riot Account Cards**:
+  - **Clean Header**: Riot brand icon/avatar, account display name, region badge (`EUW`, `EUNE`, `NA`, `KR`, etc.), username, and a compact top-right overflow menu (`⋮`).
+  - **Streamlined Status Row**: Clear `Credentials Saved` or `Setup Required` badge alongside `Last Selected` and `Preferred` indicators.
+  - **Two-Row Action Hierarchy**: Full-width primary **Login** button (`w-full`) above a separate 2-column secondary row containing **Set Up Credentials** and **Edit Account**—eliminating cramped or overlapping controls.
+  - **Overflow Menu Actions**: Moved **Make Preferred** and **Delete Account** into the card's overflow menu (`⋮`).
+- **Balanced Responsive Account Grid**:
+  - Two balanced columns at standard desktop widths (filling the container symmetrically when 1 or 2 accounts exist), three columns on wide displays when 3+ accounts exist, and one column on narrow windows, with zero horizontal scrolling across `1920×1080`, `1366×768`, `1280×720`, and `1024×768`.
+- **Simplified Security Overview**:
+  - Removed redundant security banners and kept a single visually secondary **Security Overview** section showing Windows DPAPI status, configured credentials count, and accounts requiring setup.
+
+---
+
 ## Main Features
 
 - **Unified Game Library**: Automatic detection and organization of installed PC games across Steam, Epic Games, EA App, Ubisoft Connect, GOG Galaxy, Riot Games, Rockstar Games Launcher, and Custom PC folders.
-- **Riot Games Account Management**: Multi-account profile cards with region badges (`EUW`, `NA`, `EUNE`, `KR`, etc.), preferred account selection, instant search, credential status filters, and sorting.
+- **Riot Games Account Management**: Multi-account profile cards with region badges, preferred account selection, instant search, credential status filters, and sorting.
 - **Automatic Riot Login**: Launches or focuses the official Riot Client, detects login window readiness with automatic retries, and fills credentials via Windows UI Automation (`System.Windows.Automation`) with optional auto-submit and native MFA/CAPTCHA support.
 - **Encrypted Credential Storage**: Protects Riot Games credentials locally using the Windows Data Protection API (**Windows DPAPI** / `CryptProtectData`).
 - **Game Launching**: Official protocol launching (`steam://` and `com.epicgames.launcher://`, including Fortnite Epic Games Launcher routing) and validated direct executable launching.
 - **Game Playtime Tracking**: Real-time session tracking (`Starting` → `Running` → `Completed`) with Windows Sleep/Resume support and crash recovery.
 - **Game Tracking Exclusions**: Built-in exclusions for **Wallpaper Engine** (`wallpaper64.exe`, `wallpaper32.exe`) and idle launchers, plus custom user exclusions.
-- **Gaming Statistics**: Detailed playtime analytics, daily/weekly activity breakdowns, and platform distribution charts.
 - **Optional Memory Management**: Windows NT memory list cleaning (`Working Sets`, `System File Cache`, `Standby List`, `Modified Page List`) inspired by [Mem Reduct](https://github.com/henrypp/memreduct)—never closes user applications and automatically locks while a game is running.
-- **Smart Game Collections**: Dynamic rule-based collections and custom manual collections.
-- **Gaming Year in Review**: Annual gaming recap and exportable summary card.
-- **Game Updates & News**: On-demand official Steam RSS news and patch notes with offline caching.
-- **Backup & Restore**: Local versioned backups of profiles, settings, collections, and playtime history (excluding sensitive DPAPI secrets).
-- **Lightweight Performance Monitoring**: On-demand CPU, system RAM, and MaSwitch footprint telemetry with zero background polling when closed.
 - **Modular Windows Installer**: Choose **Minimal**, **Recommended**, **Complete**, or **Custom** presets during setup to install only the features you want.
 
 ---
@@ -41,7 +49,7 @@ Account management is currently active exclusively for **Riot Games**. Multi-acc
 
 ## Installation
 
-1. Download **`MaSwitch-Setup-1.0.0.exe`** from the **Assets** section below.
+1. Download **`MaSwitch-Setup-1.0.1.exe`** from the **Assets** section below.
 2. Run the installer.
 3. Select **Minimal**, **Recommended**, **Complete**, or **Custom**.
 4. Complete installation.
@@ -60,10 +68,10 @@ Account management is currently active exclusively for **Riot Games**. Multi-acc
 
 | Asset | Size | SHA-256 Checksum |
 | :--- | :--- | :--- |
-| `MaSwitch-Setup-1.0.0.exe` | `82.43 MB` (`86,436,446 bytes`) | `8166af2789f3cffc1dd2574d4cf1ab43cd6e24f005d66da8bc9900cb6ebdf477` |
-| `win-unpacked/MaSwitch.exe` | `180.08 MB` (`188,827,136 bytes`) | `485f9ad29025e71a8f4803c25fe8e8ce06028e45dc1a2ff9d8026a13ba672195` |
+| `MaSwitch-Setup-1.0.1.exe` | `82.43 MB` (`86,436,054 bytes`) | `6bfab3e27a91de4f07d8c59018abce591ad26b600d1608016d7703534c3b31d9` |
+| `win-unpacked/MaSwitch.exe` | `180.08 MB` (`188,827,136 bytes`) | `5364b3b1a1e76f5dd6b3f2e6e2d207953c8d220e800f54cf2a7dbb03f42e145e` |
 
 Verify in PowerShell:
 ```powershell
-Get-FileHash -Algorithm SHA256 .\MaSwitch-Setup-1.0.0.exe
+Get-FileHash -Algorithm SHA256 .\MaSwitch-Setup-1.0.1.exe
 ```

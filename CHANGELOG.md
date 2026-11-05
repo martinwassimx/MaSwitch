@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ---
 
+## [1.0.1] - 2026-11-06 — Riot Accounts UI/UX Polish & Layout Refinement
+
+### Changed
+- **Refined Riot Account Cards**:
+  - Replaced the single cramped footer action row with a two-row action hierarchy: a full-width primary **Login** button above a balanced 2-column secondary row (**Set Up Credentials** and **Edit Account**).
+  - Moved **Make Preferred** and **Delete Account** into the card's top-right compact overflow menu (`⋮`).
+  - Streamlined status badges to show **Credentials Saved** or **Setup Required** alongside **Last Selected** and **Preferred** indicators.
+- **Responsive Account Grid & Navigation**:
+  - Balanced CSS Grid across `1920×1080`, `1366×768`, `1280×720`, and `1024×768` viewports so two accounts fill the desktop container symmetrically without wasted horizontal space.
+  - Compacted platform navigation pills so all 8 platforms fit cleanly on one row at desktop widths and wrap without horizontal scrollbars on narrower screens.
+- **Simplified Security Information**:
+  - Removed the redundant top vault banner and consolidated security telemetry into a single visually secondary **Security Overview** section at the bottom of the page.
+
+---
+
 ## [1.0.0] - 2026-11-06 — First Official Public Release (MaSwitch 3.0)
 
 ### Added
