@@ -104,3 +104,34 @@
 ::-webkit-scrollbar-thumb:hover {
   background: rgb(var(--ms-muted) / 0.5);
 }
+
+/* Low-End PC Mode: strip blurs, shadows, and animations to preserve GPU and CPU */
+.low-end-pc-mode,
+[data-low-end='true'] {
+  --ms-low-end: 1;
+}
+
+.low-end-pc-mode *,
+[data-low-end='true'] * {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  box-shadow: none !important;
+  text-shadow: none !important;
+  transition-duration: 0.001ms !important;
+  animation-duration: 0.001ms !important;
+}
+
+/* Game-Aware Performance Mode: freeze animations to avoid GPU compositor contention with active games */
+.in-game-mode *,
+[data-in-game='true'] * {
+  animation-play-state: paused !important;
+}
+
+/* Respect OS reduced-motion preferences */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}

@@ -3,6 +3,10 @@ import { Menu, nativeImage, Tray } from 'electron';
 
 export interface TrayServiceCallbacks {
   onOpenWindow: () => void;
+  onOpenSettings?: () => void;
+  onOpenFavorites?: () => void;
+  onToggleLowEndMode?: () => void;
+  isLowEndMode?: () => boolean;
   onRescanGames: () => void;
   onTogglePauseTracking: () => void;
   onExitApplication: () => void;
@@ -11,10 +15,11 @@ export interface TrayServiceCallbacks {
 
 export function buildTrayMenuTemplate(callbacks: TrayServiceCallbacks) {
   const paused = callbacks.isTrackingPaused();
+  const lowEnd = callbacks.isLowEndMode ? callbacks.isLowEndMode() : false;
 
   return [
     {
-      label: 'MaSwitch — Windows Gaming Engine',
+      label: 'MaSwitch 2.0 — Gaming Account Manager',
       enabled: false,
     },
     { type: 'separator' as const },
@@ -23,14 +28,31 @@ export function buildTrayMenuTemplate(callbacks: TrayServiceCallbacks) {
       click: () => callbacks.onOpenWindow(),
     },
     {
-      label: 'Rescan Installed Games',
-      click: () => callbacks.onRescanGames(),
+      label: 'Show Favorites',
+      click: () =>
+        callbacks.onOpenFavorites
+          ? callbacks.onOpenFavorites()
+          : callbacks.onOpenWindow(),
     },
     {
-      label: paused
-        ? 'Resume Playtime Tracking'
-        : 'Pause Playtime Tracking',
+      label: 'Open Settings',
+      click: () =>
+        callbacks.onOpenSettings
+          ? callbacks.onOpenSettings()
+          : callbacks.onOpenWindow(),
+    },
+    { type: 'separator' as const },
+    {
+      label: lowEnd ? 'Disable Low-End PC Mode' : 'Enable Low-End PC Mode',
+      click: () => callbacks.onToggleLowEndMode?.(),
+    },
+    {
+      label: paused ? 'Resume Playtime Tracking' : 'Pause Playtime Tracking',
       click: () => callbacks.onTogglePauseTracking(),
+    },
+    {
+      label: 'Rescan Installed Games',
+      click: () => callbacks.onRescanGames(),
     },
     { type: 'separator' as const },
     {

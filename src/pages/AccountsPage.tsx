@@ -105,8 +105,12 @@ export const AccountsPage: React.FC = () => {
   const [selectedPlatformFilter, setSelectedPlatformFilter] = useState<
     'all' | PlatformId
   >('all');
+  const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [isRefreshingStatuses, setIsRefreshingStatuses] = useState(false);
+  const favoriteAccountIds = useAppStore(
+    (s) => s.settings.favoriteAccountIds ?? []
+  );
   // Add / Edit Modal State
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
   const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
@@ -304,6 +308,9 @@ export const AccountsPage: React.FC = () => {
       if (selectedPlatformFilter !== 'all' && p.platformId !== selectedPlatformFilter) {
         return false;
       }
+      if (favoritesOnly && !favoriteAccountIds.includes(p.id) && !p.isPreferred) {
+        return false;
+      }
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         const matchesName = p.displayName.toLowerCase().includes(q);
@@ -314,7 +321,7 @@ export const AccountsPage: React.FC = () => {
       }
       return true;
     });
-  }, [accountProfiles, selectedPlatformFilter, searchQuery]);
+  }, [accountProfiles, selectedPlatformFilter, favoritesOnly, favoriteAccountIds, searchQuery]);
 
   // Group filtered profiles by platform
   const groupedProfiles = useMemo(() => {
@@ -429,6 +436,24 @@ export const AccountsPage: React.FC = () => {
             }`}
           >
             All Platforms ({accountProfiles.length})
+          </button>
+
+          <button
+            type="button"
+            data-testid="accounts-filter-favorites"
+            onClick={() => setFavoritesOnly(!favoritesOnly)}
+            className={`h-9 px-3.5 rounded-xl text-xs font-semibold transition-all inline-flex items-center gap-1.5 ${
+              favoritesOnly
+                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-sm'
+                : 'bg-ms-card hover:bg-ms-elevated border border-ms-border text-ms-muted hover:text-ms-text'
+            }`}
+          >
+            <Star
+              className={`w-3.5 h-3.5 ${
+                favoritesOnly ? 'fill-amber-400 text-amber-400' : ''
+              }`}
+            />
+            <span>Favorites</span>
           </button>
 
           {SUPPORTED_ACCOUNT_PLATFORMS.map((platformId) => {

@@ -28,6 +28,7 @@ export const IPC_CHANNELS = {
   WINDOW_CLOSE: 'maswitch:window:close',
   WINDOW_GET_STATE: 'maswitch:window:get-state',
   WINDOW_STATE_CHANGED: 'maswitch:window:state-changed',
+  WINDOW_VISIBILITY_CHANGED: 'maswitch:window:visibility-changed',
 
   // Settings
   SETTINGS_LOAD: 'maswitch:settings:load',
@@ -66,6 +67,8 @@ export const IPC_CHANNELS = {
   TRACKER_GET_STATUS: 'maswitch:tracker:get-status',
   TRACKER_SET_PAUSED: 'maswitch:tracker:set-paused',
   TRACKER_SESSION_UPDATED_EVENT: 'maswitch:tracker:session-updated',
+  TRACKER_GAME_MODE_CHANGED: 'maswitch:tracker:game-mode-changed',
+  APP_SHOW_NOTIFICATION: 'maswitch:app:show-notification',
 
   // Phase 2: Windows Startup Integration
   STARTUP_GET_STATE: 'maswitch:startup:get-state',
@@ -178,6 +181,7 @@ export interface MaSwitchBridge {
     close: () => Promise<void>;
     getState: () => Promise<WindowStatePayload>;
     onStateChanged: (callback: (state: WindowStatePayload) => void) => () => void;
+    onVisibilityChanged?: (callback: (visible: boolean) => void) => () => void;
   };
   settings: {
     load: () => Promise<MaSwitchSettings>;
@@ -186,6 +190,13 @@ export interface MaSwitchBridge {
   };
   app: {
     getRuntimeInfo: () => Promise<AppRuntimeInfo>;
+    showNotification?: (options: {
+      title: string;
+      body: string;
+      type?: 'info' | 'warning' | 'error';
+    }) => Promise<void>;
+    onNavigateSection?: (callback: (section: string) => void) => () => void;
+    onFilterFavorites?: (callback: (favoritesOnly: boolean) => void) => () => void;
   };
   library?: {
     getGames: () => Promise<GameItem[]>;
@@ -223,6 +234,9 @@ export interface MaSwitchBridge {
     getStatus: () => Promise<PlaytimeTrackerStatus>;
     setPaused: (paused: boolean) => Promise<PlaytimeTrackerStatus>;
     onSessionUpdated: (callback: () => void) => () => void;
+    onGameModeChanged?: (
+      callback: (data: { inGame: boolean; activeGameCount: number }) => void
+    ) => () => void;
   };
   startup?: {
     getState: () => Promise<WindowsStartupState>;

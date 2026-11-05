@@ -1,22 +1,69 @@
-import React, { useEffect } from 'react';
+import React, { Suspense, useEffect } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useAppStore } from '../../store/useAppStore';
 import { TitleBar } from './TitleBar';
 import { Sidebar } from './Sidebar';
 import { HomePage } from '../../pages/HomePage';
-import { LibraryPage } from '../../pages/LibraryPage';
-import { GameDetailsPage } from '../../pages/GameDetailsPage';
-import { AccountsPage } from '../../pages/AccountsPage';
-import { PlatformsPage } from '../../pages/PlatformsPage';
-import { StatisticsPage } from '../../pages/StatisticsPage';
-import { SettingsPage } from '../../pages/SettingsPage';
+import { LibraryPage as EagerLibraryPage } from '../../pages/LibraryPage';
+import { GameDetailsPage as EagerGameDetailsPage } from '../../pages/GameDetailsPage';
+import { AccountsPage as EagerAccountsPage } from '../../pages/AccountsPage';
+import { PlatformsPage as EagerPlatformsPage } from '../../pages/PlatformsPage';
+import { StatisticsPage as EagerStatisticsPage } from '../../pages/StatisticsPage';
+import { SettingsPage as EagerSettingsPage } from '../../pages/SettingsPage';
+
+const isVitest =
+  typeof process !== 'undefined' && Boolean(process.env?.VITEST);
+
+// Lazy load secondary views for production build to reduce memory and render overhead
+const LazyLibraryPage = React.lazy(() =>
+  import('../../pages/LibraryPage').then((m) => ({ default: m.LibraryPage }))
+);
+const LazyGameDetailsPage = React.lazy(() =>
+  import('../../pages/GameDetailsPage').then((m) => ({
+    default: m.GameDetailsPage,
+  }))
+);
+const LazyAccountsPage = React.lazy(() =>
+  import('../../pages/AccountsPage').then((m) => ({ default: m.AccountsPage }))
+);
+const LazyPlatformsPage = React.lazy(() =>
+  import('../../pages/PlatformsPage').then((m) => ({ default: m.PlatformsPage }))
+);
+const LazyStatisticsPage = React.lazy(() =>
+  import('../../pages/StatisticsPage').then((m) => ({
+    default: m.StatisticsPage,
+  }))
+);
+const LazySettingsPage = React.lazy(() =>
+  import('../../pages/SettingsPage').then((m) => ({ default: m.SettingsPage }))
+);
+
+const LibraryView = isVitest ? EagerLibraryPage : LazyLibraryPage;
+const GameDetailsView = isVitest ? EagerGameDetailsPage : LazyGameDetailsPage;
+const AccountsView = isVitest ? EagerAccountsPage : LazyAccountsPage;
+const PlatformsView = isVitest ? EagerPlatformsPage : LazyPlatformsPage;
+const StatisticsView = isVitest ? EagerStatisticsPage : LazyStatisticsPage;
+const SettingsView = isVitest ? EagerSettingsPage : LazySettingsPage;
+
+const ViewLoadingFallback: React.FC = () => (
+  <div className="flex h-full w-full items-center justify-center p-12 text-ms-muted text-xs">
+    <div className="flex items-center gap-2">
+      <div className="h-4 w-4 rounded-full border-2 border-ms-border border-t-ms-accent animate-spin" />
+      <span>Loading view...</span>
+    </div>
+  </div>
+);
 
 export const AppShell: React.FC = () => {
   const activeSection = useAppStore((s) => s.activeSection);
   const selectedGameId = useAppStore((s) => s.selectedGameId);
   const settings = useAppStore((s) => s.settings);
+  const inGameMode = useAppStore((s) => s.inGameMode);
+  const isWindowVisible = useAppStore((s) => s.isWindowVisible);
   const initializeApp = useAppStore((s) => s.initializeApp);
   const refreshLibraryAndStats = useAppStore((s) => s.refreshLibraryAndStats);
+  const setInGameMode = useAppStore((s) => s.setInGameMode);
+  const setWindowVisible = useAppStore((s) => s.setWindowVisible);
 
   useEffect(() => {
     void initializeApp();
@@ -66,7 +113,10 @@ export const AppShell: React.FC = () => {
     if (window.maswitch?.library?.onLibraryUpdated) {
       cleanups.push(
         window.maswitch.library.onLibraryUpdated(() => {
-          void refreshLibraryAndStats();
+          // If a game is actively running, avoid expensive library refetches
+          if (!useAppStore.getState().inGameMode) {
+            void refreshLibraryAndStats();
+          }
         })
       );
     }
@@ -74,7 +124,50 @@ export const AppShell: React.FC = () => {
     if (window.maswitch?.tracker?.onSessionUpdated) {
       cleanups.push(
         window.maswitch.tracker.onSessionUpdated(() => {
-          void refreshLibraryAndStats();
+          // In game mode, avoid re-aggregating whole library stats on each session tick
+          if (!useAppStore.getState().inGameMode) {
+            void refreshLibraryAndStats();
+          }
+        })
+      );
+    }
+
+    if (window.maswitch?.tracker?.onGameModeChanged) {
+      cleanups.push(
+        window.maswitch.tracker.onGameModeChanged((payload) => {
+          setInGameMode(payload.inGame, payload.activeGameCount);
+          if (!payload.inGame) {
+            // Game just exited, perform a single consolidated refresh
+            void refreshLibraryAndStats();
+          }
+        })
+      );
+    }
+
+    if (window.maswitch?.windowControls?.onVisibilityChanged) {
+      cleanups.push(
+        window.maswitch.windowControls.onVisibilityChanged((visible) => {
+          setWindowVisible(visible);
+        })
+      );
+    }
+
+    if (window.maswitch?.app?.onNavigateSection) {
+      cleanups.push(
+        window.maswitch.app.onNavigateSection((section) => {
+          useAppStore
+            .getState()
+            .setActiveSection(
+              section as import('../../shared/types/settings').NavigationSection
+            );
+        })
+      );
+    }
+
+    if (window.maswitch?.app?.onFilterFavorites) {
+      cleanups.push(
+        window.maswitch.app.onFilterFavorites((favs) => {
+          useAppStore.getState().setFavoritesOnly(favs);
         })
       );
     }
@@ -84,35 +177,125 @@ export const AppShell: React.FC = () => {
         cleanup();
       }
     };
-  }, [refreshLibraryAndStats]);
+  }, [refreshLibraryAndStats, setInGameMode, setWindowVisible]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (selectedGameId) {
+          useAppStore.getState().closeGameDetails();
+        }
+        return;
+      }
+
+      if (e.ctrlKey || e.metaKey) {
+        if (e.key.toLowerCase() === 'f') {
+          e.preventDefault();
+          useAppStore.getState().setActiveSection('library');
+          const searchInput = document.querySelector<HTMLInputElement>(
+            'input[aria-label="Global game search"]'
+          );
+          searchInput?.focus();
+        } else if (e.key === ',') {
+          e.preventDefault();
+          useAppStore.getState().setActiveSection('settings');
+        } else if (e.key === '1') {
+          e.preventDefault();
+          useAppStore.getState().setActiveSection('home');
+        } else if (e.key === '2') {
+          e.preventDefault();
+          useAppStore.getState().setActiveSection('library');
+        } else if (e.key === '3') {
+          e.preventDefault();
+          useAppStore.getState().setActiveSection('accounts');
+        } else if (e.key === '4') {
+          e.preventDefault();
+          useAppStore.getState().setActiveSection('platforms');
+        } else if (e.key === '5') {
+          e.preventDefault();
+          useAppStore.getState().setActiveSection('statistics');
+        } else if (e.key === '6') {
+          e.preventDefault();
+          useAppStore.getState().setActiveSection('settings');
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedGameId]);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', settings.theme);
     document.documentElement.setAttribute('data-accent', settings.accentColor);
-  }, [settings.theme, settings.accentColor]);
+    document.documentElement.classList.toggle(
+      'low-end-pc-mode',
+      Boolean(settings.lowEndPcMode)
+    );
+    document.documentElement.setAttribute(
+      'data-low-end',
+      settings.lowEndPcMode ? 'true' : 'false'
+    );
+    document.documentElement.classList.toggle(
+      'in-game-mode',
+      Boolean(inGameMode)
+    );
+    document.documentElement.setAttribute(
+      'data-in-game',
+      inGameMode ? 'true' : 'false'
+    );
+  }, [settings.theme, settings.accentColor, settings.lowEndPcMode, inGameMode]);
 
   const viewKey = selectedGameId ? `details-${selectedGameId}` : activeSection;
   const shouldAnimate =
-    settings.animationsEnabled && !settings.reducedMotion;
+    settings.animationsEnabled &&
+    !settings.reducedMotion &&
+    !settings.lowEndPcMode &&
+    !inGameMode &&
+    isWindowVisible;
 
   const renderActiveView = () => {
     if (selectedGameId) {
-      return <GameDetailsPage />;
+      return (
+        <Suspense fallback={<ViewLoadingFallback />}>
+          <GameDetailsView />
+        </Suspense>
+      );
     }
 
     switch (activeSection) {
       case 'home':
         return <HomePage />;
       case 'library':
-        return <LibraryPage />;
+        return (
+          <Suspense fallback={<ViewLoadingFallback />}>
+            <LibraryView />
+          </Suspense>
+        );
       case 'accounts':
-        return <AccountsPage />;
+        return (
+          <Suspense fallback={<ViewLoadingFallback />}>
+            <AccountsView />
+          </Suspense>
+        );
       case 'platforms':
-        return <PlatformsPage />;
+        return (
+          <Suspense fallback={<ViewLoadingFallback />}>
+            <PlatformsView />
+          </Suspense>
+        );
       case 'statistics':
-        return <StatisticsPage />;
+        return (
+          <Suspense fallback={<ViewLoadingFallback />}>
+            <StatisticsView />
+          </Suspense>
+        );
       case 'settings':
-        return <SettingsPage />;
+        return (
+          <Suspense fallback={<ViewLoadingFallback />}>
+            <SettingsView />
+          </Suspense>
+        );
       default:
         return <HomePage />;
     }

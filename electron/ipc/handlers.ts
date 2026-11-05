@@ -3,6 +3,7 @@ import {
   BrowserWindow,
   dialog,
   ipcMain,
+  Notification,
   safeStorage,
   type IpcMainInvokeEvent,
 } from 'electron';
@@ -162,6 +163,15 @@ export function registerIpcHandlers(
       assertTrustedSender(event, getMainWindow, devServerUrl);
       const saved = settingsStore.save(partialSettings);
       trackerEngine.setEnabled(saved.playtimeTrackingEnabled);
+      if (saved.lowEndPcMode !== undefined) {
+        trackerEngine.setLowEndMode(Boolean(saved.lowEndPcMode));
+      }
+      if (saved.gameAwarePerformanceMode !== undefined) {
+        trackerEngine.setGameAwareMode(Boolean(saved.gameAwarePerformanceMode));
+      }
+      if (saved.excludedApplications !== undefined) {
+        trackerEngine.setExcludedApplications(saved.excludedApplications);
+      }
       services.onTrayStateUpdate?.();
       if (saved.riotLiveSwitchingEnabled !== undefined && services.riotLiveServices) {
         services.riotLiveServices.engine.setEnabled(Boolean(saved.riotLiveSwitchingEnabled));
@@ -174,6 +184,11 @@ export function registerIpcHandlers(
     assertTrustedSender(event, getMainWindow, devServerUrl);
     const reset = settingsStore.reset();
     trackerEngine.setEnabled(reset.playtimeTrackingEnabled);
+    trackerEngine.setLowEndMode(Boolean(reset.lowEndPcMode));
+    trackerEngine.setGameAwareMode(Boolean(reset.gameAwarePerformanceMode));
+    if (reset.excludedApplications) {
+      trackerEngine.setExcludedApplications(reset.excludedApplications);
+    }
     services.onTrayStateUpdate?.();
     return reset;
   });
@@ -403,8 +418,55 @@ export function registerIpcHandlers(
   // Phase 2: Background Playtime Tracker & Real Statistics
   ipcMain.handle(IPC_CHANNELS.TRACKER_GET_STATISTICS, (event) => {
     assertTrustedSender(event, getMainWindow, devServerUrl);
-    return sqliteDb.getRealStatisticsOverview();
+    const settings = settingsStore.load();
+    const excludedHistoricalExes = new Set<string>();
+    const excludedHistoricalGameIds = new Set<string>();
+
+    if (Array.isArray(settings.excludedApplications)) {
+      for (const rule of settings.excludedApplications) {
+        if (rule.excludeHistorical) {
+          if (rule.executableName) {
+            excludedHistoricalExes.add(rule.executableName.toLowerCase().trim());
+          }
+          if (rule.gameId) {
+            excludedHistoricalGameIds.add(rule.gameId.trim());
+          }
+        }
+      }
+    }
+
+    return sqliteDb.getRealStatisticsOverview({
+      exes: excludedHistoricalExes,
+      gameIds: excludedHistoricalGameIds,
+    });
   });
+
+  ipcMain.handle(
+    IPC_CHANNELS.APP_SHOW_NOTIFICATION,
+    (event, rawPayload: unknown) => {
+      assertTrustedSender(event, getMainWindow, devServerUrl);
+      const settings = settingsStore.load();
+      if (!settings.notificationsEnabled) {
+        return;
+      }
+      if (
+        settings.suppressNotificationsInGame &&
+        trackerEngine.getStatus().activeSessions.length > 0
+      ) {
+        return;
+      }
+      if (!rawPayload || typeof rawPayload !== 'object') {
+        return;
+      }
+      const data = rawPayload as { title?: string; body?: string };
+      if (Notification.isSupported() && data.title) {
+        new Notification({
+          title: data.title,
+          body: data.body ?? '',
+        }).show();
+      }
+    }
+  );
 
   ipcMain.handle(IPC_CHANNELS.TRACKER_GET_STATUS, (event) => {
     assertTrustedSender(event, getMainWindow, devServerUrl);

@@ -1,5 +1,5 @@
-import React from 'react';
-import { RefreshCw, ArrowRight } from 'lucide-react';
+import React, { useState } from 'react';
+import { RefreshCw, ArrowRight, Star } from 'lucide-react';
 import type { CapabilityReadiness } from '../shared/types/platform';
 import { useAppStore } from '../store/useAppStore';
 import { PlatformLogo } from '../components/platforms/PlatformLogo';
@@ -9,6 +9,8 @@ function isCapabilitySupported(readiness: CapabilityReadiness): boolean {
 }
 
 export const PlatformsPage: React.FC = () => {
+  const [favoritesOnly, setFavoritesOnly] = useState(false);
+
   const platforms = useAppStore((s) => s.platforms);
   const platformReports = useAppStore((s) => s.platformReports);
   const games = useAppStore((s) => s.games);
@@ -16,6 +18,10 @@ export const PlatformsPage: React.FC = () => {
   const triggerGameScan = useAppStore((s) => s.startGameScan);
   const setActiveSection = useAppStore((s) => s.setActiveSection);
   const setPlatformFilter = useAppStore((s) => s.setPlatformFilter);
+  const favoritePlatformIds = useAppStore(
+    (s) => s.settings.favoritePlatformIds ?? []
+  );
+  const togglePlatformFavorite = useAppStore((s) => s.togglePlatformFavorite);
 
   const handleInspectPlatformLibrary = (
     platformId: (typeof platforms)[number]['id']
@@ -24,10 +30,14 @@ export const PlatformsPage: React.FC = () => {
     setActiveSection('library');
   };
 
+  const displayedPlatforms = favoritesOnly
+    ? platforms.filter((p) => favoritePlatformIds.includes(p.id))
+    : platforms;
+
   return (
     <div
       data-testid="page-platforms"
-      className="max-w-6xl mx-auto space-y-7 pb-16"
+      className="max-w-6xl mx-auto space-y-7 pb-16 animate-fadeIn"
     >
       {/* Spacious Gaming Header */}
       <div className="flex flex-wrap items-center justify-between gap-4 border-b border-ms-border/80 pb-5">
@@ -40,20 +50,40 @@ export const PlatformsPage: React.FC = () => {
           </p>
         </div>
 
-        <button
-          type="button"
-          data-testid="platforms-rescan-btn"
-          disabled={isScanning}
-          onClick={() => void triggerGameScan()}
-          className="h-10 px-4 rounded-lg bg-ms-card hover:bg-ms-elevated disabled:opacity-60 border border-ms-border text-ms-text text-sm font-semibold inline-flex items-center gap-2 transition-colors shadow-sm"
-        >
-          <RefreshCw
-            className={`w-4 h-4 text-ms-muted ${
-              isScanning ? 'animate-spin' : ''
+        <div className="flex items-center gap-2.5">
+          <button
+            type="button"
+            data-testid="toggle-platform-favorites-filter"
+            onClick={() => setFavoritesOnly(!favoritesOnly)}
+            className={`h-10 px-3.5 rounded-lg border text-sm font-semibold inline-flex items-center gap-1.5 transition-colors ${
+              favoritesOnly
+                ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 shadow-sm'
+                : 'bg-ms-card hover:bg-ms-elevated border-ms-border text-ms-muted hover:text-ms-text'
             }`}
-          />
-          <span>{isScanning ? 'Scanning...' : 'Scan All Launchers'}</span>
-        </button>
+          >
+            <Star
+              className={`w-4 h-4 ${
+                favoritesOnly ? 'fill-amber-400 text-amber-400' : ''
+              }`}
+            />
+            <span>Favorites</span>
+          </button>
+
+          <button
+            type="button"
+            data-testid="platforms-rescan-btn"
+            disabled={isScanning}
+            onClick={() => void triggerGameScan()}
+            className="h-10 px-4 rounded-lg bg-ms-card hover:bg-ms-elevated disabled:opacity-60 border border-ms-border text-ms-text text-sm font-semibold inline-flex items-center gap-2 transition-colors shadow-sm"
+          >
+            <RefreshCw
+              className={`w-4 h-4 text-ms-muted ${
+                isScanning ? 'animate-spin' : ''
+              }`}
+            />
+            <span>{isScanning ? 'Scanning...' : 'Scan All Launchers'}</span>
+          </button>
+        </div>
       </div>
 
       {/* Grid of Platform Cards */}
@@ -61,13 +91,14 @@ export const PlatformsPage: React.FC = () => {
         aria-label="Supported Gaming Platforms"
         className="grid grid-cols-1 md:grid-cols-2 gap-5"
       >
-        {platforms.map((platform) => {
+        {displayedPlatforms.map((platform) => {
           const liveReport = platformReports.find(
             (r) => r.platformId === platform.id
           );
           const platformGames = games.filter((g) => g.platformId === platform.id);
           const isDetected = liveReport?.status === 'detected' || platformGames.length > 0;
           const detectedCount = platformGames.length;
+          const isFav = favoritePlatformIds.includes(platform.id);
 
           const activeCapabilities: string[] = [];
           if (isCapabilitySupported(platform.capabilities.installedScan)) {
@@ -97,9 +128,24 @@ export const PlatformsPage: React.FC = () => {
                       <PlatformLogo platformId={platform.id} size={32} colorMode="brand" />
                     </div>
                     <div>
-                      <h2 className="text-lg font-bold text-ms-text tracking-tight">
-                        {platform.name}
-                      </h2>
+                      <div className="flex items-center gap-2">
+                        <h2 className="text-lg font-bold text-ms-text tracking-tight">
+                          {platform.name}
+                        </h2>
+                        <button
+                          type="button"
+                          data-testid={`favorite-platform-${platform.id}`}
+                          onClick={() => void togglePlatformFavorite(platform.id)}
+                          title={isFav ? 'Remove from favorites' : 'Add to favorites'}
+                          className={`p-1 rounded-md transition-colors ${
+                            isFav
+                              ? 'text-amber-400 hover:text-amber-300'
+                              : 'text-ms-muted/50 hover:text-amber-400'
+                          }`}
+                        >
+                          <Star className={`w-3.5 h-3.5 ${isFav ? 'fill-amber-400' : ''}`} />
+                        </button>
+                      </div>
                       <p className="text-xs text-ms-muted">
                         {platform.vendor}
                       </p>

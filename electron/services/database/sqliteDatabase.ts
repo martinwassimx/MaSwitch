@@ -1835,9 +1835,21 @@ export class MaSwitchSqliteDatabase {
 
   /**
    * Computes real local statistics from recorded SQLite `playtime_sessions`.
+   * Supports optional historical exclusion filtering for non-game utilities like Wallpaper Engine.
    */
-  public getRealStatisticsOverview(): StatisticsOverview {
-    const allSessions = this.getRecentSessions(1000);
+  public getRealStatisticsOverview(
+    excludedHistorical?: { exes?: Set<string>; gameIds?: Set<string> }
+  ): StatisticsOverview {
+    const rawSessions = this.getRecentSessions(1000);
+    const allSessions = rawSessions.filter((s) => {
+      if (!excludedHistorical) return true;
+      if (excludedHistorical.gameIds?.has(s.gameId)) return false;
+      const exeName = (
+        s.executablePath ? path.basename(s.executablePath) : ''
+      ).toLowerCase();
+      if (exeName && excludedHistorical.exes?.has(exeName)) return false;
+      return true;
+    });
     const totalSeconds = allSessions.reduce(
       (sum, s) => sum + s.durationSeconds,
       0
@@ -1937,8 +1949,18 @@ export class MaSwitchSqliteDatabase {
       });
     }
 
-    // Platform breakdown from library games and sessions
-    const games = this.getAllLibraryGames();
+    // Platform breakdown from library games and sessions (respecting exclusions)
+    const games = this.getAllLibraryGames().filter((g) => {
+      if (!excludedHistorical) return true;
+      if (excludedHistorical.gameIds?.has(g.id)) return false;
+      const exeName = (
+        g.executablePath
+          ? path.basename(g.executablePath)
+          : (g.executableName ?? '')
+      ).toLowerCase();
+      if (exeName && excludedHistorical.exes?.has(exeName)) return false;
+      return true;
+    });
     const byPlatform = new Map<
       PlatformId,
       { seconds: number; titlesCount: number }

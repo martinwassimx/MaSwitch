@@ -19,6 +19,15 @@ export type AccentColorId =
 
 export type WindowCloseBehavior = 'minimize-to-tray' | 'exit';
 
+export interface ExcludedApplicationRule {
+  executableName: string;
+  displayName?: string;
+  gameId?: string;
+  excludeFuture: boolean;
+  excludeHistorical: boolean;
+  addedAtIso: string;
+}
+
 export interface MaSwitchSettings {
   theme: ThemePresetId;
   accentColor: AccentColorId;
@@ -44,7 +53,47 @@ export interface MaSwitchSettings {
   steamGridDbApiKey?: string;
   riotLiveSwitchingEnabled?: boolean;
   riotAutoSubmitLogin?: boolean;
+
+  // MaSwitch 2.0 Lightweight Performance & Tracking Settings
+  lowEndPcMode: boolean;
+  gameAwarePerformanceMode: boolean;
+  favoriteAccountIds: string[];
+  favoritePlatformIds: string[];
+  excludedApplications: ExcludedApplicationRule[];
+  notificationsEnabled: boolean;
+  suppressNotificationsInGame: boolean;
 }
+
+export const DEFAULT_EXCLUDED_APPLICATIONS: ExcludedApplicationRule[] = [
+  {
+    executableName: 'wallpaper64.exe',
+    displayName: 'Wallpaper Engine (64-bit)',
+    excludeFuture: true,
+    excludeHistorical: true,
+    addedAtIso: '2026-01-01T00:00:00.000Z',
+  },
+  {
+    executableName: 'wallpaper32.exe',
+    displayName: 'Wallpaper Engine (32-bit)',
+    excludeFuture: true,
+    excludeHistorical: true,
+    addedAtIso: '2026-01-01T00:00:00.000Z',
+  },
+  {
+    executableName: 'webwallpaper32.exe',
+    displayName: 'Wallpaper Engine Web Host',
+    excludeFuture: true,
+    excludeHistorical: true,
+    addedAtIso: '2026-01-01T00:00:00.000Z',
+  },
+  {
+    executableName: 'ui32.exe',
+    displayName: 'Wallpaper Engine UI Helper',
+    excludeFuture: true,
+    excludeHistorical: true,
+    addedAtIso: '2026-01-01T00:00:00.000Z',
+  },
+];
 
 export const DEFAULT_SETTINGS: MaSwitchSettings = {
   theme: 'dark-graphite',
@@ -69,6 +118,13 @@ export const DEFAULT_SETTINGS: MaSwitchSettings = {
   steamGridDbApiKey: '',
   riotLiveSwitchingEnabled: false,
   riotAutoSubmitLogin: true,
+  lowEndPcMode: false,
+  gameAwarePerformanceMode: true,
+  favoriteAccountIds: [],
+  favoritePlatformIds: [],
+  excludedApplications: DEFAULT_EXCLUDED_APPLICATIONS,
+  notificationsEnabled: true,
+  suppressNotificationsInGame: true,
 };
 
 export interface WindowsStartupState {

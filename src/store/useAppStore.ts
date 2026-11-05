@@ -44,6 +44,7 @@ import type {
 } from '../shared/types/scanner';
 import {
   type AppRuntimeInfo,
+  type ExcludedApplicationRule,
   type MaSwitchSettings,
   type NavigationSection,
   type WindowsStartupState,
@@ -141,6 +142,11 @@ export interface AppStoreState {
   settings: MaSwitchSettings;
   runtimeInfo: AppRuntimeInfo | null;
 
+  // Performance & System state
+  inGameMode: boolean;
+  activeGameCount: number;
+  isWindowVisible: boolean;
+
   // Actions
   initializeApp: () => Promise<void>;
   refreshLibraryAndStats: () => Promise<void>;
@@ -148,6 +154,8 @@ export interface AppStoreState {
   openGameDetails: (gameId: string) => void;
   closeGameDetails: () => void;
   setInspectedLibraryGameId: (gameId: string) => void;
+  setInGameMode: (inGame: boolean, activeGameCount: number) => void;
+  setWindowVisible: (visible: boolean) => void;
 
   setSearchQuery: (query: string) => void;
   setPlatformFilter: (platform: 'all' | PlatformId) => void;
@@ -159,6 +167,10 @@ export interface AppStoreState {
   resetLibraryFilters: () => void;
 
   toggleFavoriteGame: (gameId: string) => Promise<void>;
+  toggleAccountFavorite: (accountId: string) => Promise<void>;
+  togglePlatformFavorite: (platformId: string) => Promise<void>;
+  updateExcludedApplication: (rule: ExcludedApplicationRule) => Promise<void>;
+  removeExcludedApplication: (executableName: string) => Promise<void>;
   updateSettings: (partial: Partial<MaSwitchSettings>) => Promise<void>;
   resetSettings: () => Promise<void>;
   setDemoMode: (enabled: boolean) => Promise<void>;
@@ -330,6 +342,18 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
 
   settings: initialSettings,
   runtimeInfo: null,
+
+  inGameMode: false,
+  activeGameCount: 0,
+  isWindowVisible: true,
+
+  setInGameMode: (inGame: boolean, activeGameCount: number) => {
+    set({ inGameMode: inGame, activeGameCount });
+  },
+
+  setWindowVisible: (visible: boolean) => {
+    set({ isWindowVisible: visible });
+  },
 
   initializeApp: async () => {
     if (get().isHydrated) {
@@ -555,6 +579,48 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
         optimistic
       );
     }
+  },
+
+  toggleAccountFavorite: async (accountId: string) => {
+    const current = get().settings;
+    const favs = current.favoriteAccountIds ?? [];
+    const nextFavs = favs.includes(accountId)
+      ? favs.filter((id) => id !== accountId)
+      : [...favs, accountId];
+    await get().updateSettings({ favoriteAccountIds: nextFavs });
+  },
+
+  togglePlatformFavorite: async (platformId: string) => {
+    const current = get().settings;
+    const favs = current.favoritePlatformIds ?? [];
+    const nextFavs = favs.includes(platformId)
+      ? favs.filter((id) => id !== platformId)
+      : [...favs, platformId];
+    await get().updateSettings({ favoritePlatformIds: nextFavs });
+  },
+
+  updateExcludedApplication: async (rule: ExcludedApplicationRule) => {
+    const current = get().settings;
+    const existing = [...(current.excludedApplications ?? [])];
+    const index = existing.findIndex(
+      (r) => r.executableName.toLowerCase() === rule.executableName.toLowerCase()
+    );
+    if (index >= 0) {
+      existing[index] = rule;
+    } else {
+      existing.push(rule);
+    }
+    await get().updateSettings({ excludedApplications: existing });
+    await get().refreshLibraryAndStats();
+  },
+
+  removeExcludedApplication: async (executableName: string) => {
+    const current = get().settings;
+    const existing = (current.excludedApplications ?? []).filter(
+      (r) => r.executableName.toLowerCase() !== executableName.toLowerCase()
+    );
+    await get().updateSettings({ excludedApplications: existing });
+    await get().refreshLibraryAndStats();
   },
 
   updateSettings: async (partial) => {

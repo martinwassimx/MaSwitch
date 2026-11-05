@@ -1,6 +1,8 @@
 import {
   DEFAULT_SETTINGS,
+  DEFAULT_EXCLUDED_APPLICATIONS,
   type AccentColorId,
+  type ExcludedApplicationRule,
   type MaSwitchSettings,
   type NavigationSection,
   type ThemePresetId,
@@ -106,6 +108,72 @@ export function sanitizeSettings(
       )
     : [...fallback.customScanFolders];
 
+  const favoriteAccountIds = Array.isArray(raw.favoriteAccountIds)
+    ? Array.from(
+        new Set(
+          raw.favoriteAccountIds.filter(
+            (id): id is string =>
+              typeof id === 'string' &&
+              id.length > 0 &&
+              id.length <= 120 &&
+              /^[a-z0-9._-]+$/i.test(id)
+          )
+        )
+      )
+    : [...(fallback.favoriteAccountIds ?? [])];
+
+  const favoritePlatformIds = Array.isArray(raw.favoritePlatformIds)
+    ? Array.from(
+        new Set(
+          raw.favoritePlatformIds.filter(
+            (id): id is string =>
+              typeof id === 'string' &&
+              id.length > 0 &&
+              id.length <= 64 &&
+              /^[a-z0-9._-]+$/i.test(id)
+          )
+        )
+      )
+    : [...(fallback.favoritePlatformIds ?? [])];
+
+  const excludedApplications: ExcludedApplicationRule[] = Array.isArray(
+    raw.excludedApplications
+  )
+    ? (raw.excludedApplications
+        .map((entry: unknown): ExcludedApplicationRule | null => {
+          if (!entry || typeof entry !== 'object') return null;
+          const e = entry as Record<string, unknown>;
+          if (
+            typeof e.executableName !== 'string' ||
+            e.executableName.trim().length === 0
+          ) {
+            return null;
+          }
+          return {
+            executableName: e.executableName.trim().toLowerCase(),
+            displayName:
+              typeof e.displayName === 'string'
+                ? e.displayName.trim()
+                : undefined,
+            gameId:
+              typeof e.gameId === 'string' ? e.gameId.trim() : undefined,
+            excludeFuture:
+              typeof e.excludeFuture === 'boolean' ? e.excludeFuture : true,
+            excludeHistorical:
+              typeof e.excludeHistorical === 'boolean'
+                ? e.excludeHistorical
+                : false,
+            addedAtIso:
+              typeof e.addedAtIso === 'string'
+                ? e.addedAtIso
+                : new Date().toISOString(),
+          };
+        })
+        .filter(
+          (rule): rule is ExcludedApplicationRule => rule !== null
+        ))
+    : [...(fallback.excludedApplications ?? DEFAULT_EXCLUDED_APPLICATIONS)];
+
   return {
     theme,
     accentColor,
@@ -174,6 +242,25 @@ export function sanitizeSettings(
       typeof raw.riotAutoSubmitLogin === 'boolean'
         ? raw.riotAutoSubmitLogin
         : fallback.riotAutoSubmitLogin ?? true,
+    lowEndPcMode:
+      typeof raw.lowEndPcMode === 'boolean'
+        ? raw.lowEndPcMode
+        : fallback.lowEndPcMode ?? false,
+    gameAwarePerformanceMode:
+      typeof raw.gameAwarePerformanceMode === 'boolean'
+        ? raw.gameAwarePerformanceMode
+        : fallback.gameAwarePerformanceMode ?? true,
+    favoriteAccountIds,
+    favoritePlatformIds,
+    excludedApplications,
+    notificationsEnabled:
+      typeof raw.notificationsEnabled === 'boolean'
+        ? raw.notificationsEnabled
+        : fallback.notificationsEnabled ?? true,
+    suppressNotificationsInGame:
+      typeof raw.suppressNotificationsInGame === 'boolean'
+        ? raw.suppressNotificationsInGame
+        : fallback.suppressNotificationsInGame ?? true,
   };
 }
 

@@ -236,12 +236,34 @@ function createMainWindow(
   });
 
   const notifyState = () => broadcastWindowState(win);
+  const sendVisibility = (visible: boolean) => {
+    if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
+      win.webContents.send(IPC_CHANNELS.WINDOW_VISIBILITY_CHANGED, { visible });
+    }
+  };
+
   win.on('maximize', notifyState);
   win.on('unmaximize', notifyState);
   win.on('enter-full-screen', notifyState);
   win.on('leave-full-screen', notifyState);
   win.on('focus', notifyState);
   win.on('blur', notifyState);
+  win.on('minimize', () => {
+    notifyState();
+    sendVisibility(false);
+  });
+  win.on('restore', () => {
+    notifyState();
+    sendVisibility(true);
+  });
+  win.on('hide', () => {
+    notifyState();
+    sendVisibility(false);
+  });
+  win.on('show', () => {
+    notifyState();
+    sendVisibility(true);
+  });
 
   const bringToFront = () => {
     if (win.isDestroyed()) return;
@@ -458,6 +480,8 @@ app.whenReady().then(() => {
 
   const trackerEngine = new PlaytimeTrackerEngine(sqliteDb, {
     pollIntervalMs: 5000,
+    inGamePollIntervalMs: 15000,
+    lowEndPollIntervalMs: 15000,
     gracePolls: 2,
     onSessionUpdated: () => {
       broadcastToRenderer(IPC_CHANNELS.TRACKER_SESSION_UPDATED_EVENT);
@@ -470,9 +494,22 @@ app.whenReady().then(() => {
         isRunning ? 'Active gameplay session detected' : 'Session ended'
       );
     },
+    onGameModeChanged: (inGame, activeGameCount) => {
+      broadcastToRenderer(IPC_CHANNELS.TRACKER_GAME_MODE_CHANGED, {
+        inGame,
+        activeGameCount,
+      });
+    },
   });
   playtimeTracker = trackerEngine;
   trackerEngine.setEnabled(currentSettings.playtimeTrackingEnabled);
+  trackerEngine.setLowEndMode(Boolean(currentSettings.lowEndPcMode));
+  trackerEngine.setGameAwareMode(
+    currentSettings.gameAwarePerformanceMode !== false
+  );
+  if (currentSettings.excludedApplications) {
+    trackerEngine.setExcludedApplications(currentSettings.excludedApplications);
+  }
   trackerEngine.start();
 
   // Hook Windows power suspend/resume events for accurate playtime calculation
@@ -547,16 +584,36 @@ app.whenReady().then(() => {
     }
   };
 
-  trayService = new MaSwitchTrayService(iconPath, {
-    onOpenWindow: () => {
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.show();
-        if (mainWindow.isMinimized()) {
-          mainWindow.restore();
-        }
-        mainWindow.focus();
+  const showAppWindow = () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.show();
+      if (mainWindow.isMinimized()) {
+        mainWindow.restore();
       }
+      mainWindow.focus();
+    }
+  };
+
+  trayService = new MaSwitchTrayService(iconPath, {
+    onOpenWindow: showAppWindow,
+    onOpenSettings: () => {
+      showAppWindow();
+      broadcastToRenderer('maswitch:navigate:section', 'settings');
     },
+    onOpenFavorites: () => {
+      showAppWindow();
+      broadcastToRenderer('maswitch:navigate:section', 'library');
+      broadcastToRenderer('maswitch:filter:favorites', true);
+    },
+    onToggleLowEndMode: () => {
+      const current = settingsStore.load();
+      const next = !current.lowEndPcMode;
+      const updated = settingsStore.save({ lowEndPcMode: next });
+      trackerEngine.setLowEndMode(next);
+      trayService?.refreshMenu();
+      broadcastToRenderer(IPC_CHANNELS.SETTINGS_SAVE, updated);
+    },
+    isLowEndMode: () => Boolean(settingsStore.load().lowEndPcMode),
     onRescanGames: () => {
       void triggerBackgroundScan();
     },

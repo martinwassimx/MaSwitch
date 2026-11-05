@@ -24,6 +24,7 @@ const IPC_CHANNELS = {
   WINDOW_CLOSE: 'maswitch:window:close',
   WINDOW_GET_STATE: 'maswitch:window:get-state',
   WINDOW_STATE_CHANGED: 'maswitch:window:state-changed',
+  WINDOW_VISIBILITY_CHANGED: 'maswitch:window:visibility-changed',
   SETTINGS_LOAD: 'maswitch:settings:load',
   SETTINGS_SAVE: 'maswitch:settings:save',
   SETTINGS_RESET: 'maswitch:settings:reset',
@@ -50,6 +51,8 @@ const IPC_CHANNELS = {
   TRACKER_GET_STATUS: 'maswitch:tracker:get-status',
   TRACKER_SET_PAUSED: 'maswitch:tracker:set-paused',
   TRACKER_SESSION_UPDATED_EVENT: 'maswitch:tracker:session-updated',
+  TRACKER_GAME_MODE_CHANGED: 'maswitch:tracker:game-mode-changed',
+  APP_SHOW_NOTIFICATION: 'maswitch:app:show-notification',
   STARTUP_GET_STATE: 'maswitch:startup:get-state',
   STARTUP_SET_CONFIG: 'maswitch:startup:set-config',
   ARTWORK_GET_STATS: 'maswitch:artwork:get-stats',
@@ -124,6 +127,17 @@ const bridge: MaSwitchBridge = {
         ipcRenderer.removeListener(IPC_CHANNELS.WINDOW_STATE_CHANGED, listener);
       };
     },
+    onVisibilityChanged: (callback: (visible: boolean) => void) => {
+      const listener = (_event: IpcRendererEvent, payload: { visible: boolean }) => {
+        if (payload && typeof payload.visible === 'boolean') {
+          callback(payload.visible);
+        }
+      };
+      ipcRenderer.on(IPC_CHANNELS.WINDOW_VISIBILITY_CHANGED, listener);
+      return () => {
+        ipcRenderer.removeListener(IPC_CHANNELS.WINDOW_VISIBILITY_CHANGED, listener);
+      };
+    },
   },
   settings: {
     load: () => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_LOAD),
@@ -133,6 +147,35 @@ const bridge: MaSwitchBridge = {
   },
   app: {
     getRuntimeInfo: () => ipcRenderer.invoke(IPC_CHANNELS.APP_GET_RUNTIME_INFO),
+    showNotification: (options: {
+      title: string;
+      body: string;
+      type?: 'info' | 'warning' | 'error';
+    }) => ipcRenderer.invoke(IPC_CHANNELS.APP_SHOW_NOTIFICATION, options),
+    onNavigateSection: (callback: (section: string) => void) => {
+      const listener = (
+        _event: IpcRendererEvent,
+        section: string
+      ) => {
+        if (typeof section === 'string') callback(section);
+      };
+      ipcRenderer.on('maswitch:navigate:section', listener);
+      return () => {
+        ipcRenderer.removeListener('maswitch:navigate:section', listener);
+      };
+    },
+    onFilterFavorites: (callback: (favoritesOnly: boolean) => void) => {
+      const listener = (
+        _event: IpcRendererEvent,
+        val: boolean
+      ) => {
+        callback(Boolean(val));
+      };
+      ipcRenderer.on('maswitch:filter:favorites', listener);
+      return () => {
+        ipcRenderer.removeListener('maswitch:filter:favorites', listener);
+      };
+    },
   },
   library: {
     getGames: () => ipcRenderer.invoke(IPC_CHANNELS.LIBRARY_GET_GAMES),
@@ -223,6 +266,25 @@ const bridge: MaSwitchBridge = {
       return () => {
         ipcRenderer.removeListener(
           IPC_CHANNELS.TRACKER_SESSION_UPDATED_EVENT,
+          listener
+        );
+      };
+    },
+    onGameModeChanged: (
+      callback: (data: { inGame: boolean; activeGameCount: number }) => void
+    ) => {
+      const listener = (
+        _event: IpcRendererEvent,
+        payload: { inGame: boolean; activeGameCount: number }
+      ) => {
+        if (payload && typeof payload === 'object') {
+          callback(payload);
+        }
+      };
+      ipcRenderer.on(IPC_CHANNELS.TRACKER_GAME_MODE_CHANGED, listener);
+      return () => {
+        ipcRenderer.removeListener(
+          IPC_CHANNELS.TRACKER_GAME_MODE_CHANGED,
           listener
         );
       };
