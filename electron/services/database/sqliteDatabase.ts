@@ -53,6 +53,15 @@ import {
   generateLocalGameHeroSvg,
 } from '../../../src/shared/utils/proceduralCover';
 import { detectEaAppGameInDirectory } from '../scanner/eaScanner';
+import {
+  detectEpicGameFromManifests,
+  isFortniteGame,
+} from '../scanner/epicScanner';
+import {
+  validateEpicLaunchUri,
+  validateSteamLaunchUri,
+  validateEaLaunchUri,
+} from '../launcher/gameLauncherEngine';
 import { resolveGameProcessAliases } from '../tracker/gameProcessAliases';
 
 export interface MigrationDefinition {
@@ -604,16 +613,86 @@ export class MaSwitchSqliteDatabase {
 
     this.withTransaction(() => {
       for (const row of rows) {
-        // If user explicitly edited this game or set a platform override, preserve it
+        const isFortnite = isFortniteGame(row.title, row.executable_path);
+        const installDir =
+          row.install_path ||
+          (row.executable_path ? path.dirname(row.executable_path) : null);
+
+        // 1. Epic Games / Fortnite Reconciliation
+        const epicCandidate = detectEpicGameFromManifests({
+          executablePath: row.executable_path,
+          installPath: row.install_path,
+          title: row.title,
+        });
+
+        if (epicCandidate || isFortnite) {
+          const appName = epicCandidate?.appName ?? 'Fortnite';
+          const epicUri = `com.epicgames.launcher://apps/${encodeURIComponent(appName)}?action=launch&silent=true`;
+          const shouldUpgradePlatform = !row.user_platform_override && row.platform_id !== 'epic';
+
+          if (shouldUpgradePlatform) {
+            const newTitle = epicCandidate?.displayName || (isFortnite ? 'Fortnite' : row.title);
+            const accentHex = PLATFORM_ACCENT_HEX.epic;
+            const subtitle = epicCandidate ? `Epic App ${appName}` : 'Epic Games Store';
+            const coverImage = generateLocalGameCoverSvg(newTitle, 'epic', subtitle);
+            const heroImage = generateLocalGameHeroSvg(newTitle, 'epic');
+
+            this.db.run(
+              `UPDATE games
+               SET platform_id = 'epic',
+                   platform_name = 'Epic Games',
+                   title = ?,
+                   subtitle = ?,
+                   external_app_id = COALESCE(?, external_app_id, 'Fortnite'),
+                   accent_hex = ?,
+                   is_hidden = 0,
+                   cover_image = CASE WHEN cover_image LIKE 'data:image/svg+xml%' THEN ? ELSE cover_image END,
+                   hero_image = CASE WHEN hero_image LIKE 'data:image/svg+xml%' THEN ? ELSE hero_image END,
+                   updated_at = ?
+               WHERE id = ?`,
+              [
+                newTitle,
+                subtitle,
+                appName,
+                accentHex,
+                coverImage,
+                heroImage,
+                now,
+                row.id,
+              ]
+            );
+
+            this.db.run(
+              `UPDATE library_ownership
+               SET platform_id = 'epic',
+                   account_label = 'Epic Games • Local System Detection',
+                   drm_system = 'Epic Games Launcher'
+               WHERE game_id = ?`,
+              [row.id]
+            );
+          }
+
+          // Always ensure the launch method is epic-protocol so it does not fail with direct binary execution
+          this.db.run(
+            `UPDATE game_installations
+             SET launch_method = 'epic-protocol',
+                 launch_uri = ?
+             WHERE game_id = ? AND (launch_method != 'epic-protocol' OR launch_uri IS NULL)`,
+            [epicUri, row.id]
+          );
+
+          if (shouldUpgradePlatform) {
+            reconciledCount += 1;
+            continue;
+          }
+        }
+
+        // If user explicitly edited this game or set a platform override, preserve it for EA detection
         if (row.user_platform_override || row.is_user_edited === 1) {
           continue;
         }
 
         // Check if this game is currently marked as custom (or non-EA) but has genuine EA manifests on disk
-        const installDir =
-          row.install_path ||
-          (row.executable_path ? path.dirname(row.executable_path) : null);
-
         if (!installDir || !fs.existsSync(installDir)) {
           continue;
         }
@@ -987,8 +1066,7 @@ export class MaSwitchSqliteDatabase {
       ? path.normalize(input.workingDirectory.trim())
       : path.dirname(normalizedExe);
     const launchArgs = input.launchArgs?.trim() || null;
-    const platformId: PlatformId = input.platformId ?? 'custom';
-    const platformName = PLATFORM_NAMES[platformId] ?? 'Custom PC Game';
+    let platformId: PlatformId = input.platformId ?? 'custom';
     const classification: GameClassification =
       input.classification ?? 'verified-game';
 
@@ -1002,7 +1080,24 @@ export class MaSwitchSqliteDatabase {
       fileExists = false;
     }
 
-    const externalId = normalizedExe.toLowerCase();
+    let launchMethod: GameLaunchMethod = input.launchMethod ?? 'executable';
+    let launchUri: string | null = null;
+    let externalId = input.externalAppId?.trim() || normalizedExe.toLowerCase();
+
+    if (isFortniteGame(title, normalizedExe)) {
+      launchMethod = 'epic-protocol';
+      externalId = input.externalAppId?.trim() || 'Fortnite';
+      platformId = input.platformId && input.platformId !== 'custom' ? input.platformId : 'epic';
+      launchUri = `com.epicgames.launcher://apps/${encodeURIComponent(externalId)}?action=launch&silent=true`;
+    } else if (launchMethod === 'epic-protocol' && externalId) {
+      launchUri = `com.epicgames.launcher://apps/${encodeURIComponent(externalId)}?action=launch&silent=true`;
+    } else if (launchMethod === 'steam-protocol' && externalId) {
+      launchUri = `steam://rungameid/${externalId}`;
+    } else if (launchMethod === 'ea-protocol' && externalId) {
+      launchUri = `origin2://game/launch?offerIds=${encodeURIComponent(externalId)}`;
+    }
+
+    const platformName = PLATFORM_NAMES[platformId] ?? 'Custom PC Game';
     const now = new Date().toISOString();
 
     let targetGameId = '';
@@ -1075,13 +1170,15 @@ export class MaSwitchSqliteDatabase {
           id, game_id, install_path, executable_path, executable_name,
           working_directory, launch_args, launch_method, launch_uri,
           is_installed, install_size_bytes, build_version, last_verified_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'executable', NULL, ?, ?, 'Custom', ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Custom', ?)
         ON CONFLICT(game_id) DO UPDATE SET
           install_path = excluded.install_path,
           executable_path = excluded.executable_path,
           executable_name = excluded.executable_name,
           working_directory = excluded.working_directory,
           launch_args = excluded.launch_args,
+          launch_method = excluded.launch_method,
+          launch_uri = excluded.launch_uri,
           is_installed = excluded.is_installed,
           install_size_bytes = excluded.install_size_bytes,
           last_verified_at = excluded.last_verified_at`,
@@ -1093,6 +1190,8 @@ export class MaSwitchSqliteDatabase {
           exeName,
           workingDir,
           launchArgs,
+          launchMethod,
+          launchUri,
           fileExists ? 1 : 0,
           fileSizeBytes,
           now,
@@ -1197,6 +1296,51 @@ export class MaSwitchSqliteDatabase {
       newInstallPath = path.normalize(input.installPath.trim());
     }
 
+    let newLaunchMethod: GameLaunchMethod = existing.launchMethod ?? 'executable';
+    let newLaunchUri = existing.launchUri ?? null;
+    let newExternalAppId = existing.externalAppId ?? null;
+
+    if (input.launchMethod && input.launchMethod !== 'auto') {
+      newLaunchMethod = input.launchMethod;
+    }
+    if (input.externalAppId !== undefined) {
+      newExternalAppId =
+        input.externalAppId && input.externalAppId.trim().length > 0
+          ? input.externalAppId.trim()
+          : null;
+    }
+
+    // Always enforce epic-protocol for Fortnite unless user explicitly configured direct executable
+    if (isFortniteGame(newTitle, newExePath)) {
+      if (!input.launchMethod || input.launchMethod === 'auto' || input.launchMethod === 'epic-protocol') {
+        newLaunchMethod = 'epic-protocol';
+        newExternalAppId = newExternalAppId || 'Fortnite';
+      }
+    }
+
+    if (newLaunchMethod === 'epic-protocol') {
+      const appName = newExternalAppId || 'Fortnite';
+      try {
+        newLaunchUri = validateEpicLaunchUri(appName);
+      } catch {
+        newLaunchUri = `com.epicgames.launcher://apps/${encodeURIComponent(appName)}?action=launch&silent=true`;
+      }
+    } else if (newLaunchMethod === 'steam-protocol' && newExternalAppId) {
+      try {
+        newLaunchUri = validateSteamLaunchUri(newExternalAppId);
+      } catch {
+        newLaunchUri = `steam://rungameid/${newExternalAppId}`;
+      }
+    } else if (newLaunchMethod === 'ea-protocol' && newExternalAppId) {
+      try {
+        newLaunchUri = validateEaLaunchUri(newExternalAppId);
+      } catch {
+        newLaunchUri = `origin2://game/launch?offerIds=${encodeURIComponent(newExternalAppId)}`;
+      }
+    } else if (newLaunchMethod === 'executable') {
+      newLaunchUri = null;
+    }
+
     this.withTransaction(() => {
       // Procedural SVG updates if needed
       let coverImage = existing.coverImage;
@@ -1224,6 +1368,7 @@ export class MaSwitchSqliteDatabase {
              cover_image = ?,
              hero_image = ?,
              user_platform_override = ?,
+             external_app_id = ?,
              is_user_edited = 1,
              updated_at = ?
          WHERE id = ?`,
@@ -1235,6 +1380,7 @@ export class MaSwitchSqliteDatabase {
           coverImage,
           heroImage,
           userOverride,
+          newExternalAppId,
           now,
           gameId,
         ]
@@ -1246,6 +1392,8 @@ export class MaSwitchSqliteDatabase {
              executable_name = ?,
              working_directory = ?,
              install_path = ?,
+             launch_method = ?,
+             launch_uri = ?,
              last_verified_at = ?
          WHERE game_id = ?`,
         [
@@ -1253,6 +1401,8 @@ export class MaSwitchSqliteDatabase {
           newExeName ?? null,
           newWorkingDir ?? null,
           newInstallPath ?? null,
+          newLaunchMethod,
+          newLaunchUri,
           now,
           gameId,
         ]

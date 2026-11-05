@@ -97,8 +97,14 @@ export type GameSourceType =
   | 'demo';
 
 export type GameLaunchMethod =
+  | 'auto'
   | 'steam-protocol'
   | 'epic-protocol'
+  | 'ea-protocol'
+  | 'ubisoft-protocol'
+  | 'gog-protocol'
+  | 'rockstar-protocol'
+  | 'riot-services'
   | 'executable'
   | 'unavailable';
 
@@ -178,6 +184,11 @@ export interface EditGameInput {
   platformId?: PlatformId;
   executablePath?: string;
   installPath?: string;
+  launchMethod?: GameLaunchMethod;
+  externalAppId?: string | null;
+  launchUri?: string | null;
+  launchArgs?: string | null;
+  workingDirectory?: string | null;
 }
 
 export interface CustomGameInput {
@@ -186,6 +197,8 @@ export interface CustomGameInput {
   workingDirectory?: string;
   launchArgs?: string;
   platformId?: PlatformId;
+  launchMethod?: GameLaunchMethod;
+  externalAppId?: string | null;
   coverImage?: string;
   classification?: 'verified-game' | 'custom-app';
 }

@@ -9,6 +9,14 @@ import type {
   GameLaunchState,
 } from '../../../src/shared/types/game';
 import type { LauncherStatusChangedPayload } from '../../../src/shared/types/ipc';
+import {
+  detectEpicGameFromManifests,
+  isEpicGamesLauncherInstalled,
+  isFortniteGame,
+  type ParsedEpicManifest,
+} from '../scanner/epicScanner';
+import { resolveGameProcessAliases } from '../tracker/gameProcessAliases';
+import { listWindowsProcessImageNames } from '../tracker/playtimeTrackerEngine';
 
 /**
  * Safely tokenizes a launch arguments string into an array of discrete arguments
@@ -335,6 +343,90 @@ export interface LauncherEngineAdapters {
     pid?: number;
   }) => void;
   riotClientPathResolver?: () => string | null;
+  isEpicLauncherInstalled?: () => boolean;
+  epicManifestResolver?: (game: GameItem) => ParsedEpicManifest | null;
+  processChecker?: (candidateExeNames: string[]) => Promise<boolean>;
+  verificationTimeoutMs?: number;
+  verificationPollIntervalMs?: number;
+  verifyProcessActive?: boolean;
+  sleepFn?: (ms: number) => Promise<void>;
+}
+
+export function getRequiredPlatformLauncher(game: GameItem): {
+  isRequired: boolean;
+  launcherName: string;
+  protocolPrefix: string;
+  advice: string;
+} {
+  if (isFortniteGame(game.title, game.executablePath) || game.platformId === 'epic') {
+    return {
+      isRequired: true,
+      launcherName: 'Epic Games Launcher',
+      protocolPrefix: 'com.epicgames.launcher://apps/',
+      advice:
+        'Launch via Epic Games Launcher is required to satisfy Epic DRM and anti-cheat (Easy Anti-Cheat / BattlEye).',
+    };
+  }
+  if (game.platformId === 'riot') {
+    return {
+      isRequired: true,
+      launcherName: 'Riot Client',
+      protocolPrefix: 'RiotClientServices.exe',
+      advice:
+        'Launch via RiotClientServices.exe is required to initialize Riot Vanguard anti-cheat.',
+    };
+  }
+  if (game.platformId === 'steam' && game.externalAppId) {
+    return {
+      isRequired: true,
+      launcherName: 'Steam',
+      protocolPrefix: 'steam://rungameid/',
+      advice:
+        'Launch via Steam is recommended to satisfy Steamworks DRM and community overlays.',
+    };
+  }
+  if (game.platformId === 'ea' && game.externalAppId) {
+    return {
+      isRequired: true,
+      launcherName: 'EA App',
+      protocolPrefix: 'origin2://game/launch',
+      advice:
+        'Launch via EA App is required to satisfy EA DRM and entitlement checks.',
+    };
+  }
+  if (game.platformId === 'ubisoft' && game.externalAppId) {
+    return {
+      isRequired: true,
+      launcherName: 'Ubisoft Connect',
+      protocolPrefix: 'uplay://launch/',
+      advice:
+        'Launch via Ubisoft Connect is required to satisfy Ubisoft account entitlement.',
+    };
+  }
+  if (game.platformId === 'gog' && game.externalAppId) {
+    return {
+      isRequired: false,
+      launcherName: 'GOG Galaxy',
+      protocolPrefix: 'goggalaxy://openGameView/',
+      advice:
+        'DRM-free title. Can be launched via GOG Galaxy or direct executable.',
+    };
+  }
+  if (game.platformId === 'rockstar' && game.externalAppId) {
+    return {
+      isRequired: true,
+      launcherName: 'Rockstar Games Launcher',
+      protocolPrefix: 'rockstar://run/',
+      advice:
+        'Launch via Rockstar Games Launcher is required to initialize Social Club DRM.',
+    };
+  }
+  return {
+    isRequired: false,
+    launcherName: 'None (Direct Executable)',
+    protocolPrefix: '',
+    advice: 'Standard Windows executable launch.',
+  };
 }
 
 export class GameLauncherEngine {
@@ -394,6 +486,80 @@ export class GameLauncherEngine {
     return spawnFn(exePath, args, cwd);
   }
 
+  private async verifyGameProcessActive(
+    _game: GameItem,
+    child?: ChildProcess,
+    candidateExeNames: string[] = []
+  ): Promise<{ active: boolean; error?: string }> {
+    // If verification is not configured (e.g. legacy tests without mock processChecker), return active immediately
+    if (!this.adapters.processChecker && !this.adapters.verifyProcessActive) {
+      return { active: true };
+    }
+
+    const timeoutMs = this.adapters.verificationTimeoutMs ?? 10_000;
+    const pollIntervalMs = this.adapters.verificationPollIntervalMs ?? 500;
+    const sleep =
+      this.adapters.sleepFn ??
+      ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
+
+    let childExitedEarly = false;
+    let childExitCode: number | null = null;
+    if (child) {
+      child.once('exit', (code) => {
+        childExitedEarly = true;
+        childExitCode = code;
+      });
+    }
+
+    const checker =
+      this.adapters.processChecker ??
+      (async (candidates: string[]) => {
+        const list = await listWindowsProcessImageNames();
+        const set = new Set(candidates.map((c) => c.toLowerCase()));
+        return list.some((p) => set.has(p.imageNameLower));
+      });
+
+    const startTime = Date.now();
+
+    while (Date.now() - startTime <= timeoutMs) {
+      await sleep(pollIntervalMs);
+
+      if (childExitedEarly && childExitCode !== null && childExitCode !== 0) {
+        return {
+          active: false,
+          error: `Target process exited prematurely with exit code ${childExitCode}. Check game files and launcher requirements.`,
+        };
+      }
+
+      if (candidateExeNames.length > 0) {
+        try {
+          const isRunning = await checker(candidateExeNames);
+          if (isRunning) {
+            return { active: true };
+          }
+        } catch {
+          // Continue polling
+        }
+      } else if (child && !childExitedEarly) {
+        return { active: true };
+      }
+    }
+
+    if (childExitedEarly) {
+      return {
+        active: false,
+        error:
+          'Target process closed immediately without launching the game session. Verify your installation in the official launcher.',
+      };
+    }
+
+    return {
+      active: false,
+      error:
+        'Launch timed out: The game process was not detected running on the system.',
+    };
+  }
+
   public async launchGame(game: GameItem): Promise<GameLaunchResult> {
     if (game.isDemoData) {
       return {
@@ -427,8 +593,73 @@ export class GameLauncherEngine {
     this.setGameStatus(game.id, 'launching', `Launching ${game.title}...`);
 
     try {
+      let child: ChildProcess | undefined;
+      let pid: number | undefined;
+      let launchSuccessMessage = `Launched ${game.title}.`;
+      let protocolLaunched = false;
+
+      const isFortnite = isFortniteGame(game.title, game.executablePath);
+
+      // 0. Dedicated Fortnite / Epic Games Enforcement
+      if (isFortnite) {
+        const isEpicInstalled = this.adapters.isEpicLauncherInstalled
+          ? this.adapters.isEpicLauncherInstalled()
+          : isEpicGamesLauncherInstalled();
+
+        if (!isEpicInstalled) {
+          const errMessage =
+            'Epic Games Launcher is required to launch Fortnite. Please install the official Epic Games Launcher.';
+          this.setGameStatus(game.id, 'failed', errMessage);
+          const diagnostics: GameLaunchDiagnostics = {
+            gameId: game.id,
+            gameTitle: game.title,
+            platformId: 'epic',
+            launchMethod: 'epic-protocol',
+            executablePath: game.executablePath,
+            executableExists: Boolean(
+              game.executablePath && fs.existsSync(game.executablePath)
+            ),
+            workingDirectory: game.workingDirectory,
+            workingDirectoryExists: Boolean(
+              game.workingDirectory && fs.existsSync(game.workingDirectory)
+            ),
+            errorCategory: 'protocol-unavailable',
+            technicalDetails:
+              'Direct execution of FortniteClient-Win64-Shipping.exe is blocked by Epic DRM/anti-cheat.',
+            troubleshootingAdvice:
+              'Install or update Epic Games Launcher, sign into your account, and verify the Fortnite installation.',
+          };
+          return {
+            success: false,
+            gameId: game.id,
+            status: 'failed',
+            message: errMessage,
+            diagnostics,
+          };
+        }
+
+        const manifest = this.adapters.epicManifestResolver
+          ? this.adapters.epicManifestResolver(game)
+          : detectEpicGameFromManifests({
+              executablePath: game.executablePath,
+              installPath: game.installPath,
+              title: game.title,
+            });
+
+        const appName = manifest?.appName ?? game.externalAppId ?? 'Fortnite';
+        const uri = validateEpicLaunchUri(appName);
+
+        if (!this.adapters.openExternalProtocol) {
+          throw new Error('Protocol handler is not configured.');
+        }
+
+        await this.adapters.openExternalProtocol(uri);
+        launchSuccessMessage = `Handoff to Epic Games Launcher accepted (${uri}).`;
+        protocolLaunched = true;
+      }
+
       // 1. Steam Protocol Launch
-      if (
+      else if (
         game.launchMethod === 'steam-protocol' ||
         (game.platformId === 'steam' && game.externalAppId)
       ) {
@@ -439,38 +670,17 @@ export class GameLauncherEngine {
           }
 
           await this.adapters.openExternalProtocol(uri);
-
-          const startedAtIso = new Date().toISOString();
-          this.setGameStatus(
-            game.id,
-            'running',
-            `Steam launch request accepted (${uri}).`
-          );
-
-          if (game.executablePath) {
-            this.adapters.onGameLaunchedForTracking?.({
-              game,
-              executablePath: game.executablePath,
-            });
-          }
-
-          return {
-            success: true,
-            gameId: game.id,
-            status: 'running',
-            message: `Launched ${game.title} via Steam (${uri}).`,
-            startedAtIso,
-          };
+          launchSuccessMessage = `Steam launch request accepted (${uri}).`;
+          protocolLaunched = true;
         } catch (steamErr) {
-          // If protocol failed but executable path exists on disk, fallback to direct launch
           if (!game.executablePath) {
             throw steamErr;
           }
         }
       }
 
-      // 2. Epic Games Protocol Launch
-      if (
+      // 2. Epic Games Protocol Launch (general non-Fortnite Epic titles)
+      else if (
         game.launchMethod === 'epic-protocol' ||
         (game.platformId === 'epic' && game.externalAppId)
       ) {
@@ -481,28 +691,8 @@ export class GameLauncherEngine {
           }
 
           await this.adapters.openExternalProtocol(uri);
-
-          const startedAtIso = new Date().toISOString();
-          this.setGameStatus(
-            game.id,
-            'running',
-            `Epic Games Launcher handoff accepted.`
-          );
-
-          if (game.executablePath) {
-            this.adapters.onGameLaunchedForTracking?.({
-              game,
-              executablePath: game.executablePath,
-            });
-          }
-
-          return {
-            success: true,
-            gameId: game.id,
-            status: 'running',
-            message: `Launched ${game.title} via Epic Games Launcher.`,
-            startedAtIso,
-          };
+          launchSuccessMessage = `Epic Games Launcher handoff accepted (${uri}).`;
+          protocolLaunched = true;
         } catch (epicErr) {
           if (!game.executablePath) {
             throw epicErr;
@@ -511,7 +701,7 @@ export class GameLauncherEngine {
       }
 
       // 3. Riot Games Launch (requires RiotClientServices.exe with product flags to avoid anti-cheat crash)
-      if (game.platformId === 'riot') {
+      else if (game.platformId === 'riot') {
         const resolver =
           this.adapters.riotClientPathResolver ?? resolveRiotClientServicesPath;
         const riotClientPath = resolver();
@@ -524,69 +714,43 @@ export class GameLauncherEngine {
           ];
           const cwd = path.dirname(riotClientPath);
 
-          const { pid } = await this.executeSpawn(riotClientPath, args, cwd);
-          const startedAtIso = new Date().toISOString();
-
-          this.setGameStatus(
-            game.id,
-            'running',
-            `Launched ${game.title} via Riot Client Services.`
+          const spawned = await this.executeSpawn(riotClientPath, args, cwd);
+          pid = spawned.pid;
+          child = spawned.child;
+          launchSuccessMessage = `Launched ${game.title} via Riot Client Services.`;
+        } else {
+          const riotErr = new Error(
+            `RiotClientServices.exe was not found. ${game.title} requires the official Riot Client to initialize Vanguard anti-cheat.`
           );
-
-          if (game.executablePath) {
-            this.adapters.onGameLaunchedForTracking?.({
-              game,
-              executablePath: game.executablePath,
-              pid,
-            });
-          }
-
+          this.setGameStatus(game.id, 'failed', riotErr.message);
           return {
-            success: true,
+            success: false,
             gameId: game.id,
-            status: 'running',
-            message: `Launched ${game.title} via Riot Client Services.`,
-            pid,
-            startedAtIso,
+            status: 'failed',
+            message: riotErr.message,
+            diagnostics: createLaunchDiagnostics(game, riotErr),
           };
         }
-        // If RiotClientServices is not located, fall through to executable launch below
       }
 
-      // 4. EA App Launch (origin2:// protocol or direct executable)
-      if (game.platformId === 'ea' && game.externalAppId && this.adapters.openExternalProtocol) {
+      // 4. EA App Launch (origin2:// protocol)
+      else if (
+        game.platformId === 'ea' &&
+        game.externalAppId &&
+        this.adapters.openExternalProtocol
+      ) {
         try {
           const uri = validateEaLaunchUri(game.externalAppId);
           await this.adapters.openExternalProtocol(uri);
-
-          const startedAtIso = new Date().toISOString();
-          this.setGameStatus(
-            game.id,
-            'running',
-            `EA App launch request accepted (${uri}).`
-          );
-
-          if (game.executablePath) {
-            this.adapters.onGameLaunchedForTracking?.({
-              game,
-              executablePath: game.executablePath,
-            });
-          }
-
-          return {
-            success: true,
-            gameId: game.id,
-            status: 'running',
-            message: `Launched ${game.title} via EA App protocol.`,
-            startedAtIso,
-          };
+          launchSuccessMessage = `EA App launch request accepted (${uri}).`;
+          protocolLaunched = true;
         } catch {
-          // If protocol fails, continue to executable launch
+          // Fall through to executable if protocol fails
         }
       }
 
       // 5. Ubisoft Connect Protocol Launch
-      if (
+      else if (
         game.platformId === 'ubisoft' &&
         game.externalAppId &&
         this.adapters.openExternalProtocol
@@ -594,35 +758,15 @@ export class GameLauncherEngine {
         try {
           const uri = validateUbisoftLaunchUri(game.externalAppId);
           await this.adapters.openExternalProtocol(uri);
-
-          const startedAtIso = new Date().toISOString();
-          this.setGameStatus(
-            game.id,
-            'running',
-            `Ubisoft Connect launch accepted (${uri}).`
-          );
-
-          if (game.executablePath) {
-            this.adapters.onGameLaunchedForTracking?.({
-              game,
-              executablePath: game.executablePath,
-            });
-          }
-
-          return {
-            success: true,
-            gameId: game.id,
-            status: 'running',
-            message: `Launched ${game.title} via Ubisoft Connect.`,
-            startedAtIso,
-          };
+          launchSuccessMessage = `Ubisoft Connect launch accepted (${uri}).`;
+          protocolLaunched = true;
         } catch {
-          // Fall through to executable launch
+          // Fall through
         }
       }
 
       // 6. GOG Galaxy Protocol Launch
-      if (
+      else if (
         game.platformId === 'gog' &&
         game.externalAppId &&
         this.adapters.openExternalProtocol
@@ -630,88 +774,155 @@ export class GameLauncherEngine {
         try {
           const uri = validateGogLaunchUri(game.externalAppId);
           await this.adapters.openExternalProtocol(uri);
-
-          const startedAtIso = new Date().toISOString();
-          this.setGameStatus(
-            game.id,
-            'running',
-            `GOG Galaxy launch accepted (${uri}).`
-          );
-
-          if (game.executablePath) {
-            this.adapters.onGameLaunchedForTracking?.({
-              game,
-              executablePath: game.executablePath,
-            });
-          }
-
-          return {
-            success: true,
-            gameId: game.id,
-            status: 'running',
-            message: `Launched ${game.title} via GOG Galaxy.`,
-            startedAtIso,
-          };
+          launchSuccessMessage = `GOG Galaxy launch accepted (${uri}).`;
+          protocolLaunched = true;
         } catch {
-          // Fall through to executable launch
+          // Fall through
         }
       }
 
-      // 7. Direct Validated Executable Launch (Steam/Epic fallback, EA, Riot, Custom PC)
-      if (game.launchMethod === 'executable' || game.executablePath) {
+      // 7. Rockstar Games Protocol Launch
+      else if (
+        game.platformId === 'rockstar' &&
+        game.externalAppId &&
+        this.adapters.openExternalProtocol
+      ) {
+        try {
+          const uri = validateRockstarLaunchUri(game.externalAppId);
+          await this.adapters.openExternalProtocol(uri);
+          launchSuccessMessage = `Rockstar Games launch accepted (${uri}).`;
+          protocolLaunched = true;
+        } catch {
+          // Fall through
+        }
+      }
+
+      // 8. Direct Validated Executable Launch (fallback or standalone/custom games)
+      if (
+        !protocolLaunched &&
+        !pid &&
+        (game.launchMethod === 'executable' || game.executablePath)
+      ) {
+        if (isFortnite || game.platformId === 'riot') {
+          const barrierErr = new Error(
+            `${game.title} cannot be launched directly via binary execution due to launcher DRM/anti-cheat requirements.`
+          );
+          this.setGameStatus(game.id, 'failed', barrierErr.message);
+          return {
+            success: false,
+            gameId: game.id,
+            status: 'failed',
+            message: barrierErr.message,
+            diagnostics: createLaunchDiagnostics(game, barrierErr),
+          };
+        }
+
         const { exePath, cwd } = validateExecutableLaunchTarget(
           game.executablePath,
           game.workingDirectory
         );
         const args = parseSafeLaunchArguments(game.launchArgs);
 
-        const { pid, child } = await this.executeSpawn(exePath, args, cwd);
-        const startedAtIso = new Date().toISOString();
-
+        const spawned = await this.executeSpawn(exePath, args, cwd);
+        pid = spawned.pid;
+        child = spawned.child;
+        launchSuccessMessage = `Launched ${game.title} (${path.basename(exePath)}).`;
+      } else if (!protocolLaunched && !pid) {
         this.setGameStatus(
           game.id,
-          'running',
-          `${game.title} is running${pid ? ` (PID ${pid})` : ''}.`
+          'launcher-unavailable',
+          'No verified launch executable or protocol is available for this title.'
         );
-
-        this.adapters.onGameLaunchedForTracking?.({
+        const diagnostics = createLaunchDiagnostics(
           game,
-          executablePath: exePath,
-          pid,
-        });
-
-        if (child) {
-          child.once('exit', () => {
-            this.setGameStatus(game.id, 'idle');
-          });
-        }
-
+          new Error('No verified launch executable or protocol is available.')
+        );
         return {
-          success: true,
+          success: false,
           gameId: game.id,
-          status: 'running',
-          message: `Launched ${game.title} (${path.basename(exePath)}).`,
-          pid,
-          startedAtIso,
+          status: 'launcher-unavailable',
+          message:
+            'No verified launch executable or protocol is available for this title.',
+          diagnostics,
         };
       }
 
+      // Process Verification Pass: Candidate image names for checking
+      const aliases = resolveGameProcessAliases(
+        game.title,
+        game.platformId,
+        game.executableName
+      );
+      const candidateExeNames = Array.from(
+        new Set([
+          ...(game.executableName
+            ? [path.basename(game.executableName).toLowerCase()]
+            : []),
+          ...aliases.map((a) => a.toLowerCase()),
+        ])
+      );
+      if (isFortnite) {
+        candidateExeNames.push(
+          'fortniteclient-win64-shipping.exe',
+          'fortniteclient-win64-shipping_eac.exe',
+          'fortniteclient-win64-shipping_be.exe',
+          'fortnitelauncher.exe',
+          'fortnitebootstrapper.exe'
+        );
+      }
+
+      const verification = await this.verifyGameProcessActive(
+        game,
+        child,
+        candidateExeNames
+      );
+
+      if (!verification.active) {
+        const failureReason =
+          verification.error ?? 'Game process failed to start or exited immediately.';
+        this.setGameStatus(game.id, 'failed', failureReason);
+        const diagnostics = createLaunchDiagnostics(
+          game,
+          new Error(failureReason)
+        );
+        return {
+          success: false,
+          gameId: game.id,
+          status: 'failed',
+          message: failureReason,
+          diagnostics,
+        };
+      }
+
+      // Process is verified active! Transition to 'running'
+      const startedAtIso = new Date().toISOString();
       this.setGameStatus(
         game.id,
-        'launcher-unavailable',
-        'No verified launch executable or protocol is available for this title.'
+        'running',
+        `${game.title} is running${pid ? ` (PID ${pid})` : ''}.`
       );
-      const diagnostics = createLaunchDiagnostics(
+
+      const resolvedExePath =
+        game.executablePath || candidateExeNames[0] || game.title;
+      this.adapters.onGameLaunchedForTracking?.({
         game,
-        new Error('No verified launch executable or protocol is available.')
-      );
+        executablePath: resolvedExePath,
+        pid,
+      });
+
+      if (child) {
+        child.once('exit', () => {
+          this.setGameStatus(game.id, 'idle');
+        });
+      }
+
       return {
-        success: false,
+        success: true,
         gameId: game.id,
-        status: 'launcher-unavailable',
-        message:
-          'No verified launch executable or protocol is available for this title.',
-        diagnostics,
+        status: 'running',
+        message: launchSuccessMessage,
+        pid,
+        startedAtIso,
       };
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);

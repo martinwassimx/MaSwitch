@@ -133,6 +133,16 @@ export const AppShell: React.FC = () => {
       );
     }
 
+    if (window.maswitch?.launcher?.onStatusChanged) {
+      cleanups.push(
+        window.maswitch.launcher.onStatusChanged((payload) => {
+          useAppStore
+            .getState()
+            .updateLaunchStatus(payload.gameId, payload.status, payload.message);
+        })
+      );
+    }
+
     if (window.maswitch?.tracker?.onSessionUpdated) {
       cleanups.push(
         window.maswitch.tracker.onSessionUpdated(() => {

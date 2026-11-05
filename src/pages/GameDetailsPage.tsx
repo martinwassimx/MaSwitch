@@ -20,6 +20,7 @@ import {
   User,
   ShieldAlert,
   CheckCircle2,
+  AlertCircle,
 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { gameLauncherService } from '../services/gameLauncherService';
@@ -28,6 +29,7 @@ import { DemoNoticeBanner } from '../components/common/DemoNoticeBanner';
 import { PlatformBadge } from '../components/common/PlatformBadge';
 import { PlatformLogo } from '../components/platforms/PlatformLogo';
 import type { PlatformId } from '../shared/types/platform';
+import type { GameLaunchMethod } from '../shared/types/game';
 import type {
   SteamGridDbArtworkBundle,
   SteamGridDbGame,
@@ -92,6 +94,8 @@ export const GameDetailsPage: React.FC = () => {
   const [editPlatform, setEditPlatform] = useState<PlatformId>('custom');
   const [editExePath, setEditExePath] = useState('');
   const [editInstallPath, setEditInstallPath] = useState('');
+  const [editLaunchMethod, setEditLaunchMethod] = useState<GameLaunchMethod>('auto');
+  const [editExternalAppId, setEditExternalAppId] = useState('');
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
 
@@ -171,6 +175,8 @@ export const GameDetailsPage: React.FC = () => {
     setEditPlatform(game.platformId);
     setEditExePath(game.executablePath ?? '');
     setEditInstallPath(game.installPath ?? '');
+    setEditLaunchMethod(game.launchMethod ?? 'auto');
+    setEditExternalAppId(game.externalAppId ?? '');
     setEditError(null);
     setIsEditModalOpen(true);
   };
@@ -203,6 +209,8 @@ export const GameDetailsPage: React.FC = () => {
         platformId: editPlatform,
         executablePath: editExePath.trim() || undefined,
         installPath: editInstallPath.trim() || undefined,
+        launchMethod: editLaunchMethod,
+        externalAppId: editExternalAppId.trim() || undefined,
       });
       if (res) {
         setIsEditModalOpen(false);
@@ -399,18 +407,44 @@ export const GameDetailsPage: React.FC = () => {
 
               {/* Status Badge */}
               {isGameRunning ? (
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 animate-pulse">
+                <span
+                  data-testid="status-badge-running"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 animate-pulse"
+                >
                   <span className="w-2 h-2 rounded-full bg-emerald-400" />
                   <span>Running</span>
                 </span>
               ) : launchState === 'launching' ? (
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-500/20 text-amber-400 border border-amber-500/40">
+                <span
+                  data-testid="status-badge-launching"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-500/20 text-amber-400 border border-amber-500/40"
+                >
                   <Loader2 className="w-3 h-3 animate-spin" />
                   <span>Launching...</span>
                 </span>
+              ) : launchState === 'failed' ? (
+                <span
+                  data-testid="status-badge-failed"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-500/20 text-rose-400 border border-rose-500/40"
+                  title={launchMessage ?? 'Game failed to start'}
+                >
+                  <AlertCircle className="w-3 h-3" />
+                  <span>Launch Failed</span>
+                </span>
+              ) : game.isInstalled ? (
+                <span
+                  data-testid="status-badge-installed"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-ms-elevated text-emerald-400 border border-emerald-500/30"
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                  <span>Installed</span>
+                </span>
               ) : (
-                <span className="text-xs font-medium text-ms-muted">
-                  {game.isInstalled ? 'Installed' : 'Not installed'}
+                <span
+                  data-testid="status-badge-not-installed"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-ms-elevated text-ms-muted border border-ms-border"
+                >
+                  <span>Not Installed</span>
                 </span>
               )}
 
@@ -910,6 +944,49 @@ export const GameDetailsPage: React.FC = () => {
 
             <dl className="divide-y divide-ms-border">
               <div className="py-2.5 flex justify-between gap-3">
+                <dt className="text-ms-muted">Platform</dt>
+                <dd className="text-ms-text font-medium text-right flex items-center gap-1.5">
+                  <PlatformLogo platformId={game.platformId} size={14} colorMode="brand" />
+                  <span>{game.platformName}</span>
+                </dd>
+              </div>
+              <div className="py-2.5 flex justify-between gap-3">
+                <dt className="text-ms-muted">Launch Method</dt>
+                <dd className="text-ms-text font-medium text-right">
+                  {game.launchMethod === 'epic-protocol'
+                    ? 'Epic Games Launcher Protocol'
+                    : game.launchMethod === 'steam-protocol'
+                      ? 'Steam Protocol'
+                      : game.launchMethod === 'ea-protocol'
+                        ? 'EA App Protocol'
+                        : game.launchMethod === 'ubisoft-protocol'
+                          ? 'Ubisoft Connect Protocol'
+                          : game.launchMethod === 'gog-protocol'
+                            ? 'GOG Galaxy Protocol'
+                            : game.launchMethod === 'rockstar-protocol'
+                              ? 'Rockstar Games Protocol'
+                              : game.launchMethod === 'riot-services'
+                                ? 'Riot Client Services'
+                                : 'Direct Executable'}
+                </dd>
+              </div>
+              {(game.platformId === 'epic' || game.title.toLowerCase().includes('fortnite')) && (
+                <div className="py-2.5 flex justify-between items-center gap-3">
+                  <dt className="text-ms-muted">Launcher Requirement</dt>
+                  <dd className="text-[11px] font-semibold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/30 text-right">
+                    Official Epic Games Launcher Required
+                  </dd>
+                </div>
+              )}
+              {game.platformId === 'riot' && (
+                <div className="py-2.5 flex justify-between items-center gap-3">
+                  <dt className="text-ms-muted">Launcher Requirement</dt>
+                  <dd className="text-[11px] font-semibold text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded border border-rose-500/30 text-right">
+                    Riot Client & Vanguard Required
+                  </dd>
+                </div>
+              )}
+              <div className="py-2.5 flex justify-between gap-3">
                 <dt className="text-ms-muted">Source</dt>
                 <dd className="text-ms-text font-medium text-right">
                   {game.ownership.accountSlotLabel}
@@ -927,11 +1004,27 @@ export const GameDetailsPage: React.FC = () => {
                   {game.ownership.buildVersion}
                 </dd>
               </div>
-              {game.ownership.installLocationPreview && (
+              {game.launchUri && (
+                <div className="pt-2.5 space-y-1.5">
+                  <dt className="text-ms-muted font-semibold uppercase tracking-wider text-[11px]">Launch URI / Protocol</dt>
+                  <dd className="font-mono text-[11px] text-cyan-300 bg-ms-bg p-2.5 rounded-lg border border-ms-border/70 break-all">
+                    {game.launchUri}
+                  </dd>
+                </div>
+              )}
+              {(game.installPath || game.ownership.installLocationPreview) && (
                 <div className="pt-2.5 space-y-1.5">
                   <dt className="text-ms-muted font-semibold uppercase tracking-wider text-[11px]">Install Path</dt>
                   <dd className="font-mono text-[11px] text-ms-muted/90 bg-ms-bg p-2.5 rounded-lg border border-ms-border/70 break-all">
-                    {game.ownership.installLocationPreview}
+                    {game.installPath || game.ownership.installLocationPreview}
+                  </dd>
+                </div>
+              )}
+              {game.executablePath && (
+                <div className="pt-2.5 space-y-1.5">
+                  <dt className="text-ms-muted font-semibold uppercase tracking-wider text-[11px]">Executable Path</dt>
+                  <dd className="font-mono text-[11px] text-ms-muted/90 bg-ms-bg p-2.5 rounded-lg border border-ms-border/70 break-all">
+                    {game.executablePath}
                   </dd>
                 </div>
               )}
@@ -1193,6 +1286,48 @@ export const GameDetailsPage: React.FC = () => {
                     <span>Browse...</span>
                   </button>
                 </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold uppercase tracking-wider text-ms-muted">
+                  Launch Method Override
+                </label>
+                <select
+                  data-testid="edit-game-launch-method-select"
+                  value={editLaunchMethod}
+                  onChange={(e) => setEditLaunchMethod(e.target.value as GameLaunchMethod)}
+                  className="w-full h-10 px-3 rounded-lg bg-ms-bg border border-ms-border text-sm text-white focus:outline-none focus:border-ms-accent transition-colors cursor-pointer"
+                >
+                  <option value="auto">Auto-detect (Recommended)</option>
+                  <option value="epic-protocol">Epic Games Launcher (Official Protocol)</option>
+                  <option value="steam-protocol">Steam (Official Protocol)</option>
+                  <option value="ea-protocol">EA App (Official Protocol)</option>
+                  <option value="ubisoft-protocol">Ubisoft Connect (Official Protocol)</option>
+                  <option value="gog-protocol">GOG Galaxy (Official Protocol)</option>
+                  <option value="rockstar-protocol">Rockstar Games (Official Protocol)</option>
+                  <option value="riot-services">Riot Client Services</option>
+                  <option value="executable">Direct Executable (.exe)</option>
+                </select>
+                <p className="text-[11px] text-ms-muted">
+                  For games requiring native launchers (e.g. Fortnite on Epic), select the launcher protocol to avoid anti-cheat/DRM launch errors.
+                </p>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold uppercase tracking-wider text-ms-muted">
+                  Launcher App Identifier (e.g. Fortnite or numeric Steam ID)
+                </label>
+                <input
+                  type="text"
+                  data-testid="edit-game-app-id-input"
+                  value={editExternalAppId}
+                  onChange={(e) => setEditExternalAppId(e.target.value)}
+                  className="w-full h-10 px-3.5 rounded-lg bg-ms-bg border border-ms-border text-xs font-mono text-white focus:outline-none focus:border-ms-accent transition-colors"
+                  placeholder="e.g. Fortnite, 730, Origin.OFR.50.0000557"
+                />
+                <p className="text-[11px] text-ms-muted">
+                  Identifier parsed by the official platform launcher (AppName for Epic, App ID for Steam).
+                </p>
               </div>
 
               <div className="pt-4 flex items-center justify-end gap-3 border-t border-ms-border">

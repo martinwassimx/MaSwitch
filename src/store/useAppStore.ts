@@ -207,6 +207,11 @@ export interface AppStoreState {
   removeGameFromLibrary: (gameId: string) => Promise<boolean>;
   restoreGameToLibrary: (gameId: string) => Promise<boolean>;
   launchGame: (gameId: string) => Promise<GameLaunchResult>;
+  updateLaunchStatus: (
+    gameId: string,
+    status: GameLaunchState,
+    message?: string
+  ) => void;
   setTrackerPaused: (paused: boolean) => Promise<void>;
   updateWindowsStartup: (config: {
     openAtLogin: boolean;
@@ -947,6 +952,15 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
     }));
 
     return result;
+  },
+
+  updateLaunchStatus: (gameId, status, message) => {
+    set((state) => ({
+      launchStatuses: { ...state.launchStatuses, [gameId]: status },
+      launchMessages: message
+        ? { ...state.launchMessages, [gameId]: message }
+        : state.launchMessages,
+    }));
   },
 
   setTrackerPaused: async (paused) => {

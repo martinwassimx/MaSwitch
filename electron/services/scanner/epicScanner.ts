@@ -291,3 +291,163 @@ export async function scanEpicGamesManifests(
   };
 }
 
+/**
+ * Known Epic Games Launcher executable locations on 64-bit and 32-bit Windows.
+ */
+export const STANDARD_EPIC_LAUNCHER_PATHS = [
+  'C:\\Program Files (x86)\\Epic Games\\Launcher\\Portal\\Binaries\\Win64\\EpicGamesLauncher.exe',
+  'C:\\Program Files\\Epic Games\\Launcher\\Portal\\Binaries\\Win64\\EpicGamesLauncher.exe',
+  'C:\\Program Files (x86)\\Epic Games\\Launcher\\Portal\\Binaries\\Win32\\EpicGamesLauncher.exe',
+  'D:\\Epic Games\\Launcher\\Portal\\Binaries\\Win64\\EpicGamesLauncher.exe',
+  'E:\\Epic Games\\Launcher\\Portal\\Binaries\\Win64\\EpicGamesLauncher.exe',
+];
+
+/**
+ * Checks whether the official Epic Games Launcher executable is present on disk.
+ */
+export function findEpicGamesLauncherExecutable(): string | null {
+  for (const p of STANDARD_EPIC_LAUNCHER_PATHS) {
+    try {
+      if (fs.existsSync(p)) {
+        return path.normalize(p);
+      }
+    } catch {
+      // Ignore
+    }
+  }
+  return null;
+}
+
+/**
+ * Checks if the Epic Games Launcher is installed on the system, either via executable
+ * or manifest directory.
+ */
+export function isEpicGamesLauncherInstalled(
+  overrideManifestsDir?: string
+): boolean {
+  if (findEpicGamesLauncherExecutable() !== null) {
+    return true;
+  }
+  const manifestsDir = overrideManifestsDir ?? DEFAULT_EPIC_MANIFESTS_DIR;
+  try {
+    if (fs.existsSync(manifestsDir)) {
+      return true;
+    }
+  } catch {
+    // Ignore
+  }
+  return false;
+}
+
+/**
+ * Checks whether a game title or executable corresponds to Fortnite.
+ */
+export function isFortniteGame(
+  title?: string,
+  executablePath?: string | null
+): boolean {
+  const normalizedTitle = (title ?? '').toLowerCase().trim();
+  if (normalizedTitle === 'fortnite' || normalizedTitle.startsWith('fortnite ')) {
+    return true;
+  }
+  if (!executablePath) {
+    return false;
+  }
+  const normalizedExe = executablePath.toLowerCase().replace(/\\/g, '/');
+  return (
+    normalizedExe.endsWith('fortniteclient-win64-shipping.exe') ||
+    normalizedExe.endsWith('fortniteclient-win64-shipping_eac.exe') ||
+    normalizedExe.endsWith('fortniteclient-win64-shipping_be.exe') ||
+    normalizedExe.endsWith('fortnitelauncher.exe') ||
+    normalizedExe.endsWith('fortnitebootstrapper.exe') ||
+    normalizedExe.includes('/fortnite/fortnitegame/') ||
+    normalizedExe.includes('/epic games/fortnite/')
+  );
+}
+
+/**
+ * Inspects all available Epic Games installation manifests (.item) to match a game
+ * by its directory, executable path, or title.
+ */
+export function detectEpicGameFromManifests(
+  input: {
+    executablePath?: string | null;
+    installPath?: string | null;
+    title?: string;
+  },
+  overrideManifestsDir?: string
+): ParsedEpicManifest | null {
+  const manifestsDir = overrideManifestsDir ?? DEFAULT_EPIC_MANIFESTS_DIR;
+  const candidateDirs = [manifestsDir, path.join(manifestsDir, 'Pending')];
+
+  const candidateItemFiles: string[] = [];
+  for (const dir of candidateDirs) {
+    try {
+      if (fs.existsSync(dir)) {
+        const entries = fs.readdirSync(dir, { withFileTypes: true });
+        for (const entry of entries) {
+          if (entry.isFile() && entry.name.toLowerCase().endsWith('.item')) {
+            candidateItemFiles.push(path.join(dir, entry.name));
+          }
+        }
+      }
+    } catch {
+      // Ignore
+    }
+  }
+
+  const normExe = input.executablePath
+    ? path.normalize(input.executablePath).toLowerCase()
+    : null;
+  const normInstall = input.installPath
+    ? path.normalize(input.installPath).toLowerCase()
+    : null;
+  const titleClean = (input.title ?? '').trim().toLowerCase();
+
+  for (const itemPath of candidateItemFiles) {
+    let content: string;
+    try {
+      content = fs.readFileSync(itemPath, 'utf8');
+    } catch {
+      continue;
+    }
+
+    const parsed = parseEpicManifestItem(content);
+    if (!parsed || !parsed.isApplication) {
+      continue;
+    }
+
+    const manifestInstallNorm = path.normalize(parsed.installLocation).toLowerCase();
+    const manifestTitle = parsed.displayName.toLowerCase();
+    const manifestAppName = parsed.appName.toLowerCase();
+
+    // 1. Install location matches input install path or is a prefix of executable path
+    if (
+      (normInstall && (normInstall === manifestInstallNorm || normInstall.startsWith(manifestInstallNorm))) ||
+      (normExe && normExe.startsWith(manifestInstallNorm))
+    ) {
+      return parsed;
+    }
+
+    // 2. Title matches
+    if (
+      titleClean &&
+      (manifestTitle === titleClean ||
+        manifestAppName === titleClean ||
+        (titleClean === 'fortnite' && manifestAppName === 'fortnite'))
+    ) {
+      return parsed;
+    }
+
+    // 3. Executable basename matches manifest launchExecutable
+    if (normExe && parsed.launchExecutable) {
+      const parsedExeName = path.basename(parsed.launchExecutable).toLowerCase();
+      if (path.basename(normExe) === parsedExeName) {
+        return parsed;
+      }
+    }
+  }
+
+  return null;
+}
+

@@ -22,7 +22,14 @@ import { GameLauncherEngine } from './services/launcher/gameLauncherEngine';
 import { GameScannerEngine } from './services/scanner/gameScannerEngine';
 import { ElectronSettingsStore } from './services/settingsStore';
 import { MaSwitchStartupService } from './services/startupService';
-import { PlaytimeTrackerEngine } from './services/tracker/playtimeTrackerEngine';
+import {
+  PlaytimeTrackerEngine,
+  listWindowsProcessImageNames,
+} from './services/tracker/playtimeTrackerEngine';
+import {
+  detectEpicGameFromManifests,
+  isEpicGamesLauncherInstalled,
+} from './services/scanner/epicScanner';
 import { MaSwitchTrayService } from './services/trayService';
 import { SteamGridDbArtworkService } from './services/steamgriddb/steamGridDbArtworkService';
 import { SteamGridDbClient } from './services/steamgriddb/steamGridDbClient';
@@ -460,10 +467,16 @@ app.whenReady().then(() => {
 
   const launcherEngine = new GameLauncherEngine({
     openExternalProtocol: async (uri: string) => {
-      if (
-        !uri.startsWith('steam://rungameid/') &&
-        !uri.startsWith('com.epicgames.launcher://apps/')
-      ) {
+      const allowedPrefixes = [
+        'steam://rungameid/',
+        'com.epicgames.launcher://apps/',
+        'origin2://game/launch',
+        'uplay://launch/',
+        'goggalaxy://openGameView/',
+        'rockstar://run/',
+      ];
+      const isAllowed = allowedPrefixes.some((prefix) => uri.startsWith(prefix));
+      if (!isAllowed) {
         throw new Error(`Unsupported or untrusted launch protocol URI: ${uri}`);
       }
       await shell.openExternal(uri);
@@ -477,6 +490,20 @@ app.whenReady().then(() => {
         executableName: path.basename(executablePath),
       });
     },
+    isEpicLauncherInstalled: () => isEpicGamesLauncherInstalled(),
+    epicManifestResolver: (game) =>
+      detectEpicGameFromManifests({
+        executablePath: game.executablePath,
+        installPath: game.installPath,
+        title: game.title,
+      }),
+    processChecker: async (candidates: string[]) => {
+      const processes = await listWindowsProcessImageNames();
+      const set = new Set(candidates.map((c) => c.toLowerCase()));
+      return processes.some((p) => set.has(p.imageNameLower));
+    },
+    verificationTimeoutMs: 12_000,
+    verificationPollIntervalMs: 500,
   });
 
   const trackerEngine = new PlaytimeTrackerEngine(sqliteDb, {
