@@ -229,6 +229,7 @@ describe('MaSwitch Mem Reduct Integration & Memory Management Test Suite', () =>
         } as unknown as PlaytimeTrackerEngine,
         {
           rawMemoryQuery: () => ({ totalBytes: 16e9, freeBytes: 4e9 }),
+          workingSetTrimmer: async () => ({ trimmedProcessCount: 5 }),
           privilegedListCleaner: async () => ({
             success: false,
             status: 'cancelled',

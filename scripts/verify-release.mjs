@@ -8,6 +8,9 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, '..');
 const releaseDir = path.join(rootDir, 'release');
+const pkg = JSON.parse(fs.readFileSync(path.join(rootDir, 'package.json'), 'utf-8'));
+const appVersion = pkg.version || '1.0.0';
+const installerFileName = `MaSwitch-Setup-${appVersion}.exe`;
 
 console.log('====================================================');
 console.log('   MaSwitch Release Security & Signature Verifier    ');
@@ -16,9 +19,9 @@ console.log('====================================================\n');
 // 1. Target files to verify
 const targetFiles = [
   {
-    name: 'MaSwitch-Setup-0.2.0.exe (NSIS Installer)',
-    path: path.join(releaseDir, 'MaSwitch-Setup-0.2.0.exe'),
-    relPath: 'MaSwitch-Setup-0.2.0.exe',
+    name: `${installerFileName} (NSIS Installer)`,
+    path: path.join(releaseDir, installerFileName),
+    relPath: installerFileName,
   },
   {
     name: 'MaSwitch.exe (Packaged Standalone Executable)',

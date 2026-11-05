@@ -44,6 +44,14 @@ export class InstalledFeaturesManager {
     });
   }
 
+  private parseManifestJson(raw: string): Partial<InstalledFeaturesManifest> {
+    const normalized = raw.replace(
+      /"installerPath":\s*"([^"]*)"/g,
+      (_match, p1: string) => `"installerPath": "${p1.replace(/\\/g, '/').replace(/\/+/g, '/')}"`
+    );
+    return JSON.parse(normalized) as Partial<InstalledFeaturesManifest>;
+  }
+
   private loadOrInitializeManifest(config: {
     installerSeedPath: string;
     userManifestPath: string;
@@ -51,13 +59,13 @@ export class InstalledFeaturesManager {
     defaultPreset: InstallPresetId;
   }): InstalledFeaturesManifest {
     const now = new Date().toISOString();
-    const appVersion = typeof app?.getVersion === 'function' ? app.getVersion() : '0.3.0';
+    const appVersion = typeof app?.getVersion === 'function' ? app.getVersion() : '1.0.0';
 
     // A. Check if user manifest already exists
     if (fs.existsSync(config.userManifestPath)) {
       try {
         const raw = fs.readFileSync(config.userManifestPath, 'utf-8');
-        const parsed = JSON.parse(raw) as Partial<InstalledFeaturesManifest>;
+        const parsed = this.parseManifestJson(raw);
         if (parsed.manifestVersion === '1.0.0' && parsed.features) {
           return this.sanitizeManifest(parsed as InstalledFeaturesManifest);
         }
@@ -70,7 +78,7 @@ export class InstalledFeaturesManager {
     if (fs.existsSync(config.installerSeedPath)) {
       try {
         const raw = fs.readFileSync(config.installerSeedPath, 'utf-8');
-        const parsed = JSON.parse(raw) as Partial<InstalledFeaturesManifest>;
+        const parsed = this.parseManifestJson(raw);
         if (parsed.features) {
           const sanitized = this.sanitizeManifest({
             ...parsed,
@@ -156,7 +164,7 @@ export class InstalledFeaturesManager {
 
     return {
       manifestVersion: '1.0.0',
-      appVersion: manifest.appVersion || '0.3.0',
+      appVersion: manifest.appVersion || '1.0.0',
       preset: manifest.preset || 'custom',
       installedAtIso: manifest.installedAtIso || new Date().toISOString(),
       updatedAtIso: manifest.updatedAtIso || new Date().toISOString(),
@@ -268,7 +276,12 @@ export class InstalledFeaturesManager {
     // 1. If explicit installer path is recorded, try that
     if (this.manifest.installerPath && fs.existsSync(this.manifest.installerPath)) {
       try {
-        spawn(this.manifest.installerPath, ['--modify'], { detached: true, stdio: 'ignore' });
+        const child = spawn(this.manifest.installerPath, ['--modify'], {
+          detached: true,
+          stdio: 'ignore',
+        });
+        child.on('error', () => {});
+        child.unref?.();
         return { success: true };
       } catch (err) {
         return { success: false, message: `Failed to launch installer: ${err instanceof Error ? err.message : String(err)}` };
@@ -277,8 +290,13 @@ export class InstalledFeaturesManager {
 
     // 2. Check standard release or download locations
     const exeDir = typeof app?.getPath === 'function' ? path.dirname(app.getPath('exe')) : process.cwd();
+    const version = typeof app?.getVersion === 'function' ? app.getVersion() : '1.0.0';
     const candidatePaths = [
+      path.join(process.cwd(), 'release', `MaSwitch-Setup-${version}.exe`),
+      path.join(process.cwd(), 'release', 'MaSwitch-Setup-1.0.0.exe'),
       path.join(process.cwd(), 'release', 'MaSwitch-Setup-0.2.0.exe'),
+      path.join(exeDir, `MaSwitch-Setup-${version}.exe`),
+      path.join(exeDir, 'MaSwitch-Setup-1.0.0.exe'),
       path.join(exeDir, 'MaSwitch-Setup-0.2.0.exe'),
       path.join(exeDir, 'MaSwitch-Setup.exe'),
       path.join(exeDir, '..', 'MaSwitch-Setup.exe'),
@@ -287,7 +305,9 @@ export class InstalledFeaturesManager {
     for (const p of candidatePaths) {
       if (fs.existsSync(p)) {
         try {
-          spawn(p, ['--modify'], { detached: true, stdio: 'ignore' });
+          const child = spawn(p, ['--modify'], { detached: true, stdio: 'ignore' });
+          child.on('error', () => {});
+          child.unref?.();
           return { success: true };
         } catch (err) {
           return { success: false, message: `Failed to launch installer at ${p}: ${err instanceof Error ? err.message : String(err)}` };

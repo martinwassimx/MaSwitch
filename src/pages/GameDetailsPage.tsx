@@ -27,7 +27,10 @@ import { gameLauncherService } from '../services/gameLauncherService';
 import { localDatabaseService } from '../services/localDatabaseService';
 import { DemoNoticeBanner } from '../components/common/DemoNoticeBanner';
 import { PlatformBadge } from '../components/common/PlatformBadge';
-import { PlatformLogo } from '../components/platforms/PlatformLogo';
+import {
+  PlatformLogo,
+  PLATFORM_DISPLAY_NAMES,
+} from '../components/platforms/PlatformLogo';
 import type { PlatformId } from '../shared/types/platform';
 import type { GameLaunchMethod } from '../shared/types/game';
 import type {
@@ -77,6 +80,7 @@ export const GameDetailsPage: React.FC = () => {
     if (!game) return;
     const launcherStatus = launcherStatuses[game.platformId];
     if (
+      game.platformId === 'riot' &&
       associatedAccount &&
       launcherStatus?.isRunning &&
       launcherStatus.verifiedActiveAccountUsername &&
@@ -1041,66 +1045,87 @@ export const GameDetailsPage: React.FC = () => {
               <h3 className="text-sm font-bold text-ms-text uppercase tracking-wider">
                 Account Association
               </h3>
-              <User className="w-4 h-4 text-ms-muted" />
+              {game.platformId === 'riot' ? (
+                <User className="w-4 h-4 text-ms-muted" />
+              ) : (
+                <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-violet-500/15 text-violet-300 border border-violet-500/30">
+                  Coming Soon
+                </span>
+              )}
             </div>
 
-            {associatedAccount ? (
-              <div className="p-3 rounded-xl bg-ms-bg border border-ms-border space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <PlatformLogo platformId={associatedAccount.platformId} size={18} colorMode="brand" />
-                    <span className="font-bold text-xs text-ms-text truncate">
-                      {associatedAccount.displayName}
-                    </span>
+            {game.platformId === 'riot' ? (
+              <>
+                {associatedAccount ? (
+                  <div className="p-3 rounded-xl bg-ms-bg border border-ms-border space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <PlatformLogo platformId={associatedAccount.platformId} size={18} colorMode="brand" />
+                        <span className="font-bold text-xs text-ms-text truncate">
+                          {associatedAccount.displayName}
+                        </span>
+                      </div>
+                      <span className="font-mono text-[10px] text-ms-muted px-1.5 py-0.5 rounded bg-ms-card border border-ms-border shrink-0">
+                        {associatedAccount.username}
+                      </span>
+                    </div>
+                    {associatedAccount.nickname && (
+                      <p className="text-[11px] text-ms-muted italic">
+                        "{associatedAccount.nickname}"
+                      </p>
+                    )}
+                    <div className="pt-1 flex items-center justify-between text-[11px]">
+                      <span className="text-emerald-400 font-medium">Linked for this game</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveSection('accounts');
+                        }}
+                        className="text-ms-accent hover:underline font-semibold"
+                      >
+                        Manage in Accounts
+                      </button>
+                    </div>
                   </div>
-                  <span className="font-mono text-[10px] text-ms-muted px-1.5 py-0.5 rounded bg-ms-card border border-ms-border shrink-0">
-                    {associatedAccount.username}
-                  </span>
-                </div>
-                {associatedAccount.nickname && (
-                  <p className="text-[11px] text-ms-muted italic">
-                    "{associatedAccount.nickname}"
+                ) : (
+                  <p className="text-xs text-ms-muted">
+                    No specific Riot account profile linked. The game will launch using whatever profile is currently active in Riot Client.
                   </p>
                 )}
-                <div className="pt-1 flex items-center justify-between text-[11px]">
-                  <span className="text-emerald-400 font-medium">Linked for this game</span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setActiveSection('accounts');
-                      void switchAccount(associatedAccount.id, Boolean(associatedAccount.isLastSelected));
-                    }}
-                    className="text-ms-accent hover:underline font-semibold"
-                  >
-                    Sign In to Account
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <p className="text-xs text-ms-muted">
-                No specific account profile linked. The game will launch using whatever profile is currently active in the launcher.
-              </p>
-            )}
 
-            <div className="space-y-1.5">
-              <label htmlFor="select-game-account" className="block text-[11px] font-semibold text-ms-muted uppercase tracking-wider">
-                Assign Preferred Account
-              </label>
-              <select
-                id="select-game-account"
-                data-testid="select-game-account"
-                value={associatedAccount?.id ?? ''}
-                onChange={(e) => void setGameAccountAssociation(game.id, e.target.value || null)}
-                className="w-full h-9 bg-ms-bg border border-ms-border focus:border-ms-accent rounded-xl px-3 text-xs text-ms-text focus:outline-none"
-              >
-                <option value="">None (Default / Active Launcher Account)</option>
-                {platformAccounts.map((acc) => (
-                  <option key={acc.id} value={acc.id}>
-                    {acc.displayName} ({acc.username}) {acc.isPreferred ? '★' : ''}
-                  </option>
-                ))}
-              </select>
-            </div>
+                <div className="space-y-1.5">
+                  <label htmlFor="select-game-account" className="block text-[11px] font-semibold text-ms-muted uppercase tracking-wider">
+                    Assign Preferred Riot Account
+                  </label>
+                  <select
+                    id="select-game-account"
+                    data-testid="select-game-account"
+                    value={associatedAccount?.id ?? ''}
+                    onChange={(e) => void setGameAccountAssociation(game.id, e.target.value || null)}
+                    className="w-full h-9 bg-ms-bg border border-ms-border focus:border-ms-accent rounded-xl px-3 text-xs text-ms-text focus:outline-none"
+                  >
+                    <option value="">None (Default / Active Riot Account)</option>
+                    {platformAccounts
+                      .filter((acc) => acc.platformId === 'riot')
+                      .map((acc) => (
+                        <option key={acc.id} value={acc.id}>
+                          {acc.displayName} ({acc.username}) {acc.isPreferred ? '★' : ''}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+              </>
+            ) : (
+              <div className="p-3.5 rounded-xl bg-ms-bg border border-ms-border/80 space-y-1.5">
+                <div className="flex items-center gap-2 text-xs font-bold text-ms-text">
+                  <PlatformLogo platformId={game.platformId} size={16} colorMode="brand" />
+                  <span>{PLATFORM_DISPLAY_NAMES[game.platformId] ?? game.platformId} Account Management</span>
+                </div>
+                <p className="text-xs text-ms-muted leading-relaxed">
+                  Multi-account management for {PLATFORM_DISPLAY_NAMES[game.platformId] ?? game.platformId} is planned for a future MaSwitch update. Game launching and playtime tracking remain fully active.
+                </p>
+              </div>
+            )}
           </section>
         </div>
       </div>

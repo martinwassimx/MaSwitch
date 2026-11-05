@@ -107,6 +107,38 @@ describe('MaSwitch 3.0 Modular Installer & Feature Gating Test Suite', () => {
       expect(manager.isFeatureEnabled('performanceMonitor')).toBe(false);
       expect(manager.isFeatureInstalled('performanceMonitor')).toBe(false);
     });
+
+    it('parses NSIS-written manifest with unescaped Windows backslashes in installerPath', () => {
+      const nsisRaw = String.raw`{
+  "manifestVersion": "1.0.0",
+  "appVersion": "1.0.0",
+  "preset": "recommended",
+  "installedAtIso": "2026-11-05T18:00:00.000Z",
+  "updatedAtIso": "2026-11-05T18:00:00.000Z",
+  "features": {
+    "yearInReview": { "installed": false, "enabled": false },
+    "smartCollections": { "installed": true, "enabled": true },
+    "performanceMonitor": { "installed": false, "enabled": false },
+    "gameNews": { "installed": false, "enabled": false },
+    "backupRestore": { "installed": true, "enabled": true },
+    "memoryManagement": { "installed": false, "enabled": false }
+  },
+  "isInstallerManaged": true,
+  "installerPath": "C:\Users\Gamer\Downloads\MaSwitch-Setup-1.0.0.exe"
+}`;
+
+      fs.writeFileSync(customManifestPath, nsisRaw, 'utf-8');
+
+      const manager = new InstalledFeaturesManager({
+        customManifestPath,
+      });
+
+      expect(manager.getManifest().preset).toBe('recommended');
+      expect(manager.isFeatureEnabled('smartCollections')).toBe(true);
+      expect(manager.isFeatureEnabled('backupRestore')).toBe(true);
+      expect(manager.isFeatureEnabled('yearInReview')).toBe(false);
+      expect(manager.getManifest().installerPath).toContain('MaSwitch-Setup-1.0.0.exe');
+    });
   });
 
   describe('2. Preset Application & Resource Metrics', () => {
@@ -248,13 +280,20 @@ describe('MaSwitch 3.0 Modular Installer & Feature Gating Test Suite', () => {
 
   describe('4. Installer Modify Mode & Setup Handling', () => {
     it('detects and launches installer when candidate exists', async () => {
+      const existsSpy = vi.spyOn(fs, 'existsSync').mockImplementation((p) => {
+        if (typeof p === 'string' && p.includes('MaSwitch-Setup')) {
+          return true;
+        }
+        return false;
+      });
+
       const manager = new InstalledFeaturesManager({
         customManifestPath,
       });
 
       const result = await manager.launchInstallerModify();
-      // Since release/MaSwitch-Setup-0.2.0.exe exists in this workspace, it resolves successfully
       expect(result.success).toBe(true);
+      existsSpy.mockRestore();
     });
 
     it('gracefully reports missing installer when no installer binary exists', async () => {

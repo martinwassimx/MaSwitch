@@ -169,7 +169,7 @@ describe('MaSwitch Desktop Application Integration (Phase 1 & Phase 2)', () => {
     });
   });
 
-  it('displays all required account platforms in platform navigation and opens the add account modal', () => {
+  it('displays all required account platforms in platform navigation, defaults to Riot Games, and shows Coming Soon for non-Riot platforms', () => {
     render(<App />);
 
     fireEvent.click(screen.getByTestId('nav-accounts'));
@@ -190,11 +190,16 @@ describe('MaSwitch Desktop Application Integration (Phase 1 & Phase 2)', () => {
       ).toBeInTheDocument();
     }
 
-    // Selecting a platform with no accounts shows a single clean empty state and opens the modal
-    fireEvent.click(screen.getByTestId('accounts-filter-steam'));
-    const addSteamSlotBtn = screen.getByTestId('add-slot-steam');
-    fireEvent.click(addSteamSlotBtn);
+    // Riot Games is active by default and supports opening the Add Riot Account modal
+    const addRiotBtn = screen.getByTestId('add-account-profile-btn');
+    fireEvent.click(addRiotBtn);
     expect(screen.getByTestId('account-profile-form-modal')).toBeInTheDocument();
+
+    // Selecting Steam displays the Coming Soon state without misleading action buttons
+    fireEvent.click(screen.getByTestId('accounts-filter-steam'));
+    expect(screen.getByTestId('platform-coming-soon-state')).toBeInTheDocument();
+    expect(screen.getByText('Steam Account Management')).toBeInTheDocument();
+    expect(screen.queryByTestId('add-account-profile-btn')).not.toBeInTheDocument();
   });
 
   it('persists theme, accent color, and Windows startup preferences locally', async () => {

@@ -1,49 +1,69 @@
-# MaSwitch 3.0 Release Notes (v0.2.0)
+# MaSwitch — First Public Release (`v1.0.0`)
 
-## Highlights & Overview
+## About MaSwitch
 
-MaSwitch 3.0 is a lightweight Windows gaming account manager and performance optimization hub engineered specifically to run smoothly on low-end and high-end gaming PCs alike.
-
-This release introduces:
-1. **Mem Reduct Memory Cleaning Integration**: Real Windows memory list purging inspired by the open-source Mem Reduct utility by Henry++. Features genuine memory list reduction (working sets, system file cache, priority-0 standby list, full standby list, modified page list, page combining, registry cache) with zero application termination and zero process killing.
-2. **Standard & Advanced Cleanup Modes**: Standard Mode applies conservative, reviewed operations that never cause game micro-stutters or disk stalls. Advanced Mode provides granular control with explicit warnings regarding disk writes and cache purging.
-3. **Gaming Year in Review**: Interactive personalized annual statistics, total playtime breakdown, favorite titles, and gaming streaks.
-4. **Smart Game Collections**: Dynamic smart collections with real-time rule filters (most played, unplayed, platform-specific, genre) and custom manual collections.
-5. **Lightweight Performance Monitor**: Zero-overhead hardware telemetry (CPU, RAM, MaSwitch process footprint, sparkline graphs) active only when viewed.
-6. **Game Updates & News**: Offline-first RSS news feeds for all library titles with zero background polling.
-7. **Safe Backup & Restore**: Portable versioned backup archives excluding sensitive DPAPI credential vault secrets.
-8. **Fortnite Epic Games Launcher Integration**: Seamless protocol launching through Epic Games Launcher with accurate running-state detection.
-9. **Riot Automatic Desktop Login & UIA First-Attempt Self-Healing**: Resilient Windows UI Automation login engine with automatic retries for slow client start-up.
+**MaSwitch** is a lightweight Windows gaming launcher and account manager designed to organize games, manage supported gaming accounts, and provide useful gaming utilities.
 
 ---
 
-## Binary Information & Verified Checksums
+## Main Features
 
-| Distribution Artifact | File Size | SHA-256 Checksum | Digital Signature |
-| :--- | :--- | :--- | :--- |
-| **Modular NSIS Installer** (`release/MaSwitch-Setup-0.2.0.exe`) | **82.43 MB** (86,435,243 bytes) | `a0bfb491d8ba1df6a03f40eb40a224c666fc2aefb132f94ccc7399d83a1b39d4` | Authenticode-Ready (`asInvoker`) |
-| **Standalone Portable** (`release/win-unpacked/MaSwitch.exe`) | **180.08 MB** (188,827,136 bytes) | `7fbd12ec6754c6a37225f5d6ae64d57576df586272c6c51966988a6afa1ade29` | Standalone Unpacked |
+- **Unified Game Library**: Automatic detection and organization of installed PC games across Steam, Epic Games, EA App, Ubisoft Connect, GOG Galaxy, Riot Games, Rockstar Games Launcher, and Custom PC folders.
+- **Riot Games Account Management**: Multi-account profile cards with region badges (`EUW`, `NA`, `EUNE`, `KR`, etc.), preferred account selection, instant search, credential status filters, and sorting.
+- **Automatic Riot Login**: Launches or focuses the official Riot Client, detects login window readiness with automatic retries, and fills credentials via Windows UI Automation (`System.Windows.Automation`) with optional auto-submit and native MFA/CAPTCHA support.
+- **Encrypted Credential Storage**: Protects Riot Games credentials locally using the Windows Data Protection API (**Windows DPAPI** / `CryptProtectData`).
+- **Game Launching**: Official protocol launching (`steam://` and `com.epicgames.launcher://`, including Fortnite Epic Games Launcher routing) and validated direct executable launching.
+- **Game Playtime Tracking**: Real-time session tracking (`Starting` → `Running` → `Completed`) with Windows Sleep/Resume support and crash recovery.
+- **Game Tracking Exclusions**: Built-in exclusions for **Wallpaper Engine** (`wallpaper64.exe`, `wallpaper32.exe`) and idle launchers, plus custom user exclusions.
+- **Gaming Statistics**: Detailed playtime analytics, daily/weekly activity breakdowns, and platform distribution charts.
+- **Optional Memory Management**: Windows NT memory list cleaning (`Working Sets`, `System File Cache`, `Standby List`, `Modified Page List`) inspired by [Mem Reduct](https://github.com/henrypp/memreduct)—never closes user applications and automatically locks while a game is running.
+- **Smart Game Collections**: Dynamic rule-based collections and custom manual collections.
+- **Gaming Year in Review**: Annual gaming recap and exportable summary card.
+- **Game Updates & News**: On-demand official Steam RSS news and patch notes with offline caching.
+- **Backup & Restore**: Local versioned backups of profiles, settings, collections, and playtime history (excluding sensitive DPAPI secrets).
+- **Lightweight Performance Monitoring**: On-demand CPU, system RAM, and MaSwitch footprint telemetry with zero background polling when closed.
+- **Modular Windows Installer**: Choose **Minimal**, **Recommended**, **Complete**, or **Custom** presets during setup to install only the features you want.
 
-The official SHA-256 manifest is located in `release/SHA256SUMS.txt`. You can verify any downloaded executable in PowerShell with:
+---
+
+## Coming Soon
+
+Account management is currently active exclusively for **Riot Games**. Multi-account management for the following platforms is marked **Coming Soon** in the Accounts tab (while their game library discovery, launching, and playtime tracking remain fully active):
+- Steam account management
+- Epic Games account management
+- EA account management
+- Ubisoft account management
+- GOG account management
+- Rockstar account management
+- Other supported platforms
+
+---
+
+## Installation
+
+1. Download **`MaSwitch-Setup-1.0.0.exe`** from the **Assets** section below.
+2. Run the installer.
+3. Select **Minimal**, **Recommended**, **Complete**, or **Custom**.
+4. Complete installation.
+5. Launch **MaSwitch**.
+
+---
+
+## Security & Verification
+
+- **Local Windows DPAPI Encryption**: Credentials are stored locally using Windows DPAPI bound to your Windows user account. MaSwitch never stores plaintext passwords in SQLite or logs.
+- **Official Riot Client**: Riot login automation interacts exclusively with the official Riot Client window via Windows UI Automation.
+- **No Cloud Account Required**: All data stays locally on your PC in `%APPDATA%\maswitch`.
+- **SmartScreen Notice**: Because this installer is currently unsigned (built without a commercial EV/OV Authenticode certificate), Windows Defender SmartScreen or your browser may display an *"Unknown Publisher"* reputation prompt. Do not disable Windows Defender or antivirus protection; you can verify the installer's integrity using its SHA-256 checksum below.
+
+### SHA-256 Checksums (`SHA256SUMS.txt`)
+
+| Asset | Size | SHA-256 Checksum |
+| :--- | :--- | :--- |
+| `MaSwitch-Setup-1.0.0.exe` | `82.43 MB` (`86,436,446 bytes`) | `8166af2789f3cffc1dd2574d4cf1ab43cd6e24f005d66da8bc9900cb6ebdf477` |
+| `win-unpacked/MaSwitch.exe` | `180.08 MB` (`188,827,136 bytes`) | `485f9ad29025e71a8f4803c25fe8e8ce06028e45dc1a2ff9d8026a13ba672195` |
+
+Verify in PowerShell:
 ```powershell
-Get-FileHash -Algorithm SHA256 "path\to\MaSwitch-Setup-0.2.0.exe"
+Get-FileHash -Algorithm SHA256 .\MaSwitch-Setup-1.0.0.exe
 ```
-
----
-
-## Memory Management Safety & Architecture
-
-- **No Application Closing**: MaSwitch will never close or terminate background user applications (such as Discord, Brave, Spotify, Steam, etc.) to free RAM.
-- **Genuine Windows NT Memory List APIs**: Calls `NtSetSystemInformation` with `SystemMemoryListInformation` commands (`MemoryEmptyWorkingSets`, `MemoryPurgeLowPriorityStandbyList`, `MemoryPurgeStandbyList`, `MemoryFlushModifiedList`) and `psapi!EmptyWorkingSet`.
-- **Active Game Protection**: Memory cleanup is strictly blocked while any game is running to prevent FPS dips, cache drops, or anti-cheat triggers.
-- **No Automatic Timers or Startup Cleaning**: Cleanup executes only when explicitly triggered by the user.
-- **Privilege Separation**: MaSwitch runs as a standard user (`asInvoker`). Privileged list flushes request elevation via a transient, narrowly scoped Windows UAC helper that exits immediately upon completing the flush.
-
----
-
-## Installation & Distribution Instructions
-
-1. Download `MaSwitch-Setup-0.2.0.exe`.
-2. Run the installer and choose your preferred installation preset (**Recommended** or **Minimal** for low-end PCs).
-3. If upgrading from MaSwitch 2.0 or earlier, **all existing account profiles, DPAPI credentials, games, and playtime hours are automatically preserved**.
-4. The installer does not require Administrator privileges and installs cleanly to `%LOCALAPPDATA%\Programs\MaSwitch`.

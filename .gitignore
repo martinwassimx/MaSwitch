@@ -10,9 +10,12 @@ release/
 out/
 build-output/
 
-# Test & coverage outputs
+# Test, coverage & scratch outputs
 coverage/
 .vitest/
+scratch/
+tmp/
+temp/
 
 # Logs
 logs/
@@ -23,22 +26,27 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-# Environment & secrets
+# Environment, API keys, certificates & secrets
 .env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+.env.*
 *.pem
 *.key
 *.pfx
 *.p12
+*.cer
+*.crt
 
-# Local SQLite database & backups
+# Local SQLite user databases, DPAPI vaults & backups
 *.sqlite
 *.sqlite-*
 *.db
+*.db-*
 *.bak
+*.vault
+*.dpapi
+riot-credentials*.json
+steamgriddb-secret*.json
+maswitch-backup-*.json
 
 # Editor & OS files
 .DS_Store
@@ -53,4 +61,3 @@ Desktop.ini
 .vscode/*
 !.vscode/extensions.json
 !.vscode/settings.json
-

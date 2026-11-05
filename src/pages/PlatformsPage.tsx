@@ -110,8 +110,10 @@ export const PlatformsPage: React.FC = () => {
           if (isCapabilitySupported(platform.capabilities.playtimeTracking)) {
             activeCapabilities.push('Playtime Tracking');
           }
-          if (isCapabilitySupported(platform.capabilities.multiAccountSwitch)) {
+          if (platform.id === 'riot') {
             activeCapabilities.push('Account Switcher');
+          } else {
+            activeCapabilities.push('Accounts: Coming Soon');
           }
 
           return (

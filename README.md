@@ -1,130 +1,161 @@
-# MaSwitch — Windows Gaming Launcher & Multi-Account Manager
+<div align="center">
+  <img src="src/assets/branding/maswitch-mark.png" alt="MaSwitch Logo" width="110" height="110" />
 
-> Developed by **Martin Wassim** · [martinx.work](https://martinx.work)
+  # MaSwitch
 
-**Phase 2: Real Windows Gaming Engine (`v0.2.0`)**
+  **Lightweight Windows Gaming Launcher & Account Manager**
 
-MaSwitch is a standalone Windows 10 and Windows 11 desktop gaming launcher and multi-account manager built with **Electron**, **React**, **TypeScript**, **Vite**, **Tailwind CSS**, **Motion for React**, **Zustand**, **Lucide React**, and **SQLite (`node-sqlite3-wasm`)**.
+  [![Release](https://img.shields.io/badge/Release-v1.0.0-8b5cf6?style=for-the-badge)](https://github.com/martinwassimx/MaSwitch/releases/latest)
+  [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011%20(x64)-0ea5e9?style=for-the-badge)](https://github.com/martinwassimx/MaSwitch/releases/latest)
+  [![License](https://img.shields.io/badge/License-MIT-10b981?style=for-the-badge)](LICENSE)
 
----
-
-## 1. Key Capabilities in Phase 2 (`v0.2.0`)
-
-### 1.1 Real Installed-Game Scanner (`electron/services/scanner/`)
-- **Steam Detection (`steamScanner.ts` & `vdfParser.ts`)**:
-  - Resolves Steam installation paths via Windows Registry (`HKCU\Software\Valve\Steam\SteamPath`, `HKLM\SOFTWARE\WOW6432Node\Valve\Steam\InstallPath`) and known paths.
-  - Parses `libraryfolders.vdf` across multiple drives and all `appmanifest_*.acf` manifests inside each `steamapps` folder.
-  - Excludes non-game redistributables (`Steamworks Common Redistributables`, `Proton`, `SteamVR`) and discovers the primary game executable inside `steamapps/common/<installdir>`.
-- **Epic Games Detection (`epicScanner.ts`)**:
-  - Reads local JSON manifests (`*.item`) from `C:\ProgramData\Epic\EpicGamesLauncher\Data\Manifests\`.
-  - Extracts `AppName`, `DisplayName`, `InstallLocation`, `LaunchExecutable`, `LaunchCommand`, `InstallSize`, and `AppVersionString` without accessing any Epic authentication tokens.
-- **Additional Platform Adapters (`platformAdapters.ts`)**:
-  - **GOG Galaxy**: Reads `HKLM\SOFTWARE\WOW6432Node\GOG.com\Games\*` registry entries (`gameID`, `gameName`, `path`, `exe`, `workingDir`).
-  - **Ubisoft Connect**: Reads `HKLM\SOFTWARE\WOW6432Node\Ubisoft\Launcher\Installs\*` registry entries (`InstallDir`) and resolves local binaries.
-  - **Riot Games**: Reads `C:\ProgramData\Riot Games\RiotClientInstalls.json` and `Metadata\*.live.settings.yaml`.
-  - **EA App & Rockstar Games Launcher (Documented Limitations)**: Local catalog state is stored inside proprietary encrypted caches (`IS` / `.dat`); MaSwitch explicitly reports `unsupported` for proprietary cache parsing while scanning their standard Windows Uninstall Registry keys and installation directories.
-- **General Windows & Custom Folder Scanner (`generalWindowsScanner.ts`)**:
-  - Scans Windows Uninstall Registry keys and user-selected custom game directories (`settings.customScanDirectories`).
-  - Applies a deterministic **Game Confidence & Classification System (`0–100`)** (`verified-game`, `probable-game`, `custom-app`, `non-game`, `unknown`) using publisher signatures, installation directory heuristics, and game engine DLL signatures (`UnityPlayer.dll`, `steam_api64.dll`, `EOSSDK-Win64-Shipping.dll`, etc.) so system utilities, drivers, and browsers are never misclassified as games.
-- **Safe Scanner Execution (`gameScannerEngine.ts`)**:
-  - Supports automatic scan on startup, manual rescan, live IPC progress events, cancellation (`AbortSignal`), multi-source deduplication, symlink loop protection, and strictly read-only filesystem operations.
-
-### 1.2 Local SQLite Database (`electron/services/database/sqliteDatabase.ts`)
-- Stored locally at `%APPDATA%\maswitch\maswitch-library.sqlite` (inside Electron's `userData` directory).
-- **Normalized Schema (`Schema Version 1`)**:
-  - `schema_migrations`: Versioned migration tracking.
-  - `platforms`: Supported platform definitions (`steam`, `epic`, `gog`, `ubisoft`, `riot`, `ea`, `rockstar`, `custom`, `windows`).
-  - `games`: Core game titles, normalized titles, developers, publishers, genres, release years, and cover/hero artwork metadata.
-  - `game_installations`: Local installation paths, executable paths, launch arguments, launch methods, confidence scores, and classifications (`UNIQUE(platform_id, external_app_id)`).
-  - `library_ownership`: Local ownership & detection state.
-  - `user_favorites`: Persisted favorite game IDs (automatically migrated from Phase 1 `settings.json`).
-  - `custom_applications`: User-added custom games and applications.
-  - `playtime_sessions`: Individual tracked sessions (`started_at`, `ended_at`, `duration_seconds`, `status`, `exit_reason`, `process_name`, `pid`).
-  - `game_metadata_cache`: Local metadata cache.
-  - `scanner_history`: Audit log of completed and cancelled scans.
-- **Corruption Recovery**: Automatically verifies the SQLite 16-byte header and `PRAGMA integrity_check` on startup. If a database file is corrupted, MaSwitch renames it to `maswitch-library.sqlite.corrupted-<timestamp>.bak` without deleting user data and initializes a clean database.
-
-### 1.3 Functional Game Launcher (`electron/services/launcher/gameLauncherEngine.ts`)
-- **Steam Protocol**: Launches via validated `steam://rungameid/<numericAppId>` (`shell.openExternal`) or falls back to direct executable launch.
-- **Epic Games Protocol**: Launches via validated `com.epicgames.launcher://apps/<AppName>?action=launch&silent=true` or direct executable fallback.
-- **Direct & Custom Executables**: Uses `child_process.spawn(exePath, argsArray, { cwd, detached: true, stdio: 'ignore', shell: false })`.
-- **Strict Security**: Rejects shell metacharacters and null-byte injection, never uses `shell: true` or command string concatenation, and verifies executable files exist on disk with `.exe` extensions before spawning.
-
-### 1.4 Background Playtime Tracker (`electron/services/tracker/playtimeTrackerEngine.ts`)
-- Polls active Windows processes via `tasklist.exe /FO CSV /NH` (`shell: false`) every 5 seconds.
-- Matches running executable names against installed games in SQLite while **excluding launcher idle processes** (`steam.exe`, `steamwebhelper.exe`, `epicgameslauncher.exe`, `galaxyclient.exe`, `upc.exe`, `eadktop.exe`, `riotclientservices.exe`, `launcher.exe`).
-- Records session start time, end time, elapsed seconds, `lastPlayedAt`, and cumulative `totalPlaytimeMinutes` in SQLite.
-- Handles **Windows Sleep/Suspend (`powerMonitor`)** by pausing active sessions on `suspend` / `lock-screen` and starting fresh intervals on `resume`.
-- Handles **Crash/Restart Recovery** on startup (`recoverUnclosedSessionsOnStartup`) so orphaned sessions from unexpected shutdowns are safely closed.
-- Continues tracking while MaSwitch is minimized to the Windows System Tray, and cleanly closes active sessions when MaSwitch exits completely.
-
-### 1.5 Windows System Tray & Startup Integration (`trayService.ts` & `startupService.ts`)
-- **System Tray**: Native Windows notification tray icon and context menu (`Open MaSwitch`, `Rescan Installed Games`, `Pause/Resume Playtime Tracking`, `Exit MaSwitch Completely`).
-- **Close-to-Tray vs Full Exit**: Configurable in **Settings → Startup & System Tray** (`Minimize to System Tray` or `Exit Application Completely`).
-- **Launch at Windows Startup**: Uses Electron's `app.getLoginItemSettings` / `app.setLoginItemSettings` with `--hidden` support when `Start Minimized to Tray` is enabled.
+  [**Download Latest Windows Installer (`MaSwitch-Setup-1.0.0.exe`)**](https://github.com/martinwassimx/MaSwitch/releases/latest) · [Report Issue](https://github.com/martinwassimx/MaSwitch/issues) · [Security Policy](SECURITY.md) · [Changelog](CHANGELOG.md)
+</div>
 
 ---
 
-## 2. Electron Security Architecture
+## About MaSwitch
 
-MaSwitch enforces strict Electron desktop security practices:
-- `contextIsolation: true`
-- `nodeIntegration: false` (including workers and subframes)
-- `sandbox: true`
-- Strict Content Security Policy (`script-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'`)
-- Frozen `contextBridge` API (`window.maswitch`) exposing only explicitly approved IPC channels
-- Main-process IPC sender verification (`assertTrustedSender` & `isTrustedRendererUrl`) and strict payload validation
-- Zero shell interpolation (`shell: false` for all process execution)
-- **Zero-Credential Guarantee**: MaSwitch never collects or stores platform passwords, cookies, or authentication tokens.
+**MaSwitch** is a fast, privacy-focused Windows desktop gaming launcher and account manager engineered to run smoothly on both low-end and high-end gaming PCs. It unifies your installed PC games into a single library, automates **Riot Games** account switching using Windows DPAPI encryption and official Windows UI Automation, tracks accurate game playtime with application exclusions, and provides optional lightweight gaming utilities through a modular Windows installer.
 
 ---
 
-## 3. Setup, Development & Build Commands
+## Key Features
 
-### Install Dependencies
+### 1. Riot Games Account Management & Automatic Login
+- **Multi-Account Identity Cards**: Organize multiple Riot Games accounts (`League of Legends`, `VALORANT`, `Teamfight Tactics`) with display names, Riot IDs, regions (`EUW`, `NA`, `EUNE`, `KR`, etc.), and preferred-account stars.
+- **Windows DPAPI Encrypted Vault**: Credentials are encrypted locally on your machine using the native Windows Data Protection API (`CryptProtectData` / Electron `safeStorage`) bound to your Windows user login.
+- **Official Riot Client UI Automation**: Launches or focuses the official Riot Client, automatically waits for the login window to initialize, fills your credentials without using the Windows clipboard, optionally presses the Sign In button, and hands off cleanly for 2FA/MFA or CAPTCHA verification.
+
+### 2. Unified Multi-Platform Game Library
+- **Automatic Installed Game Discovery**: Scans local manifests and registry entries for **Steam**, **Epic Games**, **EA App**, **Ubisoft Connect**, **GOG Galaxy**, **Riot Games**, **Rockstar Games Launcher**, and **Custom PC Games**.
+- **Official Launcher Protocol Routing**: Launches Steam (`steam://rungameid/<id>`) and Epic Games (`com.epicgames.launcher://apps/<AppName>?action=launch&silent=true`) titles—including Fortnite—through their official launchers without modifying game binaries or anti-cheat files.
+- **Custom Artwork & SteamGridDB Integration**: Customize game covers, hero banners, logos, and icons with local disk caching.
+
+### 3. Accurate Playtime Tracking & Exclusions
+- **Lightweight Process Tracking**: Tracks real active gaming sessions (`Starting` → `Running` → `Completed`) with automatic Windows Sleep/Resume handling and crash recovery.
+- **Built-In Application Exclusions**: Automatically excludes background utilities such as **Wallpaper Engine** (`wallpaper64.exe`, `wallpaper32.exe`) and idle launcher processes so your playtime statistics remain accurate.
+
+### 4. Modular Optional Features (Selectable During Setup)
+Users on low-end PCs can choose **Minimal**, **Recommended**, **Complete**, or **Custom** presets during installation to install only the features they want:
+1. **Gaming Year in Review**: Personalized annual gaming summary, top played titles, platform breakdown, and shareable summary card export.
+2. **Smart Game Collections**: Dynamic rule-based collections (`Most Played`, `Recently Played`, `Unplayed Backlog`, `Riot Competitive`) and custom manual collections.
+3. **Lightweight Performance Monitor**: On-demand CPU, system RAM, and MaSwitch memory footprint telemetry with zero background polling when closed.
+4. **Game Updates & News**: Offline-cached official Steam RSS patch notes and game announcements fetched only on demand.
+5. **Backup & Restore**: Versioned local backup archives for profiles, collections, settings, and playtime history (strictly excluding DPAPI vault secrets).
+6. **Memory Management (Mem Reduct Integration)**: Safe Windows NT memory list cleaning (`Working Sets`, `System File Cache`, `Standby List`, `Modified Page List`) inspired by the open-source [Mem Reduct](https://github.com/henrypp/memreduct) project—never closes user applications and automatically locks while a game is running.
+
+---
+
+## Screenshots
+
+| Riot Games Account Management | Multi-Platform Coming Soon View |
+| :---: | :---: |
+| ![Riot Games Accounts](docs/screenshots/accounts-riot.png) | ![Coming Soon View](docs/screenshots/accounts-coming-soon.png) |
+
+| Unified Game Library & Details | Platforms & Detection |
+| :---: | :---: |
+| ![Library & Game Details](docs/screenshots/library-game-details.png) | ![Platforms](docs/screenshots/platforms.png) |
+
+| Performance & Memory Management | Gaming Year in Review |
+| :---: | :---: |
+| ![Performance Monitor](docs/screenshots/performance-monitor.png) | ![Year in Review](docs/screenshots/year-in-review.png) |
+
+---
+
+## Coming Soon
+
+Account management is currently active exclusively for **Riot Games**. Multi-account management for the following platforms is marked **Coming Soon** in the Accounts tab and planned for future updates:
+- **Steam Account Management** *(Game library discovery, launching & playtime tracking are already active)*
+- **Epic Games Account Management** *(Game library discovery, launching & playtime tracking are already active)*
+- **EA App Account Management** *(Game library discovery, launching & playtime tracking are already active)*
+- **Ubisoft Connect Account Management** *(Game library discovery, launching & playtime tracking are already active)*
+- **GOG Galaxy Account Management** *(Game library discovery, launching & playtime tracking are already active)*
+- **Rockstar Games Account Management** *(Game library discovery, launching & playtime tracking are already active)*
+- **Discord Identity Integration**
+
+---
+
+## System Requirements & Supported Windows Versions
+
+| Requirement | Minimum Specification | Recommended Specification |
+| :--- | :--- | :--- |
+| **Operating System** | Windows 10 (64-bit, version 1903+) | Windows 10 / Windows 11 (64-bit) |
+| **Processor (CPU)** | Dual-core x64 processor | Quad-core x64 processor |
+| **Memory (RAM)** | 4 GB RAM (Low-End PC Mode supported) | 8 GB+ RAM |
+| **Disk Space** | ~200 MB free space | 500 MB free space (with artwork cache) |
+
+---
+
+## Installation
+
+1. Go to the [**Latest GitHub Release**](https://github.com/martinwassimx/MaSwitch/releases/latest).
+2. Download **`MaSwitch-Setup-1.0.0.exe`** (and optionally `SHA256SUMS.txt` to verify file integrity).
+3. Run **`MaSwitch-Setup-1.0.0.exe`**.
+4. Choose your preferred setup preset (**Minimal**, **Recommended**, **Complete**, or **Custom**).
+5. Complete installation and launch **MaSwitch** from your Desktop or Start Menu.
+
+> **Note on Windows SmartScreen**: Because this open-source release is built without a commercial EV/OV Authenticode certificate, Windows Defender SmartScreen may display an *"Unknown Publisher"* prompt on first download. You can verify the installer's SHA-256 hash against `SHA256SUMS.txt` before running:
+> ```powershell
+> Get-FileHash -Algorithm SHA256 .\MaSwitch-Setup-1.0.0.exe
+> ```
+
+---
+
+## Privacy & Security Architecture
+
+- **100% Local Storage**: All game library records, playtime sessions, and settings are stored locally in `%APPDATA%\maswitch`. No cloud account is required, and no telemetry is transmitted.
+- **Windows DPAPI Credential Vault**: Riot Games passwords are encrypted using Windows DPAPI (`CryptProtectData`) tied to your Windows user profile. Plaintext passwords are never stored in SQLite, logs, or backups.
+- **Official Launcher Integrity**: MaSwitch never injects DLLs, never modifies game executables, and never tampers with anti-cheat services (`Riot Vanguard`, `EasyAntiCheat`, `BattlEye`).
+- **Hardened Electron Sandbox**: Runs with `sandbox: true`, `contextIsolation: true`, `nodeIntegration: false`, strict CSP headers, and `asInvoker` standard user privileges.
+
+See [SECURITY.md](SECURITY.md) for full technical details.
+
+---
+
+## Development Instructions
+
+### Prerequisites
+- Windows 10 or Windows 11 (x64)
+- Node.js 20+ and npm 10+
+
+### Clone & Run Locally
 ```powershell
+# Clone repository
+git clone https://github.com/martinwassimx/MaSwitch.git
+cd MaSwitch
+
+# Install dependencies
 npm install
-```
 
-### Run in Development Mode (Vite HMR + Electron Desktop Window)
-```powershell
+# Run in development mode
 npm run dev
 ```
 
-### Quality & Validation Checks
+### Build & Test Commands
 ```powershell
-# TypeScript validation (Renderer + Electron Main/Preload)
+# Run TypeScript typecheck
 npm run typecheck
 
-# ESLint code quality checks
+# Run ESLint
 npm run lint
 
-# Automated unit & integration tests (Vitest)
+# Run full Vitest automated test suite
 npm run test
+
+# Build unpacked Windows application and modular NSIS installer
+npm run dist:dir
+npm run dist:installer
+
+# Generate SHA-256 checksums and verify release artifacts
+npm run verify:release
 ```
-
-### Production Build & Packaging (`electron-builder`)
-```powershell
-# Compile Renderer (dist/) and Electron Main/Preload (dist-electron/)
-npm run build
-
-# Build Windows NSIS Setup Installer (.exe), Portable (.exe), and win-unpacked directory
-npm run dist:win
-
-# Headless smoke verification of packaged executable
-.\release\win-unpacked\MaSwitch.exe --smoke-test
-```
-
-Generated Windows deliverables in `release/`:
-- `release/win-unpacked/MaSwitch.exe` — Standalone unpacked Windows executable
-- `release/MaSwitch-Setup-0.2.0.exe` — Windows NSIS installer
-- `release/MaSwitch-Portable-0.2.0.exe` — Standalone portable Windows executable
 
 ---
 
-## Author & Developer
+## License
 
-- **Developer**: Martin Wassim
-- **Website**: [martinx.work](https://martinx.work)
-- **License**: MIT
+MaSwitch is released under the [**MIT License**](LICENSE).  
+Copyright © 2026 **Martin Wassim** ([martinx.work](https://martinx.work)).
 
+See [LICENSE](LICENSE) for full license terms and third-party attributions (including architectural attribution to [Mem Reduct](https://github.com/henrypp/memreduct) by Henry++).

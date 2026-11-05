@@ -1,10 +1,14 @@
 {
   "name": "maswitch",
   "productName": "MaSwitch",
-  "version": "0.2.0",
+  "version": "1.0.0",
   "description": "MaSwitch — Windows Gaming Launcher & Multi-Account Manager by Martin Wassim",
   "author": "Martin Wassim <https://martinx.work>",
-  "homepage": "https://martinx.work",
+  "homepage": "https://github.com/martinwassimx/MaSwitch",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/martinwassimx/MaSwitch.git"
+  },
   "license": "MIT",
   "private": true,
   "main": "dist-electron/electron/main.js",

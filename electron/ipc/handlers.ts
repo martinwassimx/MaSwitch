@@ -272,8 +272,8 @@ export function registerIpcHandlers(
     assertTrustedSender(event, getMainWindow, devServerUrl);
     return {
       appName: 'MaSwitch',
-      appVersion: app.getVersion() || '0.2.0',
-      phaseLabel: 'Phase 2 — Real Windows Gaming Engine',
+      appVersion: app.getVersion() || '1.0.0',
+      phaseLabel: 'MaSwitch 3.0 — Windows Gaming Launcher & Account Manager',
       electronVersion: process.versions.electron ?? '33.x',
       chromeVersion: process.versions.chrome ?? '130.x',
       nodeVersion: process.versions.node ?? '22.x',
