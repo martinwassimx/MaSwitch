@@ -19,6 +19,9 @@ import {
   Monitor,
   Ban,
   Clock,
+  Archive,
+  FileCheck,
+  AlertTriangle,
 } from 'lucide-react';
 import type {
   AccentColorId,
@@ -28,6 +31,7 @@ import type {
 } from '../shared/types/settings';
 import { useAppStore } from '../store/useAppStore';
 import { BrandMarkImg } from '../components/common/BrandLogo';
+import { localDatabaseService } from '../services/localDatabaseService';
 
 export type SettingsTabId =
   | 'all'
@@ -37,6 +41,7 @@ export type SettingsTabId =
   | 'tracking'
   | 'accounts'
   | 'notifications'
+  | 'backup'
   | 'about';
 
 const THEME_OPTIONS: ReadonlyArray<{
@@ -118,6 +123,45 @@ export const SettingsPage: React.FC = () => {
   const removeSteamGridDbKey = useAppStore((s) => s.removeSteamGridDbKey);
   const testSteamGridDbKey = useAppStore((s) => s.testSteamGridDbKey);
   const refreshSteamGridDbStatus = useAppStore((s) => s.refreshSteamGridDbStatus);
+
+  // Feature 5: Backup & Restore state
+  const backupInfo = useAppStore((s) => s.backupInfo);
+  const backupValidation = useAppStore((s) => s.backupValidation);
+  const backupLoading = useAppStore((s) => s.backupLoading);
+  const backupFeedback = useAppStore((s) => s.backupFeedback);
+  const loadBackupInfo = useAppStore((s) => s.loadBackupInfo);
+  const createBackup = useAppStore((s) => s.createBackup);
+  const validateBackupFile = useAppStore((s) => s.validateBackupFile);
+  const restoreBackupFile = useAppStore((s) => s.restoreBackupFile);
+  const clearBackupFeedback = useAppStore((s) => s.clearBackupFeedback);
+
+  const [selectedBackupPath, setSelectedBackupPath] = useState<string | null>(null);
+  const [showRestoreConfirm, setShowRestoreConfirm] = useState(false);
+
+  const handleCreateBackupWithDialog = async () => {
+    const selected = await localDatabaseService.selectBackupDestination();
+    if (selected) {
+      await createBackup(selected);
+    }
+  };
+
+  const handleSelectBackupFile = async () => {
+    const selected = await localDatabaseService.selectBackupFile();
+    if (selected) {
+      setSelectedBackupPath(selected);
+      await validateBackupFile(selected);
+    }
+  };
+
+  const handleExecuteRestore = async () => {
+    if (!selectedBackupPath) return;
+    setShowRestoreConfirm(false);
+    await restoreBackupFile(selectedBackupPath);
+  };
+
+  useEffect(() => {
+    void loadBackupInfo();
+  }, [loadBackupInfo]);
 
   const [enteredSgdbKey, setEnteredSgdbKey] = useState('');
   const [showSgdbKey, setShowSgdbKey] = useState(false);
@@ -440,6 +484,7 @@ export const SettingsPage: React.FC = () => {
           { id: 'tracking', label: 'Game Tracking', icon: Activity },
           { id: 'accounts', label: 'Accounts & Security', icon: Shield },
           { id: 'notifications', label: 'Notifications', icon: Bell },
+          { id: 'backup', label: 'Backup & Restore', icon: Archive },
           { id: 'about', label: 'About', icon: Layers },
         ].map((tab) => {
           const Icon = tab.icon;
@@ -1269,6 +1314,216 @@ export const SettingsPage: React.FC = () => {
               />
             </label>
           </div>
+        </section>
+      )}
+
+      {/* SECTION: Backup & Restore */}
+      {shouldShowSection('backup') && (
+        <section aria-label="Backup & Restore" className="space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-1">
+            <div>
+              <h2 className="text-sm font-bold text-ms-muted uppercase tracking-wider flex items-center gap-2">
+                <Archive className="w-4 h-4 text-violet-400" />
+                <span>Backup & Restore</span>
+              </h2>
+              <p className="text-xs text-ms-muted mt-0.5">
+                Export and restore local library metadata, smart collections, playtime history, and preferences safely
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">
+                100% Offline & DPAPI Protected
+              </span>
+            </div>
+          </div>
+
+          {/* Feedback banner */}
+          {backupFeedback && (
+            <div
+              className={`p-4 rounded-xl text-xs flex items-center justify-between gap-3 ${
+                backupFeedback.type === 'success'
+                  ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-300'
+                  : 'bg-rose-500/10 border border-rose-500/20 text-rose-300'
+              }`}
+            >
+              <span>{backupFeedback.message}</span>
+              <button
+                type="button"
+                onClick={clearBackupFeedback}
+                className="text-ms-muted hover:text-ms-text"
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Create Backup Card */}
+            <div className="p-6 rounded-2xl bg-ms-card border border-ms-border space-y-4 shadow-sm flex flex-col justify-between">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-base font-bold text-ms-text flex items-center gap-2">
+                    <Archive className="w-4 h-4 text-violet-400" />
+                    <span>Create Archive Backup</span>
+                  </h3>
+                  <span className="text-xs text-ms-muted tabular-nums">
+                    {backupInfo?.backupsCount ?? 0} archives saved
+                  </span>
+                </div>
+                <p className="text-xs text-ms-muted">
+                  Exports your library games, smart collections, tracking exclusions, playtime sessions, and UI settings into an integrity-hashed JSON archive.
+                </p>
+                <div className="text-[11px] text-amber-400/90 bg-amber-500/10 border border-amber-500/20 p-2.5 rounded-xl">
+                  <strong>Security Guarantee:</strong> Passwords, DPAPI vault keys, and authentication tokens are strictly excluded from backups.
+                </div>
+              </div>
+
+              <div className="space-y-3 pt-2">
+                <div className="text-xs text-ms-muted">
+                  Last backup:{' '}
+                  <strong className="text-ms-text">
+                    {backupInfo?.lastBackupIso
+                      ? new Date(backupInfo.lastBackupIso).toLocaleString()
+                      : 'Never'}
+                  </strong>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    data-testid="create-backup-btn"
+                    disabled={backupLoading}
+                    onClick={() => void createBackup()}
+                    className="flex-1 py-2 px-3.5 rounded-xl text-xs font-bold bg-violet-600 hover:bg-violet-500 text-white shadow-md transition-all text-center"
+                  >
+                    {backupLoading ? 'Creating...' : 'Create Backup'}
+                  </button>
+
+                  <button
+                    type="button"
+                    data-testid="choose-backup-dest-btn"
+                    disabled={backupLoading}
+                    onClick={() => void handleCreateBackupWithDialog()}
+                    className="py-2 px-3 rounded-xl text-xs font-semibold bg-ms-elevated hover:bg-ms-border text-ms-text border border-ms-border transition-colors"
+                    title="Choose custom destination folder"
+                  >
+                    Custom Destination...
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Restore Backup Card */}
+            <div className="p-6 rounded-2xl bg-ms-card border border-ms-border space-y-4 shadow-sm flex flex-col justify-between">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-base font-bold text-ms-text flex items-center gap-2">
+                    <FileCheck className="w-4 h-4 text-cyan-400" />
+                    <span>Restore From Archive</span>
+                  </h3>
+                  <span className="text-[10px] uppercase font-bold text-cyan-400">
+                    Safe Snapshot
+                  </span>
+                </div>
+                <p className="text-xs text-ms-muted">
+                  Select a valid `.json` backup file. A safe pre-restore snapshot is automatically taken before restoring records.
+                </p>
+              </div>
+
+              {/* Selected File Preview */}
+              {selectedBackupPath ? (
+                <div className="p-3.5 rounded-xl bg-ms-elevated/40 border border-ms-border space-y-2 text-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-ms-text truncate max-w-[200px]">
+                      {selectedBackupPath.split(/[/\\]/).pop()}
+                    </span>
+                    {backupValidation?.valid ? (
+                      <span className="text-[10px] font-bold text-emerald-400 flex items-center gap-1">
+                        <Check className="w-3 h-3" /> Checksum Valid
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-bold text-rose-400">
+                        {backupValidation?.error ?? 'Invalid archive'}
+                      </span>
+                    )}
+                  </div>
+
+                  {backupValidation?.manifest && (
+                    <div className="grid grid-cols-2 gap-2 text-[11px] text-ms-muted pt-1">
+                      <div>Games: <strong className="text-ms-text">{backupValidation.manifest.counts.games}</strong></div>
+                      <div>Sessions: <strong className="text-ms-text">{backupValidation.manifest.counts.sessions}</strong></div>
+                      <div>Collections: <strong className="text-ms-text">{backupValidation.manifest.counts.collections}</strong></div>
+                      <div>Exclusions: <strong className="text-ms-text">{backupValidation.manifest.counts.exclusions}</strong></div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="p-4 rounded-xl border border-dashed border-ms-border text-center text-xs text-ms-muted">
+                  No backup archive currently selected.
+                </div>
+              )}
+
+              <div className="space-y-2 pt-2">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    data-testid="select-backup-file-btn"
+                    onClick={() => void handleSelectBackupFile()}
+                    className="flex-1 py-2 px-3 rounded-xl text-xs font-semibold bg-ms-elevated hover:bg-ms-border text-ms-text border border-ms-border transition-colors text-center"
+                  >
+                    Select Backup File...
+                  </button>
+
+                  {selectedBackupPath && backupValidation?.valid && (
+                    <button
+                      type="button"
+                      data-testid="execute-restore-btn"
+                      disabled={backupLoading}
+                      onClick={() => setShowRestoreConfirm(true)}
+                      className="py-2 px-4 rounded-xl text-xs font-bold bg-cyan-600 hover:bg-cyan-500 text-white shadow-md transition-all"
+                    >
+                      Restore...
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Restore Confirmation Dialog */}
+          {showRestoreConfirm && (
+            <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4 backdrop-blur-sm animate-fadeIn">
+              <div className="w-full max-w-md bg-ms-card border border-ms-border rounded-2xl p-6 space-y-4 shadow-2xl">
+                <div className="flex items-center gap-3 text-amber-400">
+                  <AlertTriangle className="w-6 h-6 shrink-0" />
+                  <h3 className="text-base font-bold text-ms-text">Confirm Data Restoration</h3>
+                </div>
+
+                <p className="text-xs text-ms-muted leading-relaxed">
+                  Restoring will merge games, collections, and preferences from this backup. A safe pre-restore snapshot will be saved automatically beforehand.
+                </p>
+
+                <div className="flex items-center justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowRestoreConfirm(false)}
+                    className="px-3.5 py-2 text-xs font-semibold text-ms-muted hover:text-ms-text"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="confirm-restore-btn"
+                    onClick={() => void handleExecuteRestore()}
+                    className="px-4 py-2 text-xs font-bold bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl shadow-md"
+                  >
+                    Confirm & Restore
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </section>
       )}
 

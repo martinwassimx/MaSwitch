@@ -99,6 +99,37 @@ const IPC_CHANNELS = {
   ACCOUNTS_RIOT_START_DESKTOP_LOGIN: 'maswitch:accounts:riot:start-desktop-login',
   ACCOUNTS_RIOT_CANCEL_DESKTOP_LOGIN: 'maswitch:accounts:riot:cancel-desktop-login',
   ACCOUNTS_RIOT_LOGIN_AUTOMATION_PROGRESS: 'maswitch:accounts:riot:login-automation-progress',
+
+  // MaSwitch 3.0: Gaming Year in Review
+  STATISTICS_GET_YEAR_IN_REVIEW: 'maswitch:statistics:get-year-in-review',
+  STATISTICS_GET_AVAILABLE_YEARS: 'maswitch:statistics:get-available-years',
+
+  // MaSwitch 3.0: Smart Game Collections
+  COLLECTIONS_GET_ALL: 'maswitch:collections:get-all',
+  COLLECTIONS_CREATE: 'maswitch:collections:create',
+  COLLECTIONS_UPDATE: 'maswitch:collections:update',
+  COLLECTIONS_DELETE: 'maswitch:collections:delete',
+  COLLECTIONS_ADD_GAME: 'maswitch:collections:add-game',
+  COLLECTIONS_REMOVE_GAME: 'maswitch:collections:remove-game',
+  COLLECTIONS_SET_GAME_ORDER: 'maswitch:collections:set-game-order',
+  COLLECTIONS_UPDATED_EVENT: 'maswitch:collections:updated',
+
+  // MaSwitch 3.0: Lightweight Performance Monitor
+  PERFORMANCE_GET_METRICS: 'maswitch:performance:get-metrics',
+  PERFORMANCE_SET_MONITORING_ACTIVE: 'maswitch:performance:set-monitoring-active',
+  PERFORMANCE_METRICS_UPDATED_EVENT: 'maswitch:performance:metrics-updated',
+
+  // MaSwitch 3.0: Game Updates & News
+  NEWS_GET_LIBRARY_NEWS: 'maswitch:news:get-library-news',
+  NEWS_OPEN_EXTERNAL_LINK: 'maswitch:news:open-external-link',
+
+  // MaSwitch 3.0: Backup & Restore
+  BACKUP_CREATE: 'maswitch:backup:create',
+  BACKUP_VALIDATE: 'maswitch:backup:validate',
+  BACKUP_RESTORE: 'maswitch:backup:restore',
+  BACKUP_GET_INFO: 'maswitch:backup:get-info',
+  BACKUP_SELECT_FILE: 'maswitch:backup:select-file',
+  BACKUP_SELECT_DESTINATION: 'maswitch:backup:select-destination',
 } as const;
 
 const bridge: MaSwitchBridge = {
@@ -416,6 +447,53 @@ const bridge: MaSwitchBridge = {
         ipcRenderer.removeListener(IPC_CHANNELS.ACCOUNTS_UPDATED_EVENT, listener);
       };
     },
+  },
+  yearInReview: {
+    getAvailableYears: () => ipcRenderer.invoke(IPC_CHANNELS.STATISTICS_GET_AVAILABLE_YEARS),
+    getYearInReview: (year?: number) => ipcRenderer.invoke(IPC_CHANNELS.STATISTICS_GET_YEAR_IN_REVIEW, year),
+  },
+  collections: {
+    getAll: () => ipcRenderer.invoke(IPC_CHANNELS.COLLECTIONS_GET_ALL),
+    create: (input) => ipcRenderer.invoke(IPC_CHANNELS.COLLECTIONS_CREATE, input),
+    update: (input) => ipcRenderer.invoke(IPC_CHANNELS.COLLECTIONS_UPDATE, input),
+    delete: (id) => ipcRenderer.invoke(IPC_CHANNELS.COLLECTIONS_DELETE, id),
+    addGame: (collectionId, gameId) => ipcRenderer.invoke(IPC_CHANNELS.COLLECTIONS_ADD_GAME, collectionId, gameId),
+    removeGame: (collectionId, gameId) => ipcRenderer.invoke(IPC_CHANNELS.COLLECTIONS_REMOVE_GAME, collectionId, gameId),
+    setGameOrder: (collectionId, gameIds) => ipcRenderer.invoke(IPC_CHANNELS.COLLECTIONS_SET_GAME_ORDER, collectionId, gameIds),
+    onCollectionsUpdated: (callback) => {
+      const listener = () => callback();
+      ipcRenderer.on(IPC_CHANNELS.COLLECTIONS_UPDATED_EVENT, listener);
+      return () => {
+        ipcRenderer.removeListener(IPC_CHANNELS.COLLECTIONS_UPDATED_EVENT, listener);
+      };
+    },
+  },
+  performance: {
+    getMetrics: () => ipcRenderer.invoke(IPC_CHANNELS.PERFORMANCE_GET_METRICS),
+    setMonitoringActive: (config) => ipcRenderer.invoke(IPC_CHANNELS.PERFORMANCE_SET_MONITORING_ACTIVE, config),
+    onMetricsUpdated: (callback) => {
+      const listener = (_event: IpcRendererEvent, metrics: import('../src/shared/types/performance').PerformanceMetrics) => {
+        if (metrics && typeof metrics === 'object') {
+          callback(metrics);
+        }
+      };
+      ipcRenderer.on(IPC_CHANNELS.PERFORMANCE_METRICS_UPDATED_EVENT, listener);
+      return () => {
+        ipcRenderer.removeListener(IPC_CHANNELS.PERFORMANCE_METRICS_UPDATED_EVENT, listener);
+      };
+    },
+  },
+  news: {
+    getLibraryNews: (options) => ipcRenderer.invoke(IPC_CHANNELS.NEWS_GET_LIBRARY_NEWS, options),
+    openExternalLink: (url) => ipcRenderer.invoke(IPC_CHANNELS.NEWS_OPEN_EXTERNAL_LINK, url),
+  },
+  backup: {
+    getInfo: () => ipcRenderer.invoke(IPC_CHANNELS.BACKUP_GET_INFO),
+    create: (customPath) => ipcRenderer.invoke(IPC_CHANNELS.BACKUP_CREATE, customPath),
+    validate: (filePath) => ipcRenderer.invoke(IPC_CHANNELS.BACKUP_VALIDATE, filePath),
+    restore: (filePath) => ipcRenderer.invoke(IPC_CHANNELS.BACKUP_RESTORE, filePath),
+    selectFile: () => ipcRenderer.invoke(IPC_CHANNELS.BACKUP_SELECT_FILE),
+    selectDestination: () => ipcRenderer.invoke(IPC_CHANNELS.BACKUP_SELECT_DESTINATION),
   },
 };
 

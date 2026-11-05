@@ -58,6 +58,19 @@ import type {
   ArtworkSyncProgress,
   SteamGridDbStatus,
 } from '../shared/types/steamgriddb';
+import type { YearInReviewData } from '../shared/types/yearInReview';
+import type {
+  CollectionItem,
+  CreateCollectionInput,
+  UpdateCollectionInput,
+} from '../shared/types/collection';
+import type { PerformanceMetrics } from '../shared/types/performance';
+import type { GameNewsFeedResult } from '../shared/types/news';
+import type {
+  BackupInfo,
+  BackupValidationResult,
+  RestoreResult,
+} from '../shared/types/backup';
 import { sanitizeSettings } from '../shared/validation/settingsValidator';
 import { accountManagerService } from '../services/accountManagerService';
 import { gameLauncherService } from '../services/gameLauncherService';
@@ -234,6 +247,56 @@ export interface AppStoreState {
   startRiotDesktopLogin: (profileId: string, autoLaunchClient?: boolean, autoSubmit?: boolean, isSyntheticTest?: boolean, targetHwnd?: string, targetPid?: number) => Promise<RiotDesktopLoginResultPayload>;
   cancelRiotDesktopLogin: () => Promise<void>;
   clearRiotLoginAutomationProgress: () => void;
+
+  // Feature 1: Year in Review
+  availableYears: number[];
+  selectedYear: number;
+  yearInReviewData: YearInReviewData | null;
+  yearInReviewLoading: boolean;
+  loadYearInReview: (year?: number) => Promise<void>;
+  setSelectedYear: (year: number) => void;
+
+  // Feature 2: Smart Collections
+  collections: CollectionItem[];
+  activeCollectionId: string | null;
+  collectionsLoading: boolean;
+  loadCollections: () => Promise<void>;
+  createCollection: (input: CreateCollectionInput) => Promise<CollectionItem | null>;
+  updateCollection: (input: UpdateCollectionInput) => Promise<boolean>;
+  deleteCollection: (id: string) => Promise<boolean>;
+  addGameToCollection: (collectionId: string, gameId: string) => Promise<boolean>;
+  removeGameFromCollection: (collectionId: string, gameId: string) => Promise<boolean>;
+  setCollectionGameOrder: (collectionId: string, gameIds: string[]) => Promise<boolean>;
+  setActiveCollectionId: (id: string | null) => void;
+
+  // Feature 3: Performance Monitor
+  performanceMetrics: PerformanceMetrics | null;
+  metricsHistory: PerformanceMetrics[];
+  monitoringActive: boolean;
+  monitoringIntervalMs: number;
+  setPerformanceMonitoringActive: (active: boolean, intervalMs?: number) => Promise<void>;
+  fetchPerformanceMetrics: () => Promise<PerformanceMetrics | null>;
+
+  // Feature 4: Game Updates & News
+  newsFeed: GameNewsFeedResult | null;
+  newsLoading: boolean;
+  newsFilterGameId: string | null;
+  newsFilterPlatformId: string | null;
+  loadNews: (options?: { forceRefresh?: boolean }) => Promise<void>;
+  setNewsFilterGameId: (gameId: string | null) => void;
+  setNewsFilterPlatformId: (platformId: string | null) => void;
+  openNewsArticle: (url: string) => Promise<boolean>;
+
+  // Feature 5: Backup & Restore
+  backupInfo: BackupInfo | null;
+  backupValidation: BackupValidationResult | null;
+  backupLoading: boolean;
+  backupFeedback: { type: 'success' | 'error'; message: string } | null;
+  loadBackupInfo: () => Promise<void>;
+  createBackup: (customPath?: string) => Promise<boolean>;
+  validateBackupFile: (filePath: string) => Promise<BackupValidationResult | null>;
+  restoreBackupFile: (filePath: string) => Promise<RestoreResult>;
+  clearBackupFeedback: () => void;
 }
 
 const initialSettings = localDatabaseService.readCachedSettings();
@@ -345,6 +408,35 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
 
   inGameMode: false,
   activeGameCount: 0,
+
+  // Feature 1: Year in Review
+  availableYears: [new Date().getFullYear()],
+  selectedYear: new Date().getFullYear(),
+  yearInReviewData: null,
+  yearInReviewLoading: false,
+
+  // Feature 2: Smart Collections
+  collections: [],
+  activeCollectionId: null,
+  collectionsLoading: false,
+
+  // Feature 3: Performance Monitor
+  performanceMetrics: null,
+  metricsHistory: [],
+  monitoringActive: false,
+  monitoringIntervalMs: 3000,
+
+  // Feature 4: Game Updates & News
+  newsFeed: null,
+  newsLoading: false,
+  newsFilterGameId: null,
+  newsFilterPlatformId: null,
+
+  // Feature 5: Backup & Restore
+  backupInfo: null,
+  backupValidation: null,
+  backupLoading: false,
+  backupFeedback: null,
   isWindowVisible: true,
 
   setInGameMode: (inGame: boolean, activeGameCount: number) => {
@@ -1501,4 +1593,253 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
       riotLoginAutomationResult: null,
       isRiotLoginAutomating: false,
     }),
+
+  // Feature 1: Year in Review Actions
+  loadYearInReview: async (year?: number) => {
+    const yr = year ?? get().selectedYear;
+    set({ yearInReviewLoading: true, selectedYear: yr });
+    try {
+      const years = await localDatabaseService.getAvailableYears();
+      const data = await localDatabaseService.getYearInReview(yr);
+      set({
+        availableYears: years.length > 0 ? years : [yr],
+        yearInReviewData: data,
+        yearInReviewLoading: false,
+      });
+    } catch {
+      set({ yearInReviewLoading: false });
+    }
+  },
+
+  setSelectedYear: (year: number) => {
+    set({ selectedYear: year });
+    void get().loadYearInReview(year);
+  },
+
+  // Feature 2: Smart Collections Actions
+  loadCollections: async () => {
+    set({ collectionsLoading: true });
+    try {
+      const list = await localDatabaseService.getCollections();
+      set({ collections: list, collectionsLoading: false });
+    } catch {
+      set({ collectionsLoading: false });
+    }
+  },
+
+  createCollection: async (input: CreateCollectionInput) => {
+    try {
+      const created = await localDatabaseService.createCollection(input);
+      if (created) {
+        await get().loadCollections();
+      }
+      return created;
+    } catch {
+      return null;
+    }
+  },
+
+  updateCollection: async (input: UpdateCollectionInput) => {
+    try {
+      const res = await localDatabaseService.updateCollection(input);
+      if (res) {
+        await get().loadCollections();
+      }
+      return res;
+    } catch {
+      return false;
+    }
+  },
+
+  deleteCollection: async (id: string) => {
+    try {
+      const res = await localDatabaseService.deleteCollection(id);
+      if (res) {
+        if (get().activeCollectionId === id) {
+          set({ activeCollectionId: null });
+        }
+        await get().loadCollections();
+      }
+      return res;
+    } catch {
+      return false;
+    }
+  },
+
+  addGameToCollection: async (collectionId: string, gameId: string) => {
+    try {
+      const res = await localDatabaseService.addGameToCollection(collectionId, gameId);
+      if (res) {
+        await get().loadCollections();
+      }
+      return res;
+    } catch {
+      return false;
+    }
+  },
+
+  removeGameFromCollection: async (collectionId: string, gameId: string) => {
+    try {
+      const res = await localDatabaseService.removeGameFromCollection(collectionId, gameId);
+      if (res) {
+        await get().loadCollections();
+      }
+      return res;
+    } catch {
+      return false;
+    }
+  },
+
+  setCollectionGameOrder: async (collectionId: string, gameIds: string[]) => {
+    try {
+      const res = await localDatabaseService.setCollectionGameOrder(collectionId, gameIds);
+      if (res) {
+        await get().loadCollections();
+      }
+      return res;
+    } catch {
+      return false;
+    }
+  },
+
+  setActiveCollectionId: (id: string | null) => set({ activeCollectionId: id }),
+
+  // Feature 3: Performance Monitor Actions
+  setPerformanceMonitoringActive: async (active: boolean, intervalMs?: number) => {
+    const intMs = intervalMs ?? get().monitoringIntervalMs;
+    set({ monitoringActive: active, monitoringIntervalMs: intMs });
+    await localDatabaseService.setPerformanceMonitoringActive({ active, intervalMs: intMs });
+  },
+
+  fetchPerformanceMetrics: async () => {
+    const m = await localDatabaseService.getPerformanceMetrics();
+    if (m) {
+      set((state) => ({
+        performanceMetrics: m,
+        metricsHistory: [...state.metricsHistory.slice(-29), m],
+      }));
+    }
+    return m;
+  },
+
+  // Feature 4: Game Updates & News Actions
+  loadNews: async (options?: { forceRefresh?: boolean }) => {
+    set({ newsLoading: true });
+    try {
+      const feed = await localDatabaseService.getLibraryNews({
+        forceRefresh: options?.forceRefresh,
+        gameId: get().newsFilterGameId ?? undefined,
+        platformId: get().newsFilterPlatformId ?? undefined,
+      });
+      set({ newsFeed: feed, newsLoading: false });
+    } catch {
+      set({ newsLoading: false });
+    }
+  },
+
+  setNewsFilterGameId: (gameId: string | null) => {
+    set({ newsFilterGameId: gameId });
+    void get().loadNews();
+  },
+
+  setNewsFilterPlatformId: (platformId: string | null) => {
+    set({ newsFilterPlatformId: platformId });
+    void get().loadNews();
+  },
+
+  openNewsArticle: async (url: string) => {
+    return await localDatabaseService.openExternalNewsLink(url);
+  },
+
+  // Feature 5: Backup & Restore Actions
+  loadBackupInfo: async () => {
+    try {
+      const info = await localDatabaseService.getBackupInfo();
+      set({ backupInfo: info });
+    } catch {
+      // Retain previous or fallback backup info
+    }
+  },
+
+  createBackup: async (customPath?: string) => {
+    set({ backupLoading: true, backupFeedback: null });
+    try {
+      const res = await localDatabaseService.createBackup(customPath);
+      await get().loadBackupInfo();
+      set({
+        backupLoading: false,
+        backupFeedback: {
+          type: 'success',
+          message: `Backup created successfully (${res.manifest?.counts.games ?? 0} games, ${res.manifest?.counts.sessions ?? 0} sessions).`,
+        },
+      });
+      return true;
+    } catch (err) {
+      set({
+        backupLoading: false,
+        backupFeedback: {
+          type: 'error',
+          message: `Failed to create backup: ${err instanceof Error ? err.message : String(err)}`,
+        },
+      });
+      return false;
+    }
+  },
+
+  validateBackupFile: async (filePath: string) => {
+    set({ backupLoading: true, backupValidation: null });
+    try {
+      const res = await localDatabaseService.validateBackup(filePath);
+      set({ backupValidation: res, backupLoading: false });
+      return res;
+    } catch (err) {
+      const fail = { valid: false, filePath, fileSizeBytes: 0, error: String(err) };
+      set({ backupValidation: fail, backupLoading: false });
+      return fail;
+    }
+  },
+
+  restoreBackupFile: async (filePath: string) => {
+    set({ backupLoading: true, backupFeedback: null });
+    try {
+      const res = await localDatabaseService.restoreBackup(filePath);
+      if (res.success) {
+        set({
+          backupLoading: false,
+          backupFeedback: {
+            type: 'success',
+            message: `Restore completed successfully (${res.restoredCounts?.games ?? 0} games restored).`,
+          },
+        });
+        const [reloadedGames, reloadedSettings] = await Promise.all([
+          localDatabaseService.getRealLibraryGames(),
+          localDatabaseService.loadSettings(),
+        ]);
+        set({
+          realGames: reloadedGames,
+          games: reloadedGames,
+          settings: reloadedSettings,
+        });
+        await get().loadCollections();
+      } else {
+        set({
+          backupLoading: false,
+          backupFeedback: {
+            type: 'error',
+            message: `Restore failed: ${res.error ?? 'Unknown error'}`,
+          },
+        });
+      }
+      return res;
+    } catch (err) {
+      const res = { success: false, error: String(err) };
+      set({
+        backupLoading: false,
+        backupFeedback: { type: 'error', message: `Restore error: ${res.error}` },
+      });
+      return res;
+    }
+  },
+
+  clearBackupFeedback: () => set({ backupFeedback: null }),
 }));

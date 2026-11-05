@@ -32,6 +32,22 @@ import type {
   PlaytimeSessionStatus,
   StatisticsOverview,
 } from '../../../src/shared/types/statistics';
+import type {
+  YearInReviewCalendarDay,
+  YearInReviewComparison,
+  YearInReviewData,
+  YearInReviewDayOfWeekBreakdown,
+  YearInReviewLongestSession,
+  YearInReviewMonthBreakdown,
+  YearInReviewTopGame,
+} from '../../../src/shared/types/yearInReview';
+import type {
+  CollectionItem,
+  CollectionSortOrder,
+  CreateCollectionInput,
+  SmartCollectionRules,
+  UpdateCollectionInput,
+} from '../../../src/shared/types/collection';
 import {
   generateLocalGameCoverSvg,
   generateLocalGameHeroSvg,
@@ -303,6 +319,35 @@ export const SQLITE_MIGRATIONS: readonly MigrationDefinition[] = [
       ) THEN 'user-confirmed' ELSE 'unverified' END;
     `,
   },
+  {
+    version: 9,
+    name: '009_game_collections',
+    sql: `
+      CREATE TABLE IF NOT EXISTS collections (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT,
+        icon TEXT NOT NULL DEFAULT 'Folder',
+        color TEXT NOT NULL DEFAULT '#8B5CF6',
+        is_smart INTEGER NOT NULL DEFAULT 0,
+        rules_json TEXT,
+        sort_order TEXT NOT NULL DEFAULT 'title-asc',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS collection_games (
+        collection_id TEXT NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+        game_id TEXT NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+        added_at TEXT NOT NULL,
+        custom_order INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (collection_id, game_id)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_collection_games_game ON collection_games(game_id);
+      CREATE INDEX IF NOT EXISTS idx_collections_name ON collections(name);
+    `,
+  },
 ];
 
 const PLATFORM_NAMES: Record<PlatformId, string> = {
@@ -372,6 +417,7 @@ export class MaSwitchSqliteDatabase {
   private db!: Database;
   private readonly dbFilePath: string;
   private corruptedBackupPath: string | null = null;
+  private yearInReviewCache = new Map<string, YearInReviewData>();
 
   constructor(customFilePath: string) {
     this.dbFilePath = customFilePath;
@@ -1723,6 +1769,7 @@ export class MaSwitchSqliteDatabase {
         params.startedAtIso,
       ]
     );
+    this.yearInReviewCache.clear();
   }
 
   public heartbeatPlaytimeSession(
@@ -1756,6 +1803,7 @@ export class MaSwitchSqliteDatabase {
         sessionId,
       ]
     );
+    this.yearInReviewCache.clear();
   }
 
   /**
@@ -2047,6 +2095,7 @@ export class MaSwitchSqliteDatabase {
         JSON.stringify(summary.errors),
       ]
     );
+    this.yearInReviewCache.clear();
   }
 
   public getScanHistory(limit = 10): ScanResultSummary[] {
@@ -2434,5 +2483,584 @@ export class MaSwitchSqliteDatabase {
       createdAt: String(r.created_at),
       updatedAt: String(r.updated_at),
     };
+  }
+
+  public getAvailableYears(): number[] {
+    const rows = this.db.all(
+      `SELECT DISTINCT SUBSTR(started_at, 1, 4) as yr
+       FROM playtime_sessions
+       WHERE started_at IS NOT NULL AND LENGTH(started_at) >= 4
+       ORDER BY yr DESC;`
+    ) as Array<{ yr: string }>;
+
+    const years = rows
+      .map((r) => parseInt(r.yr, 10))
+      .filter((y) => !isNaN(y) && y > 2000 && y < 2100);
+
+    const currentYear = new Date().getFullYear();
+    if (!years.includes(currentYear)) {
+      years.unshift(currentYear);
+    }
+    return years.sort((a, b) => b - a);
+  }
+
+  public getYearInReview(
+    targetYear?: number,
+    excludedHistorical?: { exes?: Set<string>; gameIds?: Set<string> }
+  ): YearInReviewData {
+    const year = targetYear ?? new Date().getFullYear();
+    const cacheKey = `${year}_${Array.from(excludedHistorical?.exes ?? []).sort().join(',')}_${Array.from(excludedHistorical?.gameIds ?? []).sort().join(',')}`;
+    
+    if (this.yearInReviewCache.has(cacheKey)) {
+      return this.yearInReviewCache.get(cacheKey)!;
+    }
+
+    const yearPrefix = year.toString();
+    const rows = this.db.all(
+      `SELECT 
+         s.id,
+         s.game_id as gameId,
+         s.executable_path as executablePath,
+         s.started_at as startedAtIso,
+         s.ended_at as endedAtIso,
+         s.duration_seconds as durationSeconds,
+         s.source,
+         s.status,
+         g.title as gameTitle,
+         g.platform_id as platformId,
+         g.cover_image as coverImage,
+         g.icon_image as iconImage
+       FROM playtime_sessions s
+       LEFT JOIN games g ON s.game_id = g.id
+       WHERE SUBSTR(s.started_at, 1, 4) = ?
+       ORDER BY s.started_at ASC;`,
+      [yearPrefix]
+    ) as Array<{
+      id: string;
+      gameId: string;
+      executablePath: string;
+      startedAtIso: string;
+      endedAtIso: string | null;
+      durationSeconds: number;
+      source: PlaytimeSessionSource;
+      status: PlaytimeSessionStatus;
+      gameTitle: string | null;
+      platformId: string | null;
+      coverImage: string | null;
+      iconImage: string | null;
+    }>;
+
+    const validSessions = rows.filter((s) => {
+      if (!excludedHistorical) return true;
+      if (excludedHistorical.gameIds?.has(s.gameId)) return false;
+      const exeName = (s.executablePath ? path.basename(s.executablePath) : '').toLowerCase();
+      if (exeName && excludedHistorical.exes?.has(exeName)) return false;
+      return true;
+    });
+
+    const totalSeconds = validSessions.reduce((acc, s) => acc + s.durationSeconds, 0);
+    const totalGamingHours = Math.round((totalSeconds / 3600) * 10) / 10;
+    const totalSessions = validSessions.length;
+    const uniqueGames = new Set(validSessions.map((s) => s.gameId));
+    const uniqueGamesCount = uniqueGames.size;
+    const averageSessionMinutes = totalSessions > 0 ? Math.round((totalSeconds / totalSessions) / 60) : 0;
+
+    const gameMap = new Map<string, {
+      title: string;
+      platformId: PlatformId;
+      coverImage?: string;
+      iconImage?: string;
+      seconds: number;
+      sessions: number;
+    }>();
+
+    for (const s of validSessions) {
+      const g = gameMap.get(s.gameId);
+      if (!g) {
+        gameMap.set(s.gameId, {
+          title: s.gameTitle ?? 'Unknown Game',
+          platformId: (s.platformId ?? 'custom') as PlatformId,
+          coverImage: s.coverImage ?? undefined,
+          iconImage: s.iconImage ?? undefined,
+          seconds: s.durationSeconds,
+          sessions: 1,
+        });
+      } else {
+        g.seconds += s.durationSeconds;
+        g.sessions += 1;
+      }
+    }
+
+    const topGames: YearInReviewTopGame[] = Array.from(gameMap.entries())
+      .map(([gameId, val]) => {
+        const hoursPlayed = Math.round((val.seconds / 3600) * 10) / 10;
+        const percentageOfYear = totalGamingHours > 0 ? Math.round((hoursPlayed / totalGamingHours) * 1000) / 10 : 0;
+        return {
+          gameId,
+          title: val.title,
+          platformId: val.platformId,
+          coverImage: val.coverImage,
+          iconImage: val.iconImage,
+          hoursPlayed,
+          sessionCount: val.sessions,
+          percentageOfYear,
+        };
+      })
+      .sort((a, b) => b.hoursPlayed - a.hoursPlayed)
+      .slice(0, 5);
+
+    const monthNames = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'
+    ];
+    const shortNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const monthlyPlaytime: YearInReviewMonthBreakdown[] = monthNames.map((name, idx) => ({
+      month: idx + 1,
+      monthName: name,
+      shortName: shortNames[idx] ?? name.slice(0, 3),
+      hoursPlayed: 0,
+      sessionsCount: 0,
+    }));
+
+    const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const dayOfWeekPlaytime: YearInReviewDayOfWeekBreakdown[] = dayNames.map((name, idx) => ({
+      dayIndex: idx,
+      dayName: name,
+      hoursPlayed: 0,
+      sessionCount: 0,
+    }));
+
+    let longestSessionRow: (typeof validSessions)[0] | null = null;
+    const calendarMap = new Map<string, { minutes: number; count: number }>();
+
+    for (const s of validSessions) {
+      if (!longestSessionRow || s.durationSeconds > longestSessionRow.durationSeconds) {
+        longestSessionRow = s;
+      }
+
+      const d = new Date(s.startedAtIso);
+      if (!isNaN(d.getTime())) {
+        const m = d.getMonth();
+        if (monthlyPlaytime[m]) {
+          monthlyPlaytime[m].hoursPlayed += s.durationSeconds / 3600;
+          monthlyPlaytime[m].sessionsCount += 1;
+        }
+
+        const dow = d.getDay();
+        if (dayOfWeekPlaytime[dow]) {
+          dayOfWeekPlaytime[dow].hoursPlayed += s.durationSeconds / 3600;
+          dayOfWeekPlaytime[dow].sessionCount += 1;
+        }
+
+        const dateKey = s.startedAtIso.slice(0, 10);
+        const dayEntry = calendarMap.get(dateKey) ?? { minutes: 0, count: 0 };
+        dayEntry.minutes += s.durationSeconds / 60;
+        dayEntry.count += 1;
+        calendarMap.set(dateKey, dayEntry);
+      }
+    }
+
+    for (const m of monthlyPlaytime) {
+      m.hoursPlayed = Math.round(m.hoursPlayed * 10) / 10;
+    }
+    for (const d of dayOfWeekPlaytime) {
+      d.hoursPlayed = Math.round(d.hoursPlayed * 10) / 10;
+    }
+
+    let mostActiveMonth: YearInReviewMonthBreakdown | null = null;
+    for (const m of monthlyPlaytime) {
+      if (m.hoursPlayed > 0 && (!mostActiveMonth || m.hoursPlayed > mostActiveMonth.hoursPlayed)) {
+        mostActiveMonth = m;
+      }
+    }
+
+    let mostActiveDayOfWeek: YearInReviewDayOfWeekBreakdown | null = null;
+    for (const d of dayOfWeekPlaytime) {
+      if (d.hoursPlayed > 0 && (!mostActiveDayOfWeek || d.hoursPlayed > mostActiveDayOfWeek.hoursPlayed)) {
+        mostActiveDayOfWeek = d;
+      }
+    }
+
+    let longestSession: YearInReviewLongestSession | null = null;
+    if (longestSessionRow && longestSessionRow.durationSeconds > 0) {
+      const minutes = Math.round(longestSessionRow.durationSeconds / 60);
+      longestSession = {
+        gameId: longestSessionRow.gameId,
+        gameTitle: longestSessionRow.gameTitle ?? 'Unknown Game',
+        platformId: (longestSessionRow.platformId ?? 'custom') as PlatformId,
+        durationMinutes: minutes,
+        durationHours: Math.round((minutes / 60) * 10) / 10,
+        startedAtIso: longestSessionRow.startedAtIso,
+      };
+    }
+
+    const isLeap = (year % 4 === 0 && year % 100 !== 0) || (year % 400 === 0);
+    const daysInYear = isLeap ? 366 : 365;
+    const startDate = new Date(Date.UTC(year, 0, 1));
+    const activityCalendar: YearInReviewCalendarDay[] = [];
+
+    for (let dayOffset = 0; dayOffset < daysInYear; dayOffset++) {
+      const cur = new Date(startDate.getTime() + dayOffset * 86400000);
+      const isoDate = cur.toISOString().slice(0, 10);
+      const dayData = calendarMap.get(isoDate) ?? { minutes: 0, count: 0 };
+      const minutes = Math.round(dayData.minutes);
+      const hours = Math.round((minutes / 60) * 10) / 10;
+      let intensity: 0 | 1 | 2 | 3 | 4 = 0;
+      if (minutes > 360) intensity = 4;
+      else if (minutes > 180) intensity = 3;
+      else if (minutes > 60) intensity = 2;
+      else if (minutes > 0) intensity = 1;
+
+      activityCalendar.push({
+        date: isoDate,
+        minutes,
+        hours,
+        sessionCount: dayData.count,
+        intensity,
+      });
+    }
+
+    let comparison: YearInReviewComparison | null = null;
+    const prevYearPrefix = (year - 1).toString();
+    const prevRows = this.db.all(
+      `SELECT duration_seconds, game_id, executable_path
+       FROM playtime_sessions
+       WHERE SUBSTR(started_at, 1, 4) = ?;`,
+      [prevYearPrefix]
+    ) as Array<{ duration_seconds: number; game_id: string; executable_path: string }>;
+
+    const validPrev = prevRows.filter((s) => {
+      if (!excludedHistorical) return true;
+      if (excludedHistorical.gameIds?.has(s.game_id)) return false;
+      const exeName = (s.executable_path ? path.basename(s.executable_path) : '').toLowerCase();
+      if (exeName && excludedHistorical.exes?.has(exeName)) return false;
+      return true;
+    });
+
+    if (validPrev.length > 0) {
+      const prevSeconds = validPrev.reduce((acc, s) => acc + s.duration_seconds, 0);
+      const prevHours = Math.round((prevSeconds / 3600) * 10) / 10;
+      const hoursDiff = Math.round((totalGamingHours - prevHours) * 10) / 10;
+      const percentageChange = prevHours > 0 ? Math.round(((totalGamingHours - prevHours) / prevHours) * 1000) / 10 : null;
+      comparison = {
+        previousYear: year - 1,
+        previousYearHours: prevHours,
+        hoursDiff,
+        percentageChange,
+      };
+    }
+
+    const result: YearInReviewData = {
+      year,
+      totalGamingHours,
+      totalSessions,
+      uniqueGamesCount,
+      averageSessionMinutes,
+      topGames,
+      mostActiveMonth,
+      mostActiveDayOfWeek,
+      longestSession,
+      monthlyPlaytime,
+      dayOfWeekPlaytime,
+      activityCalendar,
+      comparison,
+      hasData: totalSessions > 0,
+    };
+
+    this.yearInReviewCache.set(cacheKey, result);
+    return result;
+  }
+
+  public invalidateYearInReviewCache(): void {
+    this.yearInReviewCache.clear();
+  }
+
+  public getCollections(games?: GameItem[], favoriteGameIds: string[] = []): CollectionItem[] {
+    const targetGames = games ?? this.getAllLibraryGames(undefined, 'all');
+    const collRows = this.db.all(
+      `SELECT id, name, description, icon, color, is_smart, rules_json, sort_order, created_at, updated_at
+       FROM collections
+       ORDER BY is_smart DESC, name ASC;`
+    ) as Array<{
+      id: string;
+      name: string;
+      description: string | null;
+      icon: string;
+      color: string;
+      is_smart: number;
+      rules_json: string | null;
+      sort_order: string;
+      created_at: string;
+      updated_at: string;
+    }>;
+
+    const gameLinks = this.db.all(
+      `SELECT collection_id, game_id, custom_order
+       FROM collection_games
+       ORDER BY custom_order ASC, added_at ASC;`
+    ) as Array<{
+      collection_id: string;
+      game_id: string;
+      custom_order: number;
+    }>;
+
+    const linksMap = new Map<string, string[]>();
+    for (const link of gameLinks) {
+      const list = linksMap.get(link.collection_id) ?? [];
+      list.push(link.game_id);
+      linksMap.set(link.collection_id, list);
+    }
+
+    const gameMap = new Map<string, GameItem>();
+    for (const g of targetGames) {
+      gameMap.set(g.id, g);
+    }
+
+    return collRows.map((r) => {
+      const isSmart = Boolean(r.is_smart);
+      let rules: SmartCollectionRules | undefined;
+      if (r.rules_json) {
+        try {
+          rules = JSON.parse(r.rules_json) as SmartCollectionRules;
+        } catch {
+          rules = undefined;
+        }
+      }
+
+      let matchingGameIds: string[];
+      if (isSmart && rules) {
+        matchingGameIds = targetGames
+          .filter((g) => this.matchSmartRules(g, rules!, favoriteGameIds))
+          .map((g) => g.id);
+      } else {
+        matchingGameIds = linksMap.get(r.id) ?? [];
+      }
+
+      const sortOrder = (r.sort_order ?? 'title-asc') as CollectionSortOrder;
+      const sortedIds = this.sortCollectionGameIds(matchingGameIds, sortOrder, gameMap);
+
+      return {
+        id: r.id,
+        name: r.name,
+        description: r.description ?? undefined,
+        icon: r.icon,
+        color: r.color,
+        isSmart,
+        rules,
+        sortOrder,
+        gameIds: sortedIds,
+        createdAtIso: r.created_at,
+        updatedAtIso: r.updated_at,
+      };
+    });
+  }
+
+  private matchSmartRules(
+    game: GameItem,
+    rules: SmartCollectionRules,
+    favoriteGameIds: string[]
+  ): boolean {
+    if (rules.platformId && game.platformId !== rules.platformId) return false;
+    if (
+      rules.genre &&
+      (!game.genres ||
+        !game.genres.some((g) =>
+          g.toLowerCase().includes(rules.genre!.toLowerCase())
+        ))
+    ) {
+      return false;
+    }
+    if (
+      rules.isFavorite !== undefined &&
+      rules.isFavorite !== favoriteGameIds.includes(game.id)
+    ) {
+      return false;
+    }
+    if (
+      rules.isInstalled !== undefined &&
+      rules.isInstalled !== (game.isInstalled ?? true)
+    ) {
+      return false;
+    }
+    if (rules.neverPlayed) {
+      if ((game.playtimeHours ?? 0) > 0) return false;
+    }
+    if (rules.minPlaytimeHours !== undefined) {
+      if ((game.playtimeHours ?? 0) < rules.minPlaytimeHours) return false;
+    }
+    if (rules.maxPlaytimeHours !== undefined) {
+      if ((game.playtimeHours ?? 0) > rules.maxPlaytimeHours) return false;
+    }
+    if (
+      rules.recentlyPlayedDays !== undefined &&
+      rules.recentlyPlayedDays > 0
+    ) {
+      if (!game.lastPlayedIso) return false;
+      const lastPlayedMs = Date.parse(game.lastPlayedIso);
+      if (isNaN(lastPlayedMs)) return false;
+      const cutoff = Date.now() - rules.recentlyPlayedDays * 24 * 60 * 60 * 1000;
+      if (lastPlayedMs < cutoff) return false;
+    }
+    return true;
+  }
+
+  private sortCollectionGameIds(
+    gameIds: string[],
+    sortOrder: CollectionSortOrder,
+    gameMap: Map<string, GameItem>
+  ): string[] {
+    const list = [...gameIds];
+    if (sortOrder === 'manual') return list;
+
+    return list.sort((aId, bId) => {
+      const a = gameMap.get(aId);
+      const b = gameMap.get(bId);
+      if (!a && !b) return 0;
+      if (!a) return 1;
+      if (!b) return -1;
+
+      switch (sortOrder) {
+        case 'title-asc':
+          return a.title.localeCompare(b.title);
+        case 'title-desc':
+          return b.title.localeCompare(a.title);
+        case 'playtime-desc':
+          return (b.playtimeHours ?? 0) - (a.playtimeHours ?? 0);
+        case 'recent-desc': {
+          const aTime = a.lastPlayedIso ? Date.parse(a.lastPlayedIso) : 0;
+          const bTime = b.lastPlayedIso ? Date.parse(b.lastPlayedIso) : 0;
+          return (isNaN(bTime) ? 0 : bTime) - (isNaN(aTime) ? 0 : aTime);
+        }
+        default:
+          return 0;
+      }
+    });
+  }
+
+  public createCollection(input: CreateCollectionInput): CollectionItem {
+    const id = randomUUID();
+    const now = new Date().toISOString();
+    const icon = input.icon ?? 'Folder';
+    const color = input.color ?? '#8B5CF6';
+    const isSmart = input.isSmart ? 1 : 0;
+    const rulesJson = input.rules ? JSON.stringify(input.rules) : null;
+    const sortOrder = input.sortOrder ?? 'title-asc';
+
+    this.withTransaction(() => {
+      this.db.run(
+        `INSERT INTO collections (id, name, description, icon, color, is_smart, rules_json, sort_order, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+        [id, input.name.trim(), input.description?.trim() || null, icon, color, isSmart, rulesJson, sortOrder, now, now]
+      );
+
+      if (!input.isSmart && input.initialGameIds && input.initialGameIds.length > 0) {
+        let order = 0;
+        for (const gameId of input.initialGameIds) {
+          this.db.run(
+            `INSERT OR IGNORE INTO collection_games (collection_id, game_id, added_at, custom_order)
+             VALUES (?, ?, ?, ?);`,
+            [id, gameId, now, order++]
+          );
+        }
+      }
+    });
+
+    return {
+      id,
+      name: input.name.trim(),
+      description: input.description?.trim() || undefined,
+      icon,
+      color,
+      isSmart: Boolean(isSmart),
+      rules: input.rules,
+      sortOrder,
+      gameIds: input.initialGameIds ?? [],
+      createdAtIso: now,
+      updatedAtIso: now,
+    };
+  }
+
+  public updateCollection(input: UpdateCollectionInput): boolean {
+    const now = new Date().toISOString();
+    const existing = this.db.get(
+      `SELECT id, rules_json, sort_order FROM collections WHERE id = ?;`,
+      [input.id]
+    ) as { id: string; rules_json: string | null; sort_order: string } | undefined;
+
+    if (!existing) return false;
+
+    const updates: string[] = ['updated_at = ?'];
+    const params: (string | number | null)[] = [now];
+
+    if (input.name !== undefined) {
+      updates.push('name = ?');
+      params.push(input.name.trim());
+    }
+    if (input.description !== undefined) {
+      updates.push('description = ?');
+      params.push(input.description.trim() || null);
+    }
+    if (input.icon !== undefined) {
+      updates.push('icon = ?');
+      params.push(input.icon);
+    }
+    if (input.color !== undefined) {
+      updates.push('color = ?');
+      params.push(input.color);
+    }
+    if (input.rules !== undefined) {
+      updates.push('rules_json = ?');
+      params.push(input.rules ? JSON.stringify(input.rules) : null);
+    }
+    if (input.sortOrder !== undefined) {
+      updates.push('sort_order = ?');
+      params.push(input.sortOrder);
+    }
+
+    params.push(input.id);
+    this.db.run(
+      `UPDATE collections SET ${updates.join(', ')} WHERE id = ?;`,
+      params
+    );
+    return true;
+  }
+
+  public deleteCollection(id: string): boolean {
+    this.db.run(`DELETE FROM collections WHERE id = ?;`, [id]);
+    return true;
+  }
+
+  public addGameToCollection(collectionId: string, gameId: string): boolean {
+    const now = new Date().toISOString();
+    this.db.run(
+      `INSERT OR IGNORE INTO collection_games (collection_id, game_id, added_at, custom_order)
+       VALUES (?, ?, ?, (
+         SELECT COALESCE(MAX(custom_order), 0) + 1 FROM collection_games WHERE collection_id = ?
+       ));`,
+      [collectionId, gameId, now, collectionId]
+    );
+    return true;
+  }
+
+  public removeGameFromCollection(collectionId: string, gameId: string): boolean {
+    this.db.run(
+      `DELETE FROM collection_games WHERE collection_id = ? AND game_id = ?;`,
+      [collectionId, gameId]
+    );
+    return true;
+  }
+
+  public setCollectionGameOrder(collectionId: string, gameIds: string[]): boolean {
+    this.withTransaction(() => {
+      this.db.run(`UPDATE collections SET sort_order = 'manual' WHERE id = ?;`, [collectionId]);
+      let order = 0;
+      for (const gId of gameIds) {
+        this.db.run(
+          `UPDATE collection_games SET custom_order = ? WHERE collection_id = ? AND game_id = ?;`,
+          [order++, collectionId, gId]
+        );
+      }
+    });
+    return true;
   }
 }

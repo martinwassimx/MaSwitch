@@ -5,6 +5,7 @@ import {
   ipcMain,
   Notification,
   safeStorage,
+  shell,
   type IpcMainInvokeEvent,
 } from 'electron';
 import type { CustomGameInput, EditGameInput } from '../../src/shared/types/game';
@@ -40,6 +41,11 @@ import type {
 } from '../services/accounts/riotProductionAdapters';
 import type { RiotCredentialVault } from '../services/accounts/riotCredentialVault';
 import { RiotDesktopLoginAutomationService } from '../services/accounts/riotDesktopLoginAutomation';
+import { PerformanceMonitorService } from '../services/performanceMonitorService';
+import { NewsService } from '../services/newsService';
+import { BackupService } from '../services/backupService';
+import type { CreateCollectionInput, UpdateCollectionInput } from '../../src/shared/types/collection';
+import type { PerformanceMonitoringConfig } from '../../src/shared/types/performance';
 
 export function assertTrustedSender(
   event: IpcMainInvokeEvent,
@@ -94,6 +100,9 @@ export interface MainServicesContainer {
   onTrayStateUpdate?: () => void;
   riotCredentialVault?: RiotCredentialVault;
   riotDesktopLoginAutomation?: RiotDesktopLoginAutomationService;
+  performanceMonitorService?: PerformanceMonitorService;
+  newsService?: NewsService;
+  backupService?: BackupService;
   riotLiveServices?: {
     engine: RiotLiveSwitchingEngine;
     vault: RiotWindowsSessionVault;
@@ -116,6 +125,26 @@ export function registerIpcHandlers(
     startupService,
     accountSwitcherService,
   } = services;
+
+  const perfService =
+    services.performanceMonitorService ??
+    new PerformanceMonitorService({
+      trackerEngine,
+      getLowEndMode: () => settingsStore.load().lowEndPcMode ?? false,
+      getWindow: getMainWindow,
+    });
+
+  const newsService = services.newsService ?? new NewsService();
+
+  const backupService =
+    services.backupService ??
+    new BackupService(
+      sqliteDb,
+      () => settingsStore.load(),
+      async (s) => {
+        settingsStore.save(s);
+      }
+    );
 
   // Window Controls
   ipcMain.handle(IPC_CHANNELS.WINDOW_MINIMIZE, (event) => {
@@ -1225,4 +1254,177 @@ export function registerIpcHandlers(
       return result;
     }
   );
+
+  // Helper for historical exclusions
+  const getHistoricalExclusionSets = () => {
+    const settings = settingsStore.load();
+    const exes = new Set<string>();
+    const gameIds = new Set<string>();
+
+    if (Array.isArray(settings.excludedApplications)) {
+      for (const rule of settings.excludedApplications) {
+        if (rule.excludeHistorical) {
+          if (rule.executableName) {
+            exes.add(rule.executableName.toLowerCase().trim());
+          }
+          if (rule.gameId) {
+            gameIds.add(rule.gameId.trim());
+          }
+        }
+      }
+    }
+
+    return { exes, gameIds };
+  };
+
+  // 1. Feature 1: Year in Review Handlers
+  ipcMain.handle(IPC_CHANNELS.STATISTICS_GET_AVAILABLE_YEARS, (event) => {
+    assertTrustedSender(event, getMainWindow, devServerUrl);
+    return sqliteDb.getAvailableYears();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.STATISTICS_GET_YEAR_IN_REVIEW, (event, year?: number) => {
+    assertTrustedSender(event, getMainWindow, devServerUrl);
+    const exclusions = getHistoricalExclusionSets();
+    return sqliteDb.getYearInReview(year, exclusions);
+  });
+
+  // 2. Feature 2: Smart Collections Handlers
+  ipcMain.handle(IPC_CHANNELS.COLLECTIONS_GET_ALL, (event) => {
+    assertTrustedSender(event, getMainWindow, devServerUrl);
+    const games = sqliteDb.getAllLibraryGames(undefined, 'all');
+    const settings = settingsStore.load();
+    return sqliteDb.getCollections(games, settings.favoriteGameIds ?? []);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.COLLECTIONS_CREATE, (event, input: CreateCollectionInput) => {
+    assertTrustedSender(event, getMainWindow, devServerUrl);
+    const created = sqliteDb.createCollection(input);
+    const win = getMainWindow();
+    if (win && !win.isDestroyed()) {
+      win.webContents.send(IPC_CHANNELS.COLLECTIONS_UPDATED_EVENT);
+    }
+    return created;
+  });
+
+  ipcMain.handle(IPC_CHANNELS.COLLECTIONS_UPDATE, (event, input: UpdateCollectionInput) => {
+    assertTrustedSender(event, getMainWindow, devServerUrl);
+    const updated = sqliteDb.updateCollection(input);
+    const win = getMainWindow();
+    if (win && !win.isDestroyed()) {
+      win.webContents.send(IPC_CHANNELS.COLLECTIONS_UPDATED_EVENT);
+    }
+    return updated;
+  });
+
+  ipcMain.handle(IPC_CHANNELS.COLLECTIONS_DELETE, (event, id: string) => {
+    assertTrustedSender(event, getMainWindow, devServerUrl);
+    const res = sqliteDb.deleteCollection(id);
+    const win = getMainWindow();
+    if (win && !win.isDestroyed()) {
+      win.webContents.send(IPC_CHANNELS.COLLECTIONS_UPDATED_EVENT);
+    }
+    return res;
+  });
+
+  ipcMain.handle(IPC_CHANNELS.COLLECTIONS_ADD_GAME, (event, collectionId: string, gameId: string) => {
+    assertTrustedSender(event, getMainWindow, devServerUrl);
+    const res = sqliteDb.addGameToCollection(collectionId, gameId);
+    const win = getMainWindow();
+    if (win && !win.isDestroyed()) {
+      win.webContents.send(IPC_CHANNELS.COLLECTIONS_UPDATED_EVENT);
+    }
+    return res;
+  });
+
+  ipcMain.handle(IPC_CHANNELS.COLLECTIONS_REMOVE_GAME, (event, collectionId: string, gameId: string) => {
+    assertTrustedSender(event, getMainWindow, devServerUrl);
+    const res = sqliteDb.removeGameFromCollection(collectionId, gameId);
+    const win = getMainWindow();
+    if (win && !win.isDestroyed()) {
+      win.webContents.send(IPC_CHANNELS.COLLECTIONS_UPDATED_EVENT);
+    }
+    return res;
+  });
+
+  ipcMain.handle(IPC_CHANNELS.COLLECTIONS_SET_GAME_ORDER, (event, collectionId: string, gameIds: string[]) => {
+    assertTrustedSender(event, getMainWindow, devServerUrl);
+    const res = sqliteDb.setCollectionGameOrder(collectionId, gameIds);
+    const win = getMainWindow();
+    if (win && !win.isDestroyed()) {
+      win.webContents.send(IPC_CHANNELS.COLLECTIONS_UPDATED_EVENT);
+    }
+    return res;
+  });
+
+  // 3. Feature 3: Performance Monitor Handlers
+  ipcMain.handle(IPC_CHANNELS.PERFORMANCE_GET_METRICS, (event) => {
+    assertTrustedSender(event, getMainWindow, devServerUrl);
+    return perfService.getCurrentMetrics();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.PERFORMANCE_SET_MONITORING_ACTIVE, (event, config: Partial<PerformanceMonitoringConfig>) => {
+    assertTrustedSender(event, getMainWindow, devServerUrl);
+    perfService.setMonitoringConfig(config);
+    return perfService.isMonitoringActive();
+  });
+
+  // 4. Feature 4: Game Updates & News Handlers
+  ipcMain.handle(IPC_CHANNELS.NEWS_GET_LIBRARY_NEWS, async (event, options?: { forceRefresh?: boolean; gameId?: string; platformId?: string }) => {
+    assertTrustedSender(event, getMainWindow, devServerUrl);
+    const games = sqliteDb.getAllLibraryGames(undefined, 'visible-only');
+    return await newsService.getLibraryNews(games, options);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.NEWS_OPEN_EXTERNAL_LINK, async (event, url: string) => {
+    assertTrustedSender(event, getMainWindow, devServerUrl);
+    if (typeof url === 'string' && (url.startsWith('https://') || url.startsWith('http://'))) {
+      await shell.openExternal(url);
+      return true;
+    }
+    return false;
+  });
+
+  // 5. Feature 5: Backup & Restore Handlers
+  ipcMain.handle(IPC_CHANNELS.BACKUP_GET_INFO, (event) => {
+    assertTrustedSender(event, getMainWindow, devServerUrl);
+    return backupService.getBackupInfo();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.BACKUP_CREATE, async (event, customPath?: string) => {
+    assertTrustedSender(event, getMainWindow, devServerUrl);
+    return await backupService.createBackup(customPath);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.BACKUP_VALIDATE, (event, filePath: string) => {
+    assertTrustedSender(event, getMainWindow, devServerUrl);
+    return backupService.validateBackup(filePath);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.BACKUP_RESTORE, async (event, filePath: string) => {
+    assertTrustedSender(event, getMainWindow, devServerUrl);
+    return await backupService.restoreBackup(filePath);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.BACKUP_SELECT_FILE, async (event) => {
+    const win = assertTrustedSender(event, getMainWindow, devServerUrl);
+    const res = await dialog.showOpenDialog(win, {
+      title: 'Select MaSwitch Backup File',
+      filters: [{ name: 'MaSwitch Backup (*.json)', extensions: ['json'] }],
+      properties: ['openFile'],
+    });
+    if (res.canceled || !res.filePaths[0]) return null;
+    return res.filePaths[0];
+  });
+
+  ipcMain.handle(IPC_CHANNELS.BACKUP_SELECT_DESTINATION, async (event) => {
+    const win = assertTrustedSender(event, getMainWindow, devServerUrl);
+    const res = await dialog.showSaveDialog(win, {
+      title: 'Save MaSwitch Backup',
+      defaultPath: `maswitch-backup-${new Date().toISOString().slice(0, 10)}.json`,
+      filters: [{ name: 'MaSwitch Backup (*.json)', extensions: ['json'] }],
+    });
+    if (res.canceled || !res.filePath) return null;
+    return res.filePath;
+  });
 }

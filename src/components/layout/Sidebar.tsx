@@ -5,6 +5,8 @@ import {
   Users,
   Layers,
   BarChart3,
+  Gauge,
+  Newspaper,
   Settings,
   PanelLeftClose,
   PanelLeftOpen,
@@ -34,6 +36,8 @@ export const Sidebar: React.FC = () => {
     { id: 'accounts', label: 'Accounts', icon: Users },
     { id: 'platforms', label: 'Platforms', icon: Layers },
     { id: 'statistics', label: 'Statistics', icon: BarChart3 },
+    { id: 'performance', label: 'Performance', icon: Gauge },
+    { id: 'news', label: 'Game News', icon: Newspaper },
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
 

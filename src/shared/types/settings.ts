@@ -6,6 +6,8 @@ export type NavigationSection =
   | 'accounts'
   | 'platforms'
   | 'statistics'
+  | 'performance'
+  | 'news'
   | 'settings';
 
 export type ThemePresetId = 'dark-graphite' | 'deep-navy' | 'obsidian-contrast';

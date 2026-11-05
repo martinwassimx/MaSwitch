@@ -9,6 +9,8 @@ import { GameDetailsPage as EagerGameDetailsPage } from '../../pages/GameDetails
 import { AccountsPage as EagerAccountsPage } from '../../pages/AccountsPage';
 import { PlatformsPage as EagerPlatformsPage } from '../../pages/PlatformsPage';
 import { StatisticsPage as EagerStatisticsPage } from '../../pages/StatisticsPage';
+import { PerformancePage as EagerPerformancePage } from '../../pages/PerformancePage';
+import { NewsPage as EagerNewsPage } from '../../pages/NewsPage';
 import { SettingsPage as EagerSettingsPage } from '../../pages/SettingsPage';
 
 const isVitest =
@@ -34,6 +36,14 @@ const LazyStatisticsPage = React.lazy(() =>
     default: m.StatisticsPage,
   }))
 );
+const LazyPerformancePage = React.lazy(() =>
+  import('../../pages/PerformancePage').then((m) => ({
+    default: m.PerformancePage,
+  }))
+);
+const LazyNewsPage = React.lazy(() =>
+  import('../../pages/NewsPage').then((m) => ({ default: m.NewsPage }))
+);
 const LazySettingsPage = React.lazy(() =>
   import('../../pages/SettingsPage').then((m) => ({ default: m.SettingsPage }))
 );
@@ -43,6 +53,8 @@ const GameDetailsView = isVitest ? EagerGameDetailsPage : LazyGameDetailsPage;
 const AccountsView = isVitest ? EagerAccountsPage : LazyAccountsPage;
 const PlatformsView = isVitest ? EagerPlatformsPage : LazyPlatformsPage;
 const StatisticsView = isVitest ? EagerStatisticsPage : LazyStatisticsPage;
+const PerformanceView = isVitest ? EagerPerformancePage : LazyPerformancePage;
+const NewsView = isVitest ? EagerNewsPage : LazyNewsPage;
 const SettingsView = isVitest ? EagerSettingsPage : LazySettingsPage;
 
 const ViewLoadingFallback: React.FC = () => (
@@ -216,6 +228,12 @@ export const AppShell: React.FC = () => {
           useAppStore.getState().setActiveSection('statistics');
         } else if (e.key === '6') {
           e.preventDefault();
+          useAppStore.getState().setActiveSection('performance');
+        } else if (e.key === '7') {
+          e.preventDefault();
+          useAppStore.getState().setActiveSection('news');
+        } else if (e.key === '8') {
+          e.preventDefault();
           useAppStore.getState().setActiveSection('settings');
         }
       }
@@ -288,6 +306,18 @@ export const AppShell: React.FC = () => {
         return (
           <Suspense fallback={<ViewLoadingFallback />}>
             <StatisticsView />
+          </Suspense>
+        );
+      case 'performance':
+        return (
+          <Suspense fallback={<ViewLoadingFallback />}>
+            <PerformanceView />
+          </Suspense>
+        );
+      case 'news':
+        return (
+          <Suspense fallback={<ViewLoadingFallback />}>
+            <NewsView />
           </Suspense>
         );
       case 'settings':

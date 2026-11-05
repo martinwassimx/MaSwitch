@@ -32,6 +32,8 @@ const VALID_SECTIONS: readonly NavigationSection[] = [
   'accounts',
   'platforms',
   'statistics',
+  'performance',
+  'news',
   'settings',
 ];
 

@@ -37,6 +37,23 @@ import type {
   StatisticsOverview,
 } from '../shared/types/statistics';
 import { sanitizeSettings } from '../shared/validation/settingsValidator';
+import type { YearInReviewData } from '../shared/types/yearInReview';
+import type {
+  CollectionItem,
+  CreateCollectionInput,
+  UpdateCollectionInput,
+} from '../shared/types/collection';
+import type {
+  PerformanceMetrics,
+  PerformanceMonitoringConfig,
+} from '../shared/types/performance';
+import type { GameNewsFeedResult } from '../shared/types/news';
+import type {
+  BackupInfo,
+  BackupManifest,
+  BackupValidationResult,
+  RestoreResult,
+} from '../shared/types/backup';
 
 const LOCAL_STORAGE_KEY = 'maswitch.settings.v1';
 
@@ -821,6 +838,250 @@ export class LocalDatabaseService {
       return window.maswitch.accounts.onAccountsUpdated(callback);
     }
     return () => {};
+  }
+
+  // Feature 1: Year in Review
+  public async getAvailableYears(): Promise<number[]> {
+    if (window.maswitch?.yearInReview) {
+      try {
+        return await window.maswitch.yearInReview.getAvailableYears();
+      } catch {
+        return [new Date().getFullYear()];
+      }
+    }
+    return [new Date().getFullYear()];
+  }
+
+  public async getYearInReview(year?: number): Promise<YearInReviewData> {
+    if (window.maswitch?.yearInReview) {
+      try {
+        return await window.maswitch.yearInReview.getYearInReview(year);
+      } catch (err) {
+        console.error('Failed to get year in review:', err);
+      }
+    }
+    const currentYear = year ?? new Date().getFullYear();
+    return {
+      year: currentYear,
+      totalGamingHours: 0,
+      totalSessions: 0,
+      uniqueGamesCount: 0,
+      averageSessionMinutes: 0,
+      topGames: [],
+      mostActiveMonth: null,
+      mostActiveDayOfWeek: null,
+      longestSession: null,
+      monthlyPlaytime: [],
+      dayOfWeekPlaytime: [],
+      activityCalendar: [],
+      comparison: null,
+      hasData: false,
+    };
+  }
+
+  // Feature 2: Smart Collections
+  public async getCollections(): Promise<CollectionItem[]> {
+    if (window.maswitch?.collections) {
+      try {
+        return await window.maswitch.collections.getAll();
+      } catch {
+        return [];
+      }
+    }
+    return [];
+  }
+
+  public async createCollection(input: CreateCollectionInput): Promise<CollectionItem | null> {
+    if (window.maswitch?.collections) {
+      try {
+        return await window.maswitch.collections.create(input);
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }
+
+  public async updateCollection(input: UpdateCollectionInput): Promise<boolean> {
+    if (window.maswitch?.collections) {
+      try {
+        return await window.maswitch.collections.update(input);
+      } catch {
+        return false;
+      }
+    }
+    return false;
+  }
+
+  public async deleteCollection(id: string): Promise<boolean> {
+    if (window.maswitch?.collections) {
+      try {
+        return await window.maswitch.collections.delete(id);
+      } catch {
+        return false;
+      }
+    }
+    return false;
+  }
+
+  public async addGameToCollection(collectionId: string, gameId: string): Promise<boolean> {
+    if (window.maswitch?.collections) {
+      try {
+        return await window.maswitch.collections.addGame(collectionId, gameId);
+      } catch {
+        return false;
+      }
+    }
+    return false;
+  }
+
+  public async removeGameFromCollection(collectionId: string, gameId: string): Promise<boolean> {
+    if (window.maswitch?.collections) {
+      try {
+        return await window.maswitch.collections.removeGame(collectionId, gameId);
+      } catch {
+        return false;
+      }
+    }
+    return false;
+  }
+
+  public async setCollectionGameOrder(collectionId: string, gameIds: string[]): Promise<boolean> {
+    if (window.maswitch?.collections) {
+      try {
+        return await window.maswitch.collections.setGameOrder(collectionId, gameIds);
+      } catch {
+        return false;
+      }
+    }
+    return false;
+  }
+
+  public onCollectionsUpdated(callback: () => void): () => void {
+    if (window.maswitch?.collections) {
+      return window.maswitch.collections.onCollectionsUpdated(callback);
+    }
+    return () => {};
+  }
+
+  // Feature 3: Performance Monitor
+  public async getPerformanceMetrics(): Promise<PerformanceMetrics | null> {
+    if (window.maswitch?.performance) {
+      try {
+        return await window.maswitch.performance.getMetrics();
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }
+
+  public async setPerformanceMonitoringActive(config: Partial<PerformanceMonitoringConfig>): Promise<boolean> {
+    if (window.maswitch?.performance) {
+      try {
+        return await window.maswitch.performance.setMonitoringActive(config);
+      } catch {
+        return false;
+      }
+    }
+    return false;
+  }
+
+  public onPerformanceMetricsUpdated(callback: (metrics: PerformanceMetrics) => void): () => void {
+    if (window.maswitch?.performance) {
+      return window.maswitch.performance.onMetricsUpdated(callback);
+    }
+    return () => {};
+  }
+
+  // Feature 4: Game Updates & News
+  public async getLibraryNews(options?: { forceRefresh?: boolean; gameId?: string; platformId?: string }): Promise<GameNewsFeedResult> {
+    if (window.maswitch?.news) {
+      try {
+        return await window.maswitch.news.getLibraryNews(options);
+      } catch {
+        return { articles: [], lastUpdatedIso: new Date().toISOString(), supportedGamesCount: 0, unsupportedGamesCount: 0, isOffline: true };
+      }
+    }
+    return { articles: [], lastUpdatedIso: new Date().toISOString(), supportedGamesCount: 0, unsupportedGamesCount: 0, isOffline: true };
+  }
+
+  public async openExternalNewsLink(url: string): Promise<boolean> {
+    if (window.maswitch?.news) {
+      try {
+        return await window.maswitch.news.openExternalLink(url);
+      } catch {
+        return false;
+      }
+    }
+    return false;
+  }
+
+  // Feature 5: Backup & Restore
+  public async getBackupInfo(): Promise<BackupInfo> {
+    if (window.maswitch?.backup) {
+      try {
+        return await window.maswitch.backup.getInfo();
+      } catch {
+        return { lastBackupIso: null, lastBackupPath: null, backupsCount: 0, defaultBackupDir: '' };
+      }
+    }
+    return { lastBackupIso: null, lastBackupPath: null, backupsCount: 0, defaultBackupDir: '' };
+  }
+
+  public async createBackup(customPath?: string): Promise<{ success: boolean; filePath: string; manifest?: BackupManifest }> {
+    if (window.maswitch?.backup) {
+      try {
+        return await window.maswitch.backup.create(customPath);
+      } catch (err) {
+        throw new Error(err instanceof Error ? err.message : 'Backup failed');
+      }
+    }
+    throw new Error('Desktop bridge unavailable');
+  }
+
+  public async validateBackup(filePath: string): Promise<BackupValidationResult> {
+    if (window.maswitch?.backup) {
+      try {
+        return await window.maswitch.backup.validate(filePath);
+      } catch (err) {
+        return { valid: false, filePath, fileSizeBytes: 0, error: err instanceof Error ? err.message : 'Validation error' };
+      }
+    }
+    return { valid: false, filePath, fileSizeBytes: 0, error: 'Desktop bridge unavailable' };
+  }
+
+  public async restoreBackup(filePath: string): Promise<RestoreResult> {
+    if (window.maswitch?.backup) {
+      try {
+        return await window.maswitch.backup.restore(filePath);
+      } catch (err) {
+        return { success: false, error: err instanceof Error ? err.message : 'Restore error' };
+      }
+    }
+    return { success: false, error: 'Desktop bridge unavailable' };
+  }
+
+  public async selectBackupFile(): Promise<string | null> {
+    if (window.maswitch?.backup) {
+      try {
+        return await window.maswitch.backup.selectFile();
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }
+
+  public async selectBackupDestination(): Promise<string | null> {
+    if (window.maswitch?.backup) {
+      try {
+        return await window.maswitch.backup.selectDestination();
+      } catch {
+        return null;
+      }
+    }
+    return null;
   }
 }
 

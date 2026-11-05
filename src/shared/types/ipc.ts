@@ -123,6 +123,37 @@ export const IPC_CHANNELS = {
   ACCOUNTS_RIOT_START_DESKTOP_LOGIN: 'maswitch:accounts:riot:start-desktop-login',
   ACCOUNTS_RIOT_CANCEL_DESKTOP_LOGIN: 'maswitch:accounts:riot:cancel-desktop-login',
   ACCOUNTS_RIOT_LOGIN_AUTOMATION_PROGRESS: 'maswitch:accounts:riot:login-automation-progress',
+
+  // MaSwitch 3.0: Gaming Year in Review
+  STATISTICS_GET_YEAR_IN_REVIEW: 'maswitch:statistics:get-year-in-review',
+  STATISTICS_GET_AVAILABLE_YEARS: 'maswitch:statistics:get-available-years',
+
+  // MaSwitch 3.0: Smart Game Collections
+  COLLECTIONS_GET_ALL: 'maswitch:collections:get-all',
+  COLLECTIONS_CREATE: 'maswitch:collections:create',
+  COLLECTIONS_UPDATE: 'maswitch:collections:update',
+  COLLECTIONS_DELETE: 'maswitch:collections:delete',
+  COLLECTIONS_ADD_GAME: 'maswitch:collections:add-game',
+  COLLECTIONS_REMOVE_GAME: 'maswitch:collections:remove-game',
+  COLLECTIONS_SET_GAME_ORDER: 'maswitch:collections:set-game-order',
+  COLLECTIONS_UPDATED_EVENT: 'maswitch:collections:updated',
+
+  // MaSwitch 3.0: Lightweight Performance Monitor
+  PERFORMANCE_GET_METRICS: 'maswitch:performance:get-metrics',
+  PERFORMANCE_SET_MONITORING_ACTIVE: 'maswitch:performance:set-monitoring-active',
+  PERFORMANCE_METRICS_UPDATED_EVENT: 'maswitch:performance:metrics-updated',
+
+  // MaSwitch 3.0: Game Updates & News
+  NEWS_GET_LIBRARY_NEWS: 'maswitch:news:get-library-news',
+  NEWS_OPEN_EXTERNAL_LINK: 'maswitch:news:open-external-link',
+
+  // MaSwitch 3.0: Backup & Restore
+  BACKUP_CREATE: 'maswitch:backup:create',
+  BACKUP_VALIDATE: 'maswitch:backup:validate',
+  BACKUP_RESTORE: 'maswitch:backup:restore',
+  BACKUP_GET_INFO: 'maswitch:backup:get-info',
+  BACKUP_SELECT_FILE: 'maswitch:backup:select-file',
+  BACKUP_SELECT_DESTINATION: 'maswitch:backup:select-destination',
 } as const;
 
 export type AllowedIpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];
@@ -311,6 +342,37 @@ export interface MaSwitchBridge {
     riotStartDesktopLogin?: (profileId: string, autoLaunchClient?: boolean, autoSubmit?: boolean, isSyntheticTest?: boolean, targetHwnd?: string, targetPid?: number) => Promise<RiotDesktopLoginResultPayload>;
     riotCancelDesktopLogin?: () => Promise<void>;
     onRiotDesktopLoginProgress?: (callback: (payload: RiotDesktopLoginProgressPayload) => void) => () => void;
+  };
+  yearInReview?: {
+    getAvailableYears: () => Promise<number[]>;
+    getYearInReview: (year?: number) => Promise<import('./yearInReview').YearInReviewData>;
+  };
+  collections?: {
+    getAll: () => Promise<import('./collection').CollectionItem[]>;
+    create: (input: import('./collection').CreateCollectionInput) => Promise<import('./collection').CollectionItem>;
+    update: (input: import('./collection').UpdateCollectionInput) => Promise<boolean>;
+    delete: (id: string) => Promise<boolean>;
+    addGame: (collectionId: string, gameId: string) => Promise<boolean>;
+    removeGame: (collectionId: string, gameId: string) => Promise<boolean>;
+    setGameOrder: (collectionId: string, gameIds: string[]) => Promise<boolean>;
+    onCollectionsUpdated: (callback: () => void) => () => void;
+  };
+  performance?: {
+    getMetrics: () => Promise<import('./performance').PerformanceMetrics>;
+    setMonitoringActive: (config: Partial<import('./performance').PerformanceMonitoringConfig>) => Promise<boolean>;
+    onMetricsUpdated: (callback: (metrics: import('./performance').PerformanceMetrics) => void) => () => void;
+  };
+  news?: {
+    getLibraryNews: (options?: { forceRefresh?: boolean; gameId?: string; platformId?: string }) => Promise<import('./news').GameNewsFeedResult>;
+    openExternalLink: (url: string) => Promise<boolean>;
+  };
+  backup?: {
+    getInfo: () => Promise<import('./backup').BackupInfo>;
+    create: (customPath?: string) => Promise<{ success: boolean; filePath: string; manifest: import('./backup').BackupManifest }>;
+    validate: (filePath: string) => Promise<import('./backup').BackupValidationResult>;
+    restore: (filePath: string) => Promise<import('./backup').RestoreResult>;
+    selectFile: () => Promise<string | null>;
+    selectDestination: () => Promise<string | null>;
   };
 }
 

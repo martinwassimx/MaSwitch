@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { Pause, Play, BarChart2, TrendingUp, Clock, Zap } from 'lucide-react';
+import { Pause, Play, BarChart2, TrendingUp, Clock, Zap, Sparkles } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { DemoNoticeBanner } from '../components/common/DemoNoticeBanner';
 import { PlatformBadge } from '../components/common/PlatformBadge';
 import { PlatformLogo } from '../components/platforms/PlatformLogo';
+import { YearInReviewPage } from './YearInReviewPage';
 
 export const StatisticsPage: React.FC = () => {
   const games = useAppStore((s) => s.games);
@@ -13,6 +14,7 @@ export const StatisticsPage: React.FC = () => {
   const openGameDetails = useAppStore((s) => s.openGameDetails);
   const setTrackerPaused = useAppStore((s) => s.setTrackerPaused);
 
+  const [subView, setSubView] = useState<'overview' | 'yearInReview'>('overview');
   const [chartView, setChartView] = useState<'weekly' | 'monthly'>('weekly');
 
   const mostPlayedGames = [...games]
@@ -85,12 +87,46 @@ export const StatisticsPage: React.FC = () => {
         </button>
       </div>
 
-      {isDemoStats && (
-        <DemoNoticeBanner
-          title="Sample statistics"
-          description="Displaying demonstration playtime metrics. Turn off Demo mode to view your real recorded local sessions."
-        />
-      )}
+      {/* Sub-navigation Tabs */}
+      <div className="flex items-center gap-2 border-b border-ms-border/40 pb-2">
+        <button
+          type="button"
+          data-testid="stats-tab-overview"
+          onClick={() => setSubView('overview')}
+          className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
+            subView === 'overview'
+              ? 'bg-violet-600 text-white shadow-sm'
+              : 'text-ms-muted hover:text-ms-text hover:bg-ms-card'
+          }`}
+        >
+          <BarChart2 className="w-3.5 h-3.5" />
+          <span>Telemetry Overview</span>
+        </button>
+        <button
+          type="button"
+          data-testid="stats-tab-year-in-review"
+          onClick={() => setSubView('yearInReview')}
+          className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
+            subView === 'yearInReview'
+              ? 'bg-violet-600 text-white shadow-sm'
+              : 'text-ms-muted hover:text-ms-text hover:bg-ms-card'
+          }`}
+        >
+          <Sparkles className="w-3.5 h-3.5" />
+          <span>Year in Review</span>
+        </button>
+      </div>
+
+      {subView === 'yearInReview' ? (
+        <YearInReviewPage />
+      ) : (
+        <>
+          {isDemoStats && (
+            <DemoNoticeBanner
+              title="Sample statistics"
+              description="Displaying demonstration playtime metrics. Turn off Demo mode to view your real recorded local sessions."
+            />
+          )}
 
       {!isDemoStats && (statistics.totalSessionsCount ?? 0) === 0 && (
         <div
@@ -479,6 +515,8 @@ export const StatisticsPage: React.FC = () => {
           </div>
         </section>
       </div>
+      </>
+      )}
     </div>
   );
 };
