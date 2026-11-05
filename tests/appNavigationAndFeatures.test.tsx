@@ -169,7 +169,7 @@ describe('MaSwitch Desktop Application Integration (Phase 1 & Phase 2)', () => {
     });
   });
 
-  it('displays all 7 required account platforms and supports adding unlimited preview slots', () => {
+  it('displays all required account platforms in platform navigation and opens the add account modal', () => {
     render(<App />);
 
     fireEvent.click(screen.getByTestId('nav-accounts'));
@@ -179,17 +179,19 @@ describe('MaSwitch Desktop Application Integration (Phase 1 & Phase 2)', () => {
       'riot',
       'ea',
       'ubisoft',
+      'gog',
       'rockstar',
       'discord',
     ] as const;
 
     for (const platformId of requiredPlatforms) {
       expect(
-        screen.getByTestId(`account-group-${platformId}`)
+        screen.getByTestId(`accounts-filter-${platformId}`)
       ).toBeInTheDocument();
     }
 
-    // In Phase 6, clicking add profile opens the modal
+    // Selecting a platform with no accounts shows a single clean empty state and opens the modal
+    fireEvent.click(screen.getByTestId('accounts-filter-steam'));
     const addSteamSlotBtn = screen.getByTestId('add-slot-steam');
     fireEvent.click(addSteamSlotBtn);
     expect(screen.getByTestId('account-profile-form-modal')).toBeInTheDocument();
