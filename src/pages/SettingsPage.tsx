@@ -24,6 +24,8 @@ import {
   AlertTriangle,
   Boxes,
   PackageCheck,
+  Sparkles,
+  HardDrive,
 } from 'lucide-react';
 import type {
   AccentColorId,
@@ -48,6 +50,7 @@ export type SettingsTabId =
   | 'features'
   | 'appearance'
   | 'performance'
+  | 'memory'
   | 'tracking'
   | 'accounts'
   | 'notifications'
@@ -158,6 +161,16 @@ export const SettingsPage: React.FC = () => {
   const validateBackupFile = useAppStore((s) => s.validateBackupFile);
   const restoreBackupFile = useAppStore((s) => s.restoreBackupFile);
   const clearBackupFeedback = useAppStore((s) => s.clearBackupFeedback);
+
+  // Feature 6: Memory Management state
+  const cleanupHistory = useAppStore((s) => s.cleanupHistory);
+  const fetchCleanupHistory = useAppStore((s) => s.fetchCleanupHistory);
+  const clearCleanupHistory = useAppStore((s) => s.clearCleanupHistory);
+  const [showAdvancedWarningModal, setShowAdvancedWarningModal] = useState(false);
+
+  useEffect(() => {
+    void fetchCleanupHistory();
+  }, [fetchCleanupHistory]);
 
   const [selectedBackupPath, setSelectedBackupPath] = useState<string | null>(null);
   const [showRestoreConfirm, setShowRestoreConfirm] = useState(false);
@@ -468,7 +481,11 @@ export const SettingsPage: React.FC = () => {
   };
 
   const shouldShowSection = (section: SettingsTabId) => {
-    return activeTab === 'all' || activeTab === section;
+    return (
+      activeTab === 'all' ||
+      activeTab === section ||
+      (section === 'memory' && activeTab === 'performance')
+    );
   };
 
   return (
@@ -506,6 +523,9 @@ export const SettingsPage: React.FC = () => {
           { id: 'features' as const, label: 'Installed Features', icon: Boxes },
           { id: 'appearance' as const, label: 'Appearance', icon: Palette },
           { id: 'performance' as const, label: 'Performance', icon: Zap },
+          ...(featuresManifest?.features.memoryManagement?.installed !== false
+            ? [{ id: 'memory' as const, label: 'Memory Management', icon: Sparkles }]
+            : []),
           { id: 'tracking' as const, label: 'Game Tracking', icon: Activity },
           { id: 'accounts' as const, label: 'Accounts & Security', icon: Shield },
           { id: 'notifications' as const, label: 'Notifications', icon: Bell },
@@ -834,6 +854,209 @@ export const SettingsPage: React.FC = () => {
                 className="w-5 h-5 accent-[#4C8DFF] rounded cursor-pointer shrink-0"
               />
             </label>
+          </div>
+        </section>
+      )}
+
+      {/* SECTION: Memory Management & RAM Optimization */}
+      {shouldShowSection('memory') && (
+        <section
+          data-testid="section-memory-management"
+          aria-label="Memory Management"
+          className="space-y-4"
+        >
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-1">
+            <div>
+              <h2 className="text-sm font-bold text-ms-muted uppercase tracking-wider flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-violet-400" />
+                <span>Memory Management & Optimization</span>
+              </h2>
+              <p className="text-xs text-ms-muted mt-0.5">
+                Safe, lightweight RAM management for low-end PCs inspired by clean-room Win32 APIs (no background services, no kernel drivers)
+              </p>
+            </div>
+            {settings.enableMemoryManagement !== false && (
+              <span className="text-xs font-semibold text-violet-300 bg-violet-500/10 px-2.5 py-0.5 rounded-full border border-violet-500/20 flex items-center gap-1.5 self-start sm:self-auto">
+                <span className="w-2 h-2 rounded-full bg-violet-400" />
+                Memory Management Active
+              </span>
+            )}
+          </div>
+
+          <div className="rounded-2xl bg-ms-card border border-ms-border divide-y divide-ms-border shadow-card overflow-hidden">
+            {/* Enable Memory Management Toggle */}
+            <label className="p-6 flex items-center justify-between gap-4 cursor-pointer hover:bg-ms-elevated/30 transition-colors">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-violet-400" />
+                  <span className="text-sm font-bold text-ms-text">Enable Memory Management</span>
+                  <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-md bg-violet-500/15 text-violet-300 border border-violet-500/20">
+                    Low-End PC Optimizer
+                  </span>
+                </div>
+                <div className="text-xs text-ms-muted max-w-2xl">
+                  Enables memory monitoring telemetry, candidate background app detection, and quick RAM optimization tools.
+                </div>
+              </div>
+              <input
+                type="checkbox"
+                data-testid="toggle-enable-memory-mgmt"
+                checked={settings.enableMemoryManagement !== false}
+                onChange={(e) => void updateSettings({ enableMemoryManagement: e.target.checked })}
+                className="w-5 h-5 accent-violet-600 rounded cursor-pointer shrink-0"
+              />
+            </label>
+
+            {/* Show RAM Statistics Toggle */}
+            <label className="p-6 flex items-center justify-between gap-4 cursor-pointer hover:bg-ms-elevated/30 transition-colors">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <HardDrive className="w-4 h-4 text-cyan-400" />
+                  <span className="text-sm font-bold text-ms-text">Show RAM Statistics</span>
+                </div>
+                <div className="text-xs text-ms-muted max-w-2xl">
+                  Display real-time RAM usage counters and available memory badges in telemetry views and resource headers.
+                </div>
+              </div>
+              <input
+                type="checkbox"
+                data-testid="toggle-show-ram-stats"
+                checked={settings.showRamStatistics !== false}
+                onChange={(e) => void updateSettings({ showRamStatistics: e.target.checked })}
+                className="w-5 h-5 accent-violet-600 rounded cursor-pointer shrink-0"
+              />
+            </label>
+
+            {/* Refresh Interval Selector */}
+            <div className="p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-ms-elevated/30 transition-colors">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-amber-400" />
+                  <span className="text-sm font-bold text-ms-text">Memory Monitoring Refresh Interval</span>
+                </div>
+                <div className="text-xs text-ms-muted max-w-2xl">
+                  Control how frequently memory metrics are polled when the Performance tab is actively viewed (polling completely halts when inactive).
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                {([3000, 5000, 10000] as const).map((ms) => (
+                  <button
+                    key={ms}
+                    type="button"
+                    data-testid={`refresh-interval-${ms}`}
+                    onClick={() => void updateSettings({ memoryRefreshIntervalMs: ms })}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                      (settings.memoryRefreshIntervalMs || 5000) === ms
+                        ? 'bg-violet-600 text-white shadow-sm ring-1 ring-violet-500/50'
+                        : 'bg-ms-elevated/60 text-ms-muted hover:text-ms-text border border-ms-border'
+                    }`}
+                  >
+                    {ms / 1000}s {ms === 5000 ? '(Balanced)' : ms === 10000 ? '(Low CPU)' : '(Fast)'}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Confirm Before Cleanup Toggle */}
+            <label className="p-6 flex items-center justify-between gap-4 cursor-pointer hover:bg-ms-elevated/30 transition-colors">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                  <span className="text-sm font-bold text-ms-text">Confirm Before Cleanup</span>
+                </div>
+                <div className="text-xs text-ms-muted max-w-2xl">
+                  Require a confirmation modal showing detected background apps and cleanup modes before executing memory optimization.
+                </div>
+              </div>
+              <input
+                type="checkbox"
+                data-testid="toggle-confirm-cleanup"
+                checked={settings.confirmBeforeCleanup !== false}
+                onChange={(e) => void updateSettings({ confirmBeforeCleanup: e.target.checked })}
+                className="w-5 h-5 accent-violet-600 rounded cursor-pointer shrink-0"
+              />
+            </label>
+
+            {/* Advanced Memory Mode (with Warning Modal) */}
+            <div className="p-6 flex items-center justify-between gap-4 hover:bg-ms-elevated/30 transition-colors">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <Cpu className="w-4 h-4 text-rose-400" />
+                  <span className="text-sm font-bold text-ms-text">Advanced Memory Mode (EmptyWorkingSet)</span>
+                  <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-md bg-rose-500/15 text-rose-300 border border-rose-500/20">
+                    Opt-in Only
+                  </span>
+                </div>
+                <div className="text-xs text-ms-muted max-w-2xl">
+                  Enables documented Win32 <code className="font-mono text-violet-300">EmptyWorkingSet</code> page trimming across permitted desktop applications. Never affects system processes, security software, or games.
+                </div>
+              </div>
+              <input
+                type="checkbox"
+                data-testid="toggle-advanced-memory-mode"
+                checked={Boolean(settings.enableAdvancedMemoryMode)}
+                onChange={(e) => {
+                  if (e.target.checked) {
+                    setShowAdvancedWarningModal(true);
+                  } else {
+                    void updateSettings({ enableAdvancedMemoryMode: false });
+                  }
+                }}
+                className="w-5 h-5 accent-violet-600 rounded cursor-pointer shrink-0"
+              />
+            </div>
+
+            {/* Prepare PC Before Launching Game */}
+            <label className="p-6 flex items-center justify-between gap-4 cursor-pointer hover:bg-ms-elevated/30 transition-colors">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <Zap className="w-4 h-4 text-amber-400" />
+                  <span className="text-sm font-bold text-ms-text">Prepare PC Before Launching a Game</span>
+                  <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-300 border border-amber-500/20">
+                    Anti-Stutter
+                  </span>
+                </div>
+                <div className="text-xs text-ms-muted max-w-2xl">
+                  Automatically measures free RAM when launching a game from MaSwitch. If available RAM is below 1.5 GB, prompts to optimize memory to prevent in-game page faults and stuttering.
+                </div>
+              </div>
+              <input
+                type="checkbox"
+                data-testid="toggle-prepare-pc-before-launch"
+                checked={Boolean(settings.preparePcBeforeLaunch)}
+                onChange={(e) => void updateSettings({ preparePcBeforeLaunch: e.target.checked })}
+                className="w-5 h-5 accent-violet-600 rounded cursor-pointer shrink-0"
+              />
+            </label>
+
+            {/* Cleanup History Maintenance */}
+            <div className="p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-ms-elevated/30 transition-colors">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-violet-400" />
+                  <span className="text-sm font-bold text-ms-text">Cleanup History Log</span>
+                </div>
+                <div className="text-xs text-ms-muted max-w-2xl">
+                  MaSwitch stores operational cleanup logs locally in SQLite. Currently holding{' '}
+                  <span className="font-semibold text-ms-text">{cleanupHistory.length} recorded events</span>.
+                </div>
+              </div>
+              <button
+                type="button"
+                data-testid="btn-clear-settings-memory-history"
+                disabled={cleanupHistory.length === 0}
+                onClick={() => void clearCleanupHistory()}
+                className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold border transition-all ${
+                  cleanupHistory.length === 0
+                    ? 'opacity-40 cursor-not-allowed bg-ms-elevated text-ms-muted border-ms-border'
+                    : 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border-rose-500/20'
+                }`}
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Clear History</span>
+              </button>
+            </div>
           </div>
         </section>
       )}
@@ -1798,6 +2021,59 @@ export const SettingsPage: React.FC = () => {
             </div>
           </div>
         </section>
+      )}
+
+      {/* Advanced Memory Mode Confirmation Warning Modal */}
+      {showAdvancedWarningModal && (
+        <div
+          data-testid="advanced-mode-warning-modal"
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn"
+        >
+          <div className="w-full max-w-md rounded-3xl bg-ms-card border border-rose-500/40 p-6 space-y-4 shadow-2xl animate-scaleUp">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-rose-500/20 text-rose-400 border border-rose-500/30 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-ms-text">Enable Advanced Memory Mode?</h3>
+                <p className="text-xs text-ms-muted">Performance trade-offs & technical explanation</p>
+              </div>
+            </div>
+
+            <div className="p-4 rounded-xl bg-ms-elevated/40 border border-ms-border space-y-2 text-xs text-ms-muted">
+              <p>
+                Advanced Mode uses the documented Windows Psapi <code className="font-mono text-violet-300">EmptyWorkingSet</code> API to trim memory pages across permitted desktop processes.
+              </p>
+              <div className="space-y-1 text-[11px] text-amber-300">
+                <div>• Trimming moves idle memory pages to the system paging file.</div>
+                <div>• When trimmed applications are focused again, brief disk activity may occur.</div>
+                <div>• Higher free RAM numbers do not equal guaranteed higher FPS in games.</div>
+                <div>• System processes, security tools, and active games remain strictly protected.</div>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowAdvancedWarningModal(false)}
+                className="px-4 py-2 text-xs font-semibold text-ms-muted hover:text-ms-text bg-ms-card border border-ms-border rounded-xl transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                data-testid="btn-confirm-enable-advanced-mode"
+                onClick={() => {
+                  void updateSettings({ enableAdvancedMemoryMode: true });
+                  setShowAdvancedWarningModal(false);
+                }}
+                className="px-4 py-2 text-xs font-bold bg-rose-600 hover:bg-rose-500 text-white rounded-xl shadow-md transition-all"
+              >
+                I Understand & Enable
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

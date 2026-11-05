@@ -112,6 +112,11 @@ export class InstalledFeaturesManager {
         enabled: presetConfig.features.backupRestore,
         installedAtIso: presetConfig.features.backupRestore ? now : undefined,
       },
+      memoryManagement: {
+        installed: presetConfig.features.memoryManagement,
+        enabled: presetConfig.features.memoryManagement,
+        installedAtIso: presetConfig.features.memoryManagement ? now : undefined,
+      },
     };
 
     const initialManifest: InstalledFeaturesManifest = {
@@ -136,6 +141,7 @@ export class InstalledFeaturesManager {
       'performanceMonitor',
       'gameNews',
       'backupRestore',
+      'memoryManagement',
     ];
 
     const sanitizedFeatures = { ...manifest.features };

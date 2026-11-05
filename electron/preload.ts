@@ -137,6 +137,13 @@ const IPC_CHANNELS = {
   FEATURES_APPLY_PRESET: 'maswitch:features:apply-preset',
   FEATURES_LAUNCH_MODIFY: 'maswitch:features:launch-modify',
   FEATURES_UPDATED_EVENT: 'maswitch:features:updated',
+
+  // MaSwitch 3.0: Optional Memory Management (Mem Reduct)
+  MEMORY_GET_METRICS: 'maswitch:memory:get-metrics',
+  MEMORY_GET_CLEANABLE_APPS: 'maswitch:memory:get-cleanable-apps',
+  MEMORY_PERFORM_CLEANUP: 'maswitch:memory:perform-cleanup',
+  MEMORY_GET_HISTORY: 'maswitch:memory:get-history',
+  MEMORY_CLEAR_HISTORY: 'maswitch:memory:clear-history',
 } as const;
 
 const bridge: MaSwitchBridge = {
@@ -518,6 +525,13 @@ const bridge: MaSwitchBridge = {
         ipcRenderer.removeListener(IPC_CHANNELS.FEATURES_UPDATED_EVENT, listener);
       };
     },
+  },
+  memory: {
+    getMetrics: () => ipcRenderer.invoke(IPC_CHANNELS.MEMORY_GET_METRICS),
+    getCleanableApps: () => ipcRenderer.invoke(IPC_CHANNELS.MEMORY_GET_CLEANABLE_APPS),
+    performCleanup: (request) => ipcRenderer.invoke(IPC_CHANNELS.MEMORY_PERFORM_CLEANUP, request),
+    getHistory: () => ipcRenderer.invoke(IPC_CHANNELS.MEMORY_GET_HISTORY),
+    clearHistory: () => ipcRenderer.invoke(IPC_CHANNELS.MEMORY_CLEAR_HISTORY),
   },
 };
 

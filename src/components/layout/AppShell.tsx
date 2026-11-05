@@ -1,5 +1,6 @@
 import React, { Suspense, useEffect } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
+import { AlertTriangle, Sparkles } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
 import { TitleBar } from './TitleBar';
 import { Sidebar } from './Sidebar';
@@ -76,6 +77,11 @@ export const AppShell: React.FC = () => {
   const refreshLibraryAndStats = useAppStore((s) => s.refreshLibraryAndStats);
   const setInGameMode = useAppStore((s) => s.setInGameMode);
   const setWindowVisible = useAppStore((s) => s.setWindowVisible);
+  const beforeGamePrompt = useAppStore((s) => s.beforeGamePrompt);
+  const setBeforeGamePrompt = useAppStore((s) => s.setBeforeGamePrompt);
+  const performMemoryCleanup = useAppStore((s) => s.performMemoryCleanup);
+  const launchGame = useAppStore((s) => s.launchGame);
+  const games = useAppStore((s) => s.games);
 
   useEffect(() => {
     void initializeApp();
@@ -374,6 +380,87 @@ export const AppShell: React.FC = () => {
           )}
         </main>
       </div>
+
+      {/* Before-Game Memory Assistance Modal */}
+      {beforeGamePrompt && (
+        <div
+          data-testid="before-game-ram-modal"
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn"
+        >
+          <div className="w-full max-w-md rounded-3xl bg-ms-card border border-violet-500/40 p-6 space-y-4 shadow-2xl animate-scaleUp">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-ms-text">Low RAM Before Launch</h3>
+                <p className="text-xs text-ms-muted">Prepare PC Before Launch Assistance</p>
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-ms-elevated/40 border border-ms-border space-y-1 text-xs">
+              <div className="text-ms-text font-semibold">
+                Game:{' '}
+                <span className="text-violet-300 font-bold">
+                  {games.find((g) => g.id === beforeGamePrompt.gameId)?.title || 'Game'}
+                </span>
+              </div>
+              <div className="text-ms-muted">
+                Available Physical RAM:{' '}
+                <span className="text-rose-400 font-bold tabular-nums">
+                  {beforeGamePrompt.availableMb} MB
+                </span>{' '}
+                <span className="text-[11px] text-ms-muted/70">(Recommended: &gt; 1,500 MB)</span>
+              </div>
+            </div>
+
+            <p className="text-xs text-ms-muted leading-relaxed">
+              Launching games with low free memory can cause background paging, stuttering, and frame drops. We recommend trimming memory before proceeding.
+            </p>
+
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                data-testid="btn-before-game-cancel"
+                onClick={() => setBeforeGamePrompt(null)}
+                className="px-4 py-2 text-xs font-semibold text-ms-muted hover:text-ms-text bg-ms-card border border-ms-border rounded-xl transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                data-testid="btn-before-game-launch-anyway"
+                onClick={() => {
+                  const gid = beforeGamePrompt.gameId;
+                  setBeforeGamePrompt(null);
+                  void launchGame(gid, true);
+                }}
+                className="px-4 py-2 text-xs font-semibold text-ms-muted hover:text-ms-text bg-ms-elevated border border-ms-border rounded-xl transition-all"
+              >
+                Launch Anyway
+              </button>
+              <button
+                type="button"
+                data-testid="btn-before-game-clean-launch"
+                onClick={async () => {
+                  const gid = beforeGamePrompt.gameId;
+                  try {
+                    await performMemoryCleanup({ mode: 'standard' });
+                  } catch {
+                    // Ignore error and continue launch
+                  }
+                  setBeforeGamePrompt(null);
+                  void launchGame(gid, true);
+                }}
+                className="px-4 py-2 text-xs font-bold bg-violet-600 hover:bg-violet-500 text-white rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Clean & Launch</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

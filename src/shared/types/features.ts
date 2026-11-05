@@ -3,7 +3,8 @@ export type OptionalFeatureId =
   | 'smartCollections'
   | 'performanceMonitor'
   | 'gameNews'
-  | 'backupRestore';
+  | 'backupRestore'
+  | 'memoryManagement';
 
 export type InstallPresetId = 'minimal' | 'recommended' | 'complete' | 'custom';
 
@@ -100,6 +101,22 @@ export const OPTIONAL_FEATURES_METADATA: Record<OptionalFeatureId, OptionalFeatu
       complete: true,
     },
   },
+  memoryManagement: {
+    id: 'memoryManagement',
+    name: 'Memory Management',
+    category: 'maintenance',
+    description:
+      'Safe, lightweight Windows memory management utility. Monitor RAM telemetry, identify background processes, gracefully free RAM, and prepare PC before gaming.',
+    ramImpactLabel: '0 MB idle (active only while viewing Memory tab)',
+    cpuImpactLabel: '0.0% idle (zero background services or persistent timers)',
+    diskImpactBytes: 150 * 1024,
+    diskImpactLabel: '~150 KB (Win32 memory monitor, safe cleanup engine)',
+    defaultInPreset: {
+      minimal: false,
+      recommended: false, // Explicitly disabled by default in Minimal and Recommended
+      complete: true,
+    },
+  },
 };
 
 export const PRESET_CONFIGURATIONS: Record<
@@ -122,6 +139,7 @@ export const PRESET_CONFIGURATIONS: Record<
       performanceMonitor: false,
       gameNews: false,
       backupRestore: false,
+      memoryManagement: false,
     },
   },
   recommended: {
@@ -135,19 +153,21 @@ export const PRESET_CONFIGURATIONS: Record<
       performanceMonitor: false,
       gameNews: false,
       backupRestore: true,
+      memoryManagement: false, // Disabled by default in Recommended
     },
   },
   complete: {
     name: 'Complete',
     tagline: 'Full-featured premium experience',
     description:
-      'Installs all five optional components including Year in Review, Performance Monitor, and Game News.',
+      'Installs all six optional components including Year in Review, Performance Monitor, Game News, and Memory Management.',
     features: {
       yearInReview: true,
       smartCollections: true,
       performanceMonitor: true,
       gameNews: true,
       backupRestore: true,
+      memoryManagement: true,
     },
   },
   custom: {
@@ -161,6 +181,7 @@ export const PRESET_CONFIGURATIONS: Record<
       performanceMonitor: false,
       gameNews: false,
       backupRestore: true,
+      memoryManagement: false,
     },
   },
 };

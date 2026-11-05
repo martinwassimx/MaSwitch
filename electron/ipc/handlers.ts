@@ -45,6 +45,8 @@ import { PerformanceMonitorService } from '../services/performanceMonitorService
 import { NewsService } from '../services/newsService';
 import { BackupService } from '../services/backupService';
 import { InstalledFeaturesManager } from '../services/features/installedFeaturesManager';
+import { MemoryManagementService } from '../services/memory/memoryManagementService';
+import type { MemoryCleanupRequest } from '../../src/shared/types/memory';
 import type { CreateCollectionInput, UpdateCollectionInput } from '../../src/shared/types/collection';
 import type { PerformanceMonitoringConfig } from '../../src/shared/types/performance';
 import type { OptionalFeatureId, InstallPresetId } from '../../src/shared/types/features';
@@ -105,6 +107,7 @@ export interface MainServicesContainer {
   performanceMonitorService?: PerformanceMonitorService;
   newsService?: NewsService;
   backupService?: BackupService;
+  memoryService?: MemoryManagementService;
   installedFeaturesManager?: InstalledFeaturesManager;
   riotLiveServices?: {
     engine: RiotLiveSwitchingEngine;
@@ -1564,6 +1567,9 @@ export function registerIpcHandlers(
         perfService.destroy();
         perfService = null;
       }
+      if (featureId === 'memoryManagement' && !enabled && memoryServiceInstance) {
+        memoryServiceInstance = null;
+      }
       return updated;
     }
   );
@@ -1577,6 +1583,9 @@ export function registerIpcHandlers(
         perfService.destroy();
         perfService = null;
       }
+      if (!featuresManager.isFeatureEnabled('memoryManagement') && memoryServiceInstance) {
+        memoryServiceInstance = null;
+      }
       return updated;
     }
   );
@@ -1584,5 +1593,47 @@ export function registerIpcHandlers(
   ipcMain.handle(IPC_CHANNELS.FEATURES_LAUNCH_MODIFY, async (event) => {
     assertTrustedSender(event, getMainWindow, devServerUrl);
     return await featuresManager.launchInstallerModify();
+  });
+
+  // 7. Memory Management Handlers
+  let memoryServiceInstance: MemoryManagementService | null = services.memoryService ?? null;
+  const getMemoryService = (): MemoryManagementService => {
+    if (!featuresManager.isFeatureEnabled('memoryManagement')) {
+      throw new Error('Memory Management optional component is not enabled or installed.');
+    }
+    if (!memoryServiceInstance) {
+      memoryServiceInstance = new MemoryManagementService(sqliteDb, trackerEngine);
+    }
+    return memoryServiceInstance;
+  };
+
+  ipcMain.handle(IPC_CHANNELS.MEMORY_GET_METRICS, (event) => {
+    assertTrustedSender(event, getMainWindow, devServerUrl);
+    const memService = getMemoryService();
+    return memService.getSystemMemoryMetrics();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.MEMORY_GET_CLEANABLE_APPS, async (event) => {
+    assertTrustedSender(event, getMainWindow, devServerUrl);
+    const memService = getMemoryService();
+    return await memService.getCleanableAppCandidates();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.MEMORY_PERFORM_CLEANUP, async (event, request: MemoryCleanupRequest) => {
+    assertTrustedSender(event, getMainWindow, devServerUrl);
+    const memService = getMemoryService();
+    return await memService.performCleanup(request);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.MEMORY_GET_HISTORY, (event) => {
+    assertTrustedSender(event, getMainWindow, devServerUrl);
+    const memService = getMemoryService();
+    return memService.getCleanupHistory();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.MEMORY_CLEAR_HISTORY, (event) => {
+    assertTrustedSender(event, getMainWindow, devServerUrl);
+    const memService = getMemoryService();
+    memService.clearCleanupHistory();
   });
 }

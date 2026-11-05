@@ -48,6 +48,7 @@ import type {
   SmartCollectionRules,
   UpdateCollectionInput,
 } from '../../../src/shared/types/collection';
+import type { MemoryCleanupHistoryEntry } from '../../../src/shared/types/memory';
 import {
   generateLocalGameCoverSvg,
   generateLocalGameHeroSvg,
@@ -355,6 +356,27 @@ export const SQLITE_MIGRATIONS: readonly MigrationDefinition[] = [
 
       CREATE INDEX IF NOT EXISTS idx_collection_games_game ON collection_games(game_id);
       CREATE INDEX IF NOT EXISTS idx_collections_name ON collections(name);
+    `,
+  },
+  {
+    version: 10,
+    name: '010_memory_cleanup_history',
+    sql: `
+      CREATE TABLE IF NOT EXISTS memory_cleanup_history (
+        id TEXT PRIMARY KEY,
+        timestamp_iso TEXT NOT NULL,
+        mode TEXT NOT NULL,
+        action TEXT NOT NULL,
+        status TEXT NOT NULL,
+        ram_before_mb REAL NOT NULL,
+        ram_after_mb REAL NOT NULL,
+        freed_mb REAL NOT NULL,
+        elevation_required INTEGER NOT NULL DEFAULT 0,
+        message TEXT NOT NULL,
+        target_processes_json TEXT
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_mem_cleanup_ts ON memory_cleanup_history(timestamp_iso);
     `,
   },
 ];
@@ -3212,5 +3234,54 @@ export class MaSwitchSqliteDatabase {
       }
     });
     return true;
+  }
+
+  public recordMemoryCleanup(entry: MemoryCleanupHistoryEntry): void {
+    this.db.run(
+      `INSERT INTO memory_cleanup_history (
+        id, timestamp_iso, mode, action, status,
+        ram_before_mb, ram_after_mb, freed_mb, elevation_required,
+        message, target_processes_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+      [
+        entry.id,
+        entry.timestampIso,
+        entry.mode,
+        entry.action,
+        entry.status,
+        entry.ramBeforeMb,
+        entry.ramAfterMb,
+        entry.freedMb,
+        entry.elevationRequired ? 1 : 0,
+        entry.message,
+        entry.targetProcesses ? JSON.stringify(entry.targetProcesses) : null,
+      ]
+    );
+  }
+
+  public getMemoryCleanupHistory(limit: number = 50): MemoryCleanupHistoryEntry[] {
+    const rows = this.db.all(
+      `SELECT * FROM memory_cleanup_history ORDER BY timestamp_iso DESC LIMIT ?;`,
+      [limit]
+    );
+    return rows.map((r: Record<string, unknown>) => ({
+      id: String(r.id),
+      timestampIso: String(r.timestamp_iso),
+      mode: r.mode as 'standard' | 'advanced',
+      action: r.action as 'self_trim' | 'close_apps' | 'working_set_trim',
+      status: r.status as 'success' | 'partial' | 'failed' | 'cancelled',
+      ramBeforeMb: Number(r.ram_before_mb),
+      ramAfterMb: Number(r.ram_after_mb),
+      freedMb: Number(r.freed_mb),
+      elevationRequired: Boolean(r.elevation_required),
+      message: String(r.message),
+      targetProcesses: r.target_processes_json
+        ? (JSON.parse(String(r.target_processes_json)) as string[])
+        : undefined,
+    }));
+  }
+
+  public clearMemoryCleanupHistory(): void {
+    this.db.run(`DELETE FROM memory_cleanup_history;`);
   }
 }

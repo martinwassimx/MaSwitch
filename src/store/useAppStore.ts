@@ -86,6 +86,14 @@ import { gameLauncherService } from '../services/gameLauncherService';
 import { librarySyncService } from '../services/librarySyncService';
 import { localDatabaseService } from '../services/localDatabaseService';
 import { playtimeTrackerService } from '../services/playtimeTrackerService';
+import { memoryManagementService } from '../services/memoryManagementService';
+import type {
+  CleanableAppCandidate,
+  MemoryCleanupHistoryEntry,
+  MemoryCleanupRequest,
+  MemoryCleanupResult,
+  SystemMemoryMetrics,
+} from '../shared/types/memory';
 
 export interface AppStoreState {
   isHydrated: boolean;
@@ -206,7 +214,7 @@ export interface AppStoreState {
   editGame: (gameId: string, input: EditGameInput) => Promise<GameItem | null>;
   removeGameFromLibrary: (gameId: string) => Promise<boolean>;
   restoreGameToLibrary: (gameId: string) => Promise<boolean>;
-  launchGame: (gameId: string) => Promise<GameLaunchResult>;
+  launchGame: (gameId: string, bypassBeforeGameCheck?: boolean) => Promise<GameLaunchResult>;
   updateLaunchStatus: (
     gameId: string,
     status: GameLaunchState,
@@ -321,6 +329,20 @@ export interface AppStoreState {
   applyInstallPreset: (presetId: InstallPresetId) => Promise<boolean>;
   launchInstallerModify: () => Promise<{ success: boolean; message?: string }>;
   clearFeaturesFeedback: () => void;
+
+  // Feature 6: Optional Memory Management (Mem Reduct)
+  memoryMetrics: SystemMemoryMetrics | null;
+  cleanableApps: CleanableAppCandidate[];
+  cleanupHistory: MemoryCleanupHistoryEntry[];
+  isCleaningMemory: boolean;
+  lastCleanupResult: MemoryCleanupResult | null;
+  beforeGamePrompt: { gameId: string; availableMb: number } | null;
+  setBeforeGamePrompt: (prompt: { gameId: string; availableMb: number } | null) => void;
+  fetchMemoryMetrics: () => Promise<SystemMemoryMetrics | null>;
+  fetchCleanableApps: () => Promise<CleanableAppCandidate[]>;
+  performMemoryCleanup: (request: MemoryCleanupRequest) => Promise<MemoryCleanupResult>;
+  fetchCleanupHistory: () => Promise<MemoryCleanupHistoryEntry[]>;
+  clearCleanupHistory: () => Promise<void>;
 }
 
 const initialSettings = localDatabaseService.readCachedSettings();
@@ -467,6 +489,14 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
   featuresManifest: null,
   featuresLoading: false,
   featuresFeedback: null,
+
+  // Feature 6: Optional Memory Management (Mem Reduct)
+  memoryMetrics: null,
+  cleanableApps: [],
+  cleanupHistory: [],
+  isCleaningMemory: false,
+  lastCleanupResult: null,
+  beforeGamePrompt: null,
 
   setInGameMode: (inGame: boolean, activeGameCount: number) => {
     set({ inGameMode: inGame, activeGameCount });
@@ -932,7 +962,27 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
     return restored;
   },
 
-  launchGame: async (gameId) => {
+  setBeforeGamePrompt: (prompt) => set({ beforeGamePrompt: prompt }),
+
+  launchGame: async (gameId: string, bypassBeforeGameCheck?: boolean): Promise<GameLaunchResult> => {
+    // Before-Game Assistance Check (Feature 7)
+    if (!bypassBeforeGameCheck && get().settings.preparePcBeforeLaunch) {
+      try {
+        const mem = await memoryManagementService.getMetrics();
+        if (mem && mem.availablePhysicalMb < 1500) {
+          set({ beforeGamePrompt: { gameId, availableMb: mem.availablePhysicalMb } });
+          return {
+            success: false,
+            gameId,
+            status: 'idle',
+            message: 'Low RAM detected before launch. Please review memory options.',
+          };
+        }
+      } catch {
+        // Safe check bypass
+      }
+    }
+
     set((state) => ({
       launchStatuses: { ...state.launchStatuses, [gameId]: 'launching' },
       launchMessages: {
@@ -1976,4 +2026,44 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
   },
 
   clearFeaturesFeedback: () => set({ featuresFeedback: null }),
+
+  // Feature 6: Optional Memory Management (Mem Reduct)
+  fetchMemoryMetrics: async () => {
+    const m = await memoryManagementService.getMetrics();
+    if (m) {
+      set({ memoryMetrics: m });
+    }
+    return m;
+  },
+
+  fetchCleanableApps: async () => {
+    const apps = await memoryManagementService.getCleanableApps();
+    set({ cleanableApps: apps });
+    return apps;
+  },
+
+  performMemoryCleanup: async (request) => {
+    set({ isCleaningMemory: true });
+    try {
+      const res = await memoryManagementService.performCleanup(request);
+      set({ lastCleanupResult: res });
+      await get().fetchMemoryMetrics();
+      await get().fetchCleanupHistory();
+      return res;
+    } finally {
+      set({ isCleaningMemory: false });
+    }
+  },
+
+  fetchCleanupHistory: async () => {
+    const h = await memoryManagementService.getHistory();
+    set({ cleanupHistory: h });
+    return h;
+  },
+
+  clearCleanupHistory: async () => {
+    await memoryManagementService.clearHistory();
+    set({ cleanupHistory: [], lastCleanupResult: null });
+    await get().fetchMemoryMetrics();
+  },
 }));

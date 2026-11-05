@@ -64,6 +64,14 @@ export interface MaSwitchSettings {
   excludedApplications: ExcludedApplicationRule[];
   notificationsEnabled: boolean;
   suppressNotificationsInGame: boolean;
+
+  // MaSwitch 3.0 Memory Management Settings
+  enableMemoryManagement: boolean;
+  showRamStatistics: boolean;
+  memoryRefreshIntervalMs: 3000 | 5000 | 10000;
+  confirmBeforeCleanup: boolean;
+  enableAdvancedMemoryMode: boolean;
+  preparePcBeforeLaunch: boolean;
 }
 
 export const DEFAULT_EXCLUDED_APPLICATIONS: ExcludedApplicationRule[] = [
@@ -127,6 +135,14 @@ export const DEFAULT_SETTINGS: MaSwitchSettings = {
   excludedApplications: DEFAULT_EXCLUDED_APPLICATIONS,
   notificationsEnabled: true,
   suppressNotificationsInGame: true,
+
+  // Memory Management defaults
+  enableMemoryManagement: false,
+  showRamStatistics: true,
+  memoryRefreshIntervalMs: 5000,
+  confirmBeforeCleanup: true,
+  enableAdvancedMemoryMode: false,
+  preparePcBeforeLaunch: false,
 };
 
 export interface WindowsStartupState {

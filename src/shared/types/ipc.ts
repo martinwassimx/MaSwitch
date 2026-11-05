@@ -161,6 +161,13 @@ export const IPC_CHANNELS = {
   FEATURES_APPLY_PRESET: 'maswitch:features:apply-preset',
   FEATURES_LAUNCH_MODIFY: 'maswitch:features:launch-modify',
   FEATURES_UPDATED_EVENT: 'maswitch:features:updated',
+
+  // MaSwitch 3.0: Optional Memory Management (Mem Reduct)
+  MEMORY_GET_METRICS: 'maswitch:memory:get-metrics',
+  MEMORY_GET_CLEANABLE_APPS: 'maswitch:memory:get-cleanable-apps',
+  MEMORY_PERFORM_CLEANUP: 'maswitch:memory:perform-cleanup',
+  MEMORY_GET_HISTORY: 'maswitch:memory:get-history',
+  MEMORY_CLEAR_HISTORY: 'maswitch:memory:clear-history',
 } as const;
 
 export type AllowedIpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];
@@ -388,6 +395,13 @@ export interface MaSwitchBridge {
     applyPreset: (presetId: import('./features').InstallPresetId) => Promise<import('./features').InstalledFeaturesManifest>;
     launchModify: () => Promise<{ success: boolean; message?: string }>;
     onFeaturesUpdated: (callback: (manifest: import('./features').InstalledFeaturesManifest) => void) => () => void;
+  };
+  memory?: {
+    getMetrics: () => Promise<import('./memory').SystemMemoryMetrics>;
+    getCleanableApps: () => Promise<import('./memory').CleanableAppCandidate[]>;
+    performCleanup: (request: import('./memory').MemoryCleanupRequest) => Promise<import('./memory').MemoryCleanupResult>;
+    getHistory: () => Promise<import('./memory').MemoryCleanupHistoryEntry[]>;
+    clearHistory: () => Promise<void>;
   };
 }
 

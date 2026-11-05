@@ -263,6 +263,31 @@ export function sanitizeSettings(
       typeof raw.suppressNotificationsInGame === 'boolean'
         ? raw.suppressNotificationsInGame
         : fallback.suppressNotificationsInGame ?? true,
+    enableMemoryManagement:
+      typeof raw.enableMemoryManagement === 'boolean'
+        ? raw.enableMemoryManagement
+        : fallback.enableMemoryManagement ?? true,
+    showRamStatistics:
+      typeof raw.showRamStatistics === 'boolean'
+        ? raw.showRamStatistics
+        : fallback.showRamStatistics ?? true,
+    memoryRefreshIntervalMs:
+      typeof raw.memoryRefreshIntervalMs === 'number' &&
+      [3000, 5000, 10000].includes(raw.memoryRefreshIntervalMs)
+        ? (raw.memoryRefreshIntervalMs as 3000 | 5000 | 10000)
+        : (fallback.memoryRefreshIntervalMs as 3000 | 5000 | 10000) ?? 5000,
+    confirmBeforeCleanup:
+      typeof raw.confirmBeforeCleanup === 'boolean'
+        ? raw.confirmBeforeCleanup
+        : fallback.confirmBeforeCleanup ?? true,
+    enableAdvancedMemoryMode:
+      typeof raw.enableAdvancedMemoryMode === 'boolean'
+        ? raw.enableAdvancedMemoryMode
+        : fallback.enableAdvancedMemoryMode ?? false,
+    preparePcBeforeLaunch:
+      typeof raw.preparePcBeforeLaunch === 'boolean'
+        ? raw.preparePcBeforeLaunch
+        : fallback.preparePcBeforeLaunch ?? false,
   };
 }
 

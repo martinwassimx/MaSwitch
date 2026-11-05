@@ -32,7 +32,8 @@ export const Sidebar: React.FC = () => {
   const featuresManifest = useAppStore((s) => s.featuresManifest);
 
   const isPerfEnabled = featuresManifest
-    ? Boolean(featuresManifest.features.performanceMonitor?.enabled)
+    ? Boolean(featuresManifest.features.performanceMonitor?.enabled) ||
+      Boolean(featuresManifest.features.memoryManagement?.enabled)
     : true;
   const isNewsEnabled = featuresManifest
     ? Boolean(featuresManifest.features.gameNews?.enabled)
