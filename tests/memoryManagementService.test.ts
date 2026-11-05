@@ -7,13 +7,18 @@ import {
   MemoryManagementService,
   PROTECTED_PROCESS_NAMES,
 } from '../electron/services/memory/memoryManagementService';
-import type { CleanableAppCandidate } from '../src/shared/types/memory';
+import type {
+  CleanableAppCandidate,
+  MemoryCleanupHistoryEntry,
+} from '../src/shared/types/memory';
+import type { MaSwitchSqliteDatabase } from '../electron/services/database/sqliteDatabase';
+import type { PlaytimeTrackerEngine } from '../electron/services/tracker/playtimeTrackerEngine';
 
 // Mock DB
 class MockDatabase {
-  public history: any[] = [];
+  public history: MemoryCleanupHistoryEntry[] = [];
 
-  public recordMemoryCleanup(entry: any) {
+  public recordMemoryCleanup(entry: MemoryCleanupHistoryEntry) {
     this.history.unshift({ ...entry });
   }
 
@@ -56,10 +61,10 @@ describe('Memory Management Integration (Mem Reduct technical reference)', () =>
     beforeEach(() => {
       mockDb = new MockDatabase();
       service = new MemoryManagementService(
-        mockDb as any,
+        mockDb as unknown as MaSwitchSqliteDatabase,
         {
           getStatus: () => ({ enabled: true, paused: false, activeSessions: [] }),
-        } as any,
+        } as unknown as PlaytimeTrackerEngine,
         {
           rawMemoryQuery: () => ({
             totalBytes: 16 * 1024 * 1024 * 1024, // 16 GB
@@ -125,7 +130,7 @@ describe('Memory Management Integration (Mem Reduct technical reference)', () =>
     it('prevents memory cleanup when a game is currently active (Gaming Safety Rule)', async () => {
       // Simulate active game running
       const gameRunningService = new MemoryManagementService(
-        mockDb as any,
+        mockDb as unknown as MaSwitchSqliteDatabase,
         {
           getStatus: () => ({
             enabled: true,
@@ -142,7 +147,7 @@ describe('Memory Management Integration (Mem Reduct technical reference)', () =>
               },
             ],
           }),
-        } as any,
+        } as unknown as PlaytimeTrackerEngine,
         {
           rawMemoryQuery: () => ({ totalBytes: 16e9, freeBytes: 4e9 }),
           maSwitchWorkingSetGetter: () => 100e6,
