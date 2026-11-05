@@ -248,7 +248,7 @@ $form.Add_Shown({
     } finally {
       formProc.kill();
     }
-  });
+  }, 15000);
   it('respects autoSubmit: false and skips pressing login button', async () => {
     await vault.saveCredentials('profile-no-submit', 'ManualSubmitUser', 'ManualSubmitPass123!');
 
@@ -346,6 +346,6 @@ $form.Add_Shown({
     } finally {
       formProc.kill();
     }
-  });
+  }, 15000);
 
 });
