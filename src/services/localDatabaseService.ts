@@ -1083,6 +1083,53 @@ export class LocalDatabaseService {
     }
     return null;
   }
+
+  // Modular Installer & Optional Features Gating
+  public async getFeaturesManifest(): Promise<import('../shared/types/features').InstalledFeaturesManifest | null> {
+    if (window.maswitch?.features?.getManifest) {
+      try {
+        return await window.maswitch.features.getManifest();
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }
+
+  public async setFeatureEnabled(
+    featureId: import('../shared/types/features').OptionalFeatureId,
+    enabled: boolean
+  ): Promise<import('../shared/types/features').InstalledFeaturesManifest> {
+    if (window.maswitch?.features?.setEnabled) {
+      return await window.maswitch.features.setEnabled(featureId, enabled);
+    }
+    throw new Error('Desktop features bridge unavailable');
+  }
+
+  public async applyPreset(
+    presetId: import('../shared/types/features').InstallPresetId
+  ): Promise<import('../shared/types/features').InstalledFeaturesManifest> {
+    if (window.maswitch?.features?.applyPreset) {
+      return await window.maswitch.features.applyPreset(presetId);
+    }
+    throw new Error('Desktop features bridge unavailable');
+  }
+
+  public async launchInstallerModify(): Promise<{ success: boolean; message?: string }> {
+    if (window.maswitch?.features?.launchModify) {
+      return await window.maswitch.features.launchModify();
+    }
+    return { success: false, message: 'Desktop features bridge unavailable' };
+  }
+
+  public onFeaturesUpdated(
+    callback: (manifest: import('../shared/types/features').InstalledFeaturesManifest) => void
+  ): () => void {
+    if (window.maswitch?.features?.onFeaturesUpdated) {
+      return window.maswitch.features.onFeaturesUpdated(callback);
+    }
+    return () => {};
+  }
 }
 
 export const localDatabaseService = new LocalDatabaseService();

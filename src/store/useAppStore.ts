@@ -71,6 +71,15 @@ import type {
   BackupValidationResult,
   RestoreResult,
 } from '../shared/types/backup';
+import type {
+  InstalledFeaturesManifest,
+  InstallPresetId,
+  OptionalFeatureId,
+} from '../shared/types/features';
+import {
+  OPTIONAL_FEATURES_METADATA,
+  PRESET_CONFIGURATIONS,
+} from '../shared/types/features';
 import { sanitizeSettings } from '../shared/validation/settingsValidator';
 import { accountManagerService } from '../services/accountManagerService';
 import { gameLauncherService } from '../services/gameLauncherService';
@@ -297,6 +306,16 @@ export interface AppStoreState {
   validateBackupFile: (filePath: string) => Promise<BackupValidationResult | null>;
   restoreBackupFile: (filePath: string) => Promise<RestoreResult>;
   clearBackupFeedback: () => void;
+
+  // Modular Features & Installer Gating
+  featuresManifest: InstalledFeaturesManifest | null;
+  featuresLoading: boolean;
+  featuresFeedback: { type: 'success' | 'error'; message: string } | null;
+  loadFeaturesManifest: () => Promise<void>;
+  setFeatureEnabled: (featureId: OptionalFeatureId, enabled: boolean) => Promise<boolean>;
+  applyInstallPreset: (presetId: InstallPresetId) => Promise<boolean>;
+  launchInstallerModify: () => Promise<{ success: boolean; message?: string }>;
+  clearFeaturesFeedback: () => void;
 }
 
 const initialSettings = localDatabaseService.readCachedSettings();
@@ -439,6 +458,11 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
   backupFeedback: null,
   isWindowVisible: true,
 
+  // Modular Features & Installer Gating
+  featuresManifest: null,
+  featuresLoading: false,
+  featuresFeedback: null,
+
   setInGameMode: (inGame: boolean, activeGameCount: number) => {
     set({ inGameMode: inGame, activeGameCount });
   },
@@ -523,7 +547,12 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
       launcherStatuses,
       gameAccountAssociations: activeAssociations,
       accountProfiles: activeAccounts,
+      featuresManifest: await localDatabaseService.getFeaturesManifest(),
       isHydrated: true,
+    });
+
+    localDatabaseService.onFeaturesUpdated((manifest) => {
+      set({ featuresManifest: manifest });
     });
 
     localDatabaseService.onSteamGridDbSyncProgress((progress) => {
@@ -1842,4 +1871,95 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
   },
 
   clearBackupFeedback: () => set({ backupFeedback: null }),
+
+  // Modular Features & Installer Gating Actions
+  loadFeaturesManifest: async () => {
+    set({ featuresLoading: true });
+    try {
+      const manifest = await localDatabaseService.getFeaturesManifest();
+      set({ featuresManifest: manifest, featuresLoading: false });
+    } catch {
+      set({ featuresLoading: false });
+    }
+  },
+
+  setFeatureEnabled: async (featureId, enabled) => {
+    set({ featuresLoading: true, featuresFeedback: null });
+    try {
+      const manifest = await localDatabaseService.setFeatureEnabled(featureId, enabled);
+      set({
+        featuresManifest: manifest,
+        featuresLoading: false,
+        featuresFeedback: {
+          type: 'success',
+          message: `Feature "${OPTIONAL_FEATURES_METADATA[featureId]?.name ?? featureId}" ${enabled ? 'enabled' : 'disabled'} successfully.`,
+        },
+      });
+      return true;
+    } catch (err) {
+      set({
+        featuresLoading: false,
+        featuresFeedback: {
+          type: 'error',
+          message: err instanceof Error ? err.message : String(err),
+        },
+      });
+      return false;
+    }
+  },
+
+  applyInstallPreset: async (presetId) => {
+    set({ featuresLoading: true, featuresFeedback: null });
+    try {
+      const preset = PRESET_CONFIGURATIONS[presetId];
+      if (!preset) return false;
+      const manifest = await localDatabaseService.applyPreset(presetId);
+      set({
+        featuresManifest: manifest,
+        featuresLoading: false,
+        featuresFeedback: {
+          type: 'success',
+          message: `Preset "${preset.name}" applied successfully.`,
+        },
+      });
+      return true;
+    } catch (err) {
+      set({
+        featuresLoading: false,
+        featuresFeedback: {
+          type: 'error',
+          message: `Failed to apply preset: ${err instanceof Error ? err.message : String(err)}`,
+        },
+      });
+      return false;
+    }
+  },
+
+  launchInstallerModify: async () => {
+    set({ featuresLoading: true, featuresFeedback: null });
+    try {
+      const res = await localDatabaseService.launchInstallerModify();
+      set({ featuresLoading: false });
+      if (!res.success) {
+        set({
+          featuresFeedback: {
+            type: 'error',
+            message: res.message ?? 'Installer setup executable not found.',
+          },
+        });
+      }
+      return res;
+    } catch (err) {
+      set({
+        featuresLoading: false,
+        featuresFeedback: {
+          type: 'error',
+          message: err instanceof Error ? err.message : String(err),
+        },
+      });
+      return { success: false, message: String(err) };
+    }
+  },
+
+  clearFeaturesFeedback: () => set({ featuresFeedback: null }),
 }));

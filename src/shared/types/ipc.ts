@@ -154,6 +154,13 @@ export const IPC_CHANNELS = {
   BACKUP_GET_INFO: 'maswitch:backup:get-info',
   BACKUP_SELECT_FILE: 'maswitch:backup:select-file',
   BACKUP_SELECT_DESTINATION: 'maswitch:backup:select-destination',
+
+  // MaSwitch 3.0: Modular Installer & Feature Gating
+  FEATURES_GET_MANIFEST: 'maswitch:features:get-manifest',
+  FEATURES_SET_ENABLED: 'maswitch:features:set-enabled',
+  FEATURES_APPLY_PRESET: 'maswitch:features:apply-preset',
+  FEATURES_LAUNCH_MODIFY: 'maswitch:features:launch-modify',
+  FEATURES_UPDATED_EVENT: 'maswitch:features:updated',
 } as const;
 
 export type AllowedIpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];
@@ -373,6 +380,13 @@ export interface MaSwitchBridge {
     restore: (filePath: string) => Promise<import('./backup').RestoreResult>;
     selectFile: () => Promise<string | null>;
     selectDestination: () => Promise<string | null>;
+  };
+  features?: {
+    getManifest: () => Promise<import('./features').InstalledFeaturesManifest>;
+    setEnabled: (featureId: import('./features').OptionalFeatureId, enabled: boolean) => Promise<import('./features').InstalledFeaturesManifest>;
+    applyPreset: (presetId: import('./features').InstallPresetId) => Promise<import('./features').InstalledFeaturesManifest>;
+    launchModify: () => Promise<{ success: boolean; message?: string }>;
+    onFeaturesUpdated: (callback: (manifest: import('./features').InstalledFeaturesManifest) => void) => () => void;
   };
 }
 

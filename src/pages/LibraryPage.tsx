@@ -94,6 +94,10 @@ export const LibraryPage: React.FC = () => {
   const [copiedPath, setCopiedPath] = useState(false);
   const [librarySubView, setLibrarySubView] = useState<'games' | 'collections'>('games');
   const loadCollections = useAppStore((s) => s.loadCollections);
+  const featuresManifest = useAppStore((s) => s.featuresManifest);
+  const isCollectionsEnabled = featuresManifest
+    ? Boolean(featuresManifest.features.smartCollections?.enabled)
+    : true;
 
   const setSearchQuery = useAppStore((s) => s.setSearchQuery);
   const setPlatformFilter = useAppStore((s) => s.setPlatformFilter);
@@ -308,39 +312,41 @@ export const LibraryPage: React.FC = () => {
       </div>
 
       {/* Sub-view switcher: All Games vs Smart Collections */}
-      <div className="flex items-center gap-2 border-b border-ms-border/40 pb-2">
-        <button
-          type="button"
-          data-testid="library-tab-games"
-          onClick={() => setLibrarySubView('games')}
-          className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
-            librarySubView === 'games'
-              ? 'bg-violet-600 text-white shadow-sm'
-              : 'text-ms-muted hover:text-ms-text hover:bg-ms-card'
-          }`}
-        >
-          <LayoutGrid className="w-3.5 h-3.5" />
-          <span>All Games ({games.length})</span>
-        </button>
-        <button
-          type="button"
-          data-testid="library-tab-collections"
-          onClick={() => {
-            setLibrarySubView('collections');
-            void loadCollections();
-          }}
-          className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
-            librarySubView === 'collections'
-              ? 'bg-violet-600 text-white shadow-sm'
-              : 'text-ms-muted hover:text-ms-text hover:bg-ms-card'
-          }`}
-        >
-          <FolderOpen className="w-3.5 h-3.5" />
-          <span>Collections</span>
-        </button>
-      </div>
+      {isCollectionsEnabled && (
+        <div className="flex items-center gap-2 border-b border-ms-border/40 pb-2">
+          <button
+            type="button"
+            data-testid="library-tab-games"
+            onClick={() => setLibrarySubView('games')}
+            className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
+              librarySubView === 'games'
+                ? 'bg-violet-600 text-white shadow-sm'
+                : 'text-ms-muted hover:text-ms-text hover:bg-ms-card'
+            }`}
+          >
+            <LayoutGrid className="w-3.5 h-3.5" />
+            <span>All Games ({games.length})</span>
+          </button>
+          <button
+            type="button"
+            data-testid="library-tab-collections"
+            onClick={() => {
+              setLibrarySubView('collections');
+              void loadCollections();
+            }}
+            className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
+              librarySubView === 'collections'
+                ? 'bg-violet-600 text-white shadow-sm'
+                : 'text-ms-muted hover:text-ms-text hover:bg-ms-card'
+            }`}
+          >
+            <FolderOpen className="w-3.5 h-3.5" />
+            <span>Collections</span>
+          </button>
+        </div>
+      )}
 
-      {librarySubView === 'collections' ? (
+      {isCollectionsEnabled && librarySubView === 'collections' ? (
         <CollectionsManager />
       ) : (
         <>

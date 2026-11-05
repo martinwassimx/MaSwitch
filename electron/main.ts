@@ -31,6 +31,7 @@ import { AccountSwitcherService, createWindowsAccountLauncherAdapter } from './s
 import { createProductionRiotLiveSwitchingEngine } from './services/accounts/riotProductionAdapters';
 import { RiotCredentialVault } from './services/accounts/riotCredentialVault';
 import { RiotDesktopLoginAutomationService } from './services/accounts/riotDesktopLoginAutomation';
+import { InstalledFeaturesManager } from './services/features/installedFeaturesManager';
 
 // Register privileged custom scheme for streaming local artwork & extracted icons
 protocol.registerSchemesAsPrivileged([
@@ -646,6 +647,8 @@ app.whenReady().then(() => {
     riotLiveServices?.processCoordinator
   );
 
+  const installedFeaturesManager = new InstalledFeaturesManager();
+
   registerIpcHandlers(
     () => mainWindow,
     {
@@ -663,6 +666,7 @@ app.whenReady().then(() => {
       riotLiveServices,
       riotCredentialVault,
       riotDesktopLoginAutomation,
+      installedFeaturesManager,
       onRequestWindowClose: () => {
         if (!mainWindow || mainWindow.isDestroyed()) {
           return;

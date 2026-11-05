@@ -44,8 +44,10 @@ import { RiotDesktopLoginAutomationService } from '../services/accounts/riotDesk
 import { PerformanceMonitorService } from '../services/performanceMonitorService';
 import { NewsService } from '../services/newsService';
 import { BackupService } from '../services/backupService';
+import { InstalledFeaturesManager } from '../services/features/installedFeaturesManager';
 import type { CreateCollectionInput, UpdateCollectionInput } from '../../src/shared/types/collection';
 import type { PerformanceMonitoringConfig } from '../../src/shared/types/performance';
+import type { OptionalFeatureId, InstallPresetId } from '../../src/shared/types/features';
 
 export function assertTrustedSender(
   event: IpcMainInvokeEvent,
@@ -103,6 +105,7 @@ export interface MainServicesContainer {
   performanceMonitorService?: PerformanceMonitorService;
   newsService?: NewsService;
   backupService?: BackupService;
+  installedFeaturesManager?: InstalledFeaturesManager;
   riotLiveServices?: {
     engine: RiotLiveSwitchingEngine;
     vault: RiotWindowsSessionVault;
@@ -126,25 +129,64 @@ export function registerIpcHandlers(
     accountSwitcherService,
   } = services;
 
-  const perfService =
-    services.performanceMonitorService ??
-    new PerformanceMonitorService({
-      trackerEngine,
-      getLowEndMode: () => settingsStore.load().lowEndPcMode ?? false,
-      getWindow: getMainWindow,
-    });
+  const featuresManager =
+    services.installedFeaturesManager ??
+    new InstalledFeaturesManager();
 
-  const newsService = services.newsService ?? new NewsService();
+  featuresManager.onUpdated((manifest) => {
+    const win = getMainWindow();
+    if (win && !win.isDestroyed()) {
+      win.webContents.send(IPC_CHANNELS.FEATURES_UPDATED_EVENT, manifest);
+    }
+  });
 
-  const backupService =
-    services.backupService ??
-    new BackupService(
-      sqliteDb,
-      () => settingsStore.load(),
-      async (s) => {
-        settingsStore.save(s);
-      }
-    );
+  // Gated service initializers to ensure ZERO background overhead when features are unselected/disabled
+  let perfService: PerformanceMonitorService | null = null;
+  const getPerfService = () => {
+    if (!featuresManager.isFeatureEnabled('performanceMonitor')) {
+      return null;
+    }
+    if (!perfService) {
+      perfService =
+        services.performanceMonitorService ??
+        new PerformanceMonitorService({
+          trackerEngine,
+          getLowEndMode: () => settingsStore.load().lowEndPcMode ?? false,
+          getWindow: getMainWindow,
+        });
+    }
+    return perfService;
+  };
+
+  let newsService: NewsService | null = null;
+  const getNewsService = () => {
+    if (!featuresManager.isFeatureEnabled('gameNews')) {
+      return null;
+    }
+    if (!newsService) {
+      newsService = services.newsService ?? new NewsService();
+    }
+    return newsService;
+  };
+
+  let backupService: BackupService | null = null;
+  const getBackupService = () => {
+    if (!featuresManager.isFeatureEnabled('backupRestore')) {
+      return null;
+    }
+    if (!backupService) {
+      backupService =
+        services.backupService ??
+        new BackupService(
+          sqliteDb,
+          () => settingsStore.load(),
+          async (s) => {
+            settingsStore.save(s);
+          }
+        );
+    }
+    return backupService;
+  };
 
   // Window Controls
   ipcMain.handle(IPC_CHANNELS.WINDOW_MINIMIZE, (event) => {
@@ -1280,11 +1322,32 @@ export function registerIpcHandlers(
   // 1. Feature 1: Year in Review Handlers
   ipcMain.handle(IPC_CHANNELS.STATISTICS_GET_AVAILABLE_YEARS, (event) => {
     assertTrustedSender(event, getMainWindow, devServerUrl);
+    if (!featuresManager.isFeatureEnabled('yearInReview')) {
+      return [new Date().getFullYear()];
+    }
     return sqliteDb.getAvailableYears();
   });
 
   ipcMain.handle(IPC_CHANNELS.STATISTICS_GET_YEAR_IN_REVIEW, (event, year?: number) => {
     assertTrustedSender(event, getMainWindow, devServerUrl);
+    if (!featuresManager.isFeatureEnabled('yearInReview')) {
+      return {
+        year: year ?? new Date().getFullYear(),
+        totalGamingHours: 0,
+        totalSessions: 0,
+        uniqueGamesCount: 0,
+        averageSessionMinutes: 0,
+        topGames: [],
+        mostActiveMonth: null,
+        mostActiveDayOfWeek: null,
+        longestSession: null,
+        monthlyPlaytime: [],
+        dayOfWeekPlaytime: [],
+        activityCalendar: [],
+        comparison: null,
+        hasData: false,
+      };
+    }
     const exclusions = getHistoricalExclusionSets();
     return sqliteDb.getYearInReview(year, exclusions);
   });
@@ -1292,6 +1355,9 @@ export function registerIpcHandlers(
   // 2. Feature 2: Smart Collections Handlers
   ipcMain.handle(IPC_CHANNELS.COLLECTIONS_GET_ALL, (event) => {
     assertTrustedSender(event, getMainWindow, devServerUrl);
+    if (!featuresManager.isFeatureEnabled('smartCollections')) {
+      return [];
+    }
     const games = sqliteDb.getAllLibraryGames(undefined, 'all');
     const settings = settingsStore.load();
     return sqliteDb.getCollections(games, settings.favoriteGameIds ?? []);
@@ -1299,6 +1365,9 @@ export function registerIpcHandlers(
 
   ipcMain.handle(IPC_CHANNELS.COLLECTIONS_CREATE, (event, input: CreateCollectionInput) => {
     assertTrustedSender(event, getMainWindow, devServerUrl);
+    if (!featuresManager.isFeatureEnabled('smartCollections')) {
+      throw new Error('Feature "Smart Game Collections" is not enabled in this installation.');
+    }
     const created = sqliteDb.createCollection(input);
     const win = getMainWindow();
     if (win && !win.isDestroyed()) {
@@ -1309,6 +1378,9 @@ export function registerIpcHandlers(
 
   ipcMain.handle(IPC_CHANNELS.COLLECTIONS_UPDATE, (event, input: UpdateCollectionInput) => {
     assertTrustedSender(event, getMainWindow, devServerUrl);
+    if (!featuresManager.isFeatureEnabled('smartCollections')) {
+      throw new Error('Feature "Smart Game Collections" is not enabled in this installation.');
+    }
     const updated = sqliteDb.updateCollection(input);
     const win = getMainWindow();
     if (win && !win.isDestroyed()) {
@@ -1319,6 +1391,9 @@ export function registerIpcHandlers(
 
   ipcMain.handle(IPC_CHANNELS.COLLECTIONS_DELETE, (event, id: string) => {
     assertTrustedSender(event, getMainWindow, devServerUrl);
+    if (!featuresManager.isFeatureEnabled('smartCollections')) {
+      throw new Error('Feature "Smart Game Collections" is not enabled in this installation.');
+    }
     const res = sqliteDb.deleteCollection(id);
     const win = getMainWindow();
     if (win && !win.isDestroyed()) {
@@ -1329,6 +1404,9 @@ export function registerIpcHandlers(
 
   ipcMain.handle(IPC_CHANNELS.COLLECTIONS_ADD_GAME, (event, collectionId: string, gameId: string) => {
     assertTrustedSender(event, getMainWindow, devServerUrl);
+    if (!featuresManager.isFeatureEnabled('smartCollections')) {
+      throw new Error('Feature "Smart Game Collections" is not enabled in this installation.');
+    }
     const res = sqliteDb.addGameToCollection(collectionId, gameId);
     const win = getMainWindow();
     if (win && !win.isDestroyed()) {
@@ -1339,6 +1417,9 @@ export function registerIpcHandlers(
 
   ipcMain.handle(IPC_CHANNELS.COLLECTIONS_REMOVE_GAME, (event, collectionId: string, gameId: string) => {
     assertTrustedSender(event, getMainWindow, devServerUrl);
+    if (!featuresManager.isFeatureEnabled('smartCollections')) {
+      throw new Error('Feature "Smart Game Collections" is not enabled in this installation.');
+    }
     const res = sqliteDb.removeGameFromCollection(collectionId, gameId);
     const win = getMainWindow();
     if (win && !win.isDestroyed()) {
@@ -1349,6 +1430,9 @@ export function registerIpcHandlers(
 
   ipcMain.handle(IPC_CHANNELS.COLLECTIONS_SET_GAME_ORDER, (event, collectionId: string, gameIds: string[]) => {
     assertTrustedSender(event, getMainWindow, devServerUrl);
+    if (!featuresManager.isFeatureEnabled('smartCollections')) {
+      throw new Error('Feature "Smart Game Collections" is not enabled in this installation.');
+    }
     const res = sqliteDb.setCollectionGameOrder(collectionId, gameIds);
     const win = getMainWindow();
     if (win && !win.isDestroyed()) {
@@ -1360,20 +1444,36 @@ export function registerIpcHandlers(
   // 3. Feature 3: Performance Monitor Handlers
   ipcMain.handle(IPC_CHANNELS.PERFORMANCE_GET_METRICS, (event) => {
     assertTrustedSender(event, getMainWindow, devServerUrl);
-    return perfService.getCurrentMetrics();
+    const svc = getPerfService();
+    if (!svc) {
+      throw new Error('Feature "Lightweight Performance Monitor" is not enabled in this installation.');
+    }
+    return svc.getCurrentMetrics();
   });
 
   ipcMain.handle(IPC_CHANNELS.PERFORMANCE_SET_MONITORING_ACTIVE, (event, config: Partial<PerformanceMonitoringConfig>) => {
     assertTrustedSender(event, getMainWindow, devServerUrl);
-    perfService.setMonitoringConfig(config);
-    return perfService.isMonitoringActive();
+    const svc = getPerfService();
+    if (!svc) return false;
+    svc.setMonitoringConfig(config);
+    return svc.isMonitoringActive();
   });
 
   // 4. Feature 4: Game Updates & News Handlers
   ipcMain.handle(IPC_CHANNELS.NEWS_GET_LIBRARY_NEWS, async (event, options?: { forceRefresh?: boolean; gameId?: string; platformId?: string }) => {
     assertTrustedSender(event, getMainWindow, devServerUrl);
+    const svc = getNewsService();
+    if (!svc) {
+      return {
+        articles: [],
+        lastUpdatedIso: new Date().toISOString(),
+        supportedGamesCount: 0,
+        unsupportedGamesCount: 0,
+        isOffline: true,
+      };
+    }
     const games = sqliteDb.getAllLibraryGames(undefined, 'visible-only');
-    return await newsService.getLibraryNews(games, options);
+    return await svc.getLibraryNews(games, options);
   });
 
   ipcMain.handle(IPC_CHANNELS.NEWS_OPEN_EXTERNAL_LINK, async (event, url: string) => {
@@ -1388,22 +1488,43 @@ export function registerIpcHandlers(
   // 5. Feature 5: Backup & Restore Handlers
   ipcMain.handle(IPC_CHANNELS.BACKUP_GET_INFO, (event) => {
     assertTrustedSender(event, getMainWindow, devServerUrl);
-    return backupService.getBackupInfo();
+    const svc = getBackupService();
+    if (!svc) {
+      return {
+        lastBackupIso: null,
+        lastBackupPath: null,
+        backupsCount: 0,
+        defaultBackupDir: '',
+      };
+    }
+    return svc.getBackupInfo();
   });
 
   ipcMain.handle(IPC_CHANNELS.BACKUP_CREATE, async (event, customPath?: string) => {
     assertTrustedSender(event, getMainWindow, devServerUrl);
-    return await backupService.createBackup(customPath);
+    const svc = getBackupService();
+    if (!svc) {
+      throw new Error('Feature "Backup & Restore" is not enabled in this installation.');
+    }
+    return await svc.createBackup(customPath);
   });
 
   ipcMain.handle(IPC_CHANNELS.BACKUP_VALIDATE, (event, filePath: string) => {
     assertTrustedSender(event, getMainWindow, devServerUrl);
-    return backupService.validateBackup(filePath);
+    const svc = getBackupService();
+    if (!svc) {
+      return { valid: false, filePath, fileSizeBytes: 0, error: 'Feature "Backup & Restore" is disabled.' };
+    }
+    return svc.validateBackup(filePath);
   });
 
   ipcMain.handle(IPC_CHANNELS.BACKUP_RESTORE, async (event, filePath: string) => {
     assertTrustedSender(event, getMainWindow, devServerUrl);
-    return await backupService.restoreBackup(filePath);
+    const svc = getBackupService();
+    if (!svc) {
+      return { success: false, error: 'Feature "Backup & Restore" is disabled.' };
+    }
+    return await svc.restoreBackup(filePath);
   });
 
   ipcMain.handle(IPC_CHANNELS.BACKUP_SELECT_FILE, async (event) => {
@@ -1426,5 +1547,42 @@ export function registerIpcHandlers(
     });
     if (res.canceled || !res.filePath) return null;
     return res.filePath;
+  });
+
+  // 6. Modular Features & Installer Management Handlers
+  ipcMain.handle(IPC_CHANNELS.FEATURES_GET_MANIFEST, (event) => {
+    assertTrustedSender(event, getMainWindow, devServerUrl);
+    return featuresManager.getManifest();
+  });
+
+  ipcMain.handle(
+    IPC_CHANNELS.FEATURES_SET_ENABLED,
+    async (event, featureId: OptionalFeatureId, enabled: boolean) => {
+      assertTrustedSender(event, getMainWindow, devServerUrl);
+      const updated = await featuresManager.setFeatureEnabled(featureId, enabled);
+      if (featureId === 'performanceMonitor' && !enabled && perfService) {
+        perfService.destroy();
+        perfService = null;
+      }
+      return updated;
+    }
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.FEATURES_APPLY_PRESET,
+    async (event, presetId: InstallPresetId) => {
+      assertTrustedSender(event, getMainWindow, devServerUrl);
+      const updated = await featuresManager.applyPreset(presetId);
+      if (!featuresManager.isFeatureEnabled('performanceMonitor') && perfService) {
+        perfService.destroy();
+        perfService = null;
+      }
+      return updated;
+    }
+  );
+
+  ipcMain.handle(IPC_CHANNELS.FEATURES_LAUNCH_MODIFY, async (event) => {
+    assertTrustedSender(event, getMainWindow, devServerUrl);
+    return await featuresManager.launchInstallerModify();
   });
 }

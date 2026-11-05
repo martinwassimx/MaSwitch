@@ -29,6 +29,14 @@ export const Sidebar: React.FC = () => {
   const games = useAppStore((s) => s.games);
   const settings = useAppStore((s) => s.settings);
   const updateSettings = useAppStore((s) => s.updateSettings);
+  const featuresManifest = useAppStore((s) => s.featuresManifest);
+
+  const isPerfEnabled = featuresManifest
+    ? Boolean(featuresManifest.features.performanceMonitor?.enabled)
+    : true;
+  const isNewsEnabled = featuresManifest
+    ? Boolean(featuresManifest.features.gameNews?.enabled)
+    : true;
 
   const navItems: NavItemConfig[] = [
     { id: 'home', label: 'Home', icon: Home },
@@ -36,8 +44,12 @@ export const Sidebar: React.FC = () => {
     { id: 'accounts', label: 'Accounts', icon: Users },
     { id: 'platforms', label: 'Platforms', icon: Layers },
     { id: 'statistics', label: 'Statistics', icon: BarChart3 },
-    { id: 'performance', label: 'Performance', icon: Gauge },
-    { id: 'news', label: 'Game News', icon: Newspaper },
+    ...(isPerfEnabled
+      ? [{ id: 'performance' as const, label: 'Performance', icon: Gauge }]
+      : []),
+    ...(isNewsEnabled
+      ? [{ id: 'news' as const, label: 'Game News', icon: Newspaper }]
+      : []),
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
 

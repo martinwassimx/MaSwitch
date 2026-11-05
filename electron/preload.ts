@@ -130,6 +130,13 @@ const IPC_CHANNELS = {
   BACKUP_GET_INFO: 'maswitch:backup:get-info',
   BACKUP_SELECT_FILE: 'maswitch:backup:select-file',
   BACKUP_SELECT_DESTINATION: 'maswitch:backup:select-destination',
+
+  // MaSwitch 3.0: Modular Installer & Feature Gating
+  FEATURES_GET_MANIFEST: 'maswitch:features:get-manifest',
+  FEATURES_SET_ENABLED: 'maswitch:features:set-enabled',
+  FEATURES_APPLY_PRESET: 'maswitch:features:apply-preset',
+  FEATURES_LAUNCH_MODIFY: 'maswitch:features:launch-modify',
+  FEATURES_UPDATED_EVENT: 'maswitch:features:updated',
 } as const;
 
 const bridge: MaSwitchBridge = {
@@ -494,6 +501,23 @@ const bridge: MaSwitchBridge = {
     restore: (filePath) => ipcRenderer.invoke(IPC_CHANNELS.BACKUP_RESTORE, filePath),
     selectFile: () => ipcRenderer.invoke(IPC_CHANNELS.BACKUP_SELECT_FILE),
     selectDestination: () => ipcRenderer.invoke(IPC_CHANNELS.BACKUP_SELECT_DESTINATION),
+  },
+  features: {
+    getManifest: () => ipcRenderer.invoke(IPC_CHANNELS.FEATURES_GET_MANIFEST),
+    setEnabled: (featureId, enabled) => ipcRenderer.invoke(IPC_CHANNELS.FEATURES_SET_ENABLED, featureId, enabled),
+    applyPreset: (presetId) => ipcRenderer.invoke(IPC_CHANNELS.FEATURES_APPLY_PRESET, presetId),
+    launchModify: () => ipcRenderer.invoke(IPC_CHANNELS.FEATURES_LAUNCH_MODIFY),
+    onFeaturesUpdated: (callback) => {
+      const listener = (_event: IpcRendererEvent, manifest: import('../src/shared/types/features').InstalledFeaturesManifest) => {
+        if (manifest && typeof manifest === 'object') {
+          callback(manifest);
+        }
+      };
+      ipcRenderer.on(IPC_CHANNELS.FEATURES_UPDATED_EVENT, listener);
+      return () => {
+        ipcRenderer.removeListener(IPC_CHANNELS.FEATURES_UPDATED_EVENT, listener);
+      };
+    },
   },
 };
 

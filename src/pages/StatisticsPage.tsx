@@ -15,6 +15,10 @@ export const StatisticsPage: React.FC = () => {
   const setTrackerPaused = useAppStore((s) => s.setTrackerPaused);
 
   const [subView, setSubView] = useState<'overview' | 'yearInReview'>('overview');
+  const featuresManifest = useAppStore((s) => s.featuresManifest);
+  const isYearInReviewEnabled = featuresManifest
+    ? Boolean(featuresManifest.features.yearInReview?.enabled)
+    : true;
   const [chartView, setChartView] = useState<'weekly' | 'monthly'>('weekly');
 
   const mostPlayedGames = [...games]
@@ -88,36 +92,38 @@ export const StatisticsPage: React.FC = () => {
       </div>
 
       {/* Sub-navigation Tabs */}
-      <div className="flex items-center gap-2 border-b border-ms-border/40 pb-2">
-        <button
-          type="button"
-          data-testid="stats-tab-overview"
-          onClick={() => setSubView('overview')}
-          className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
-            subView === 'overview'
-              ? 'bg-violet-600 text-white shadow-sm'
-              : 'text-ms-muted hover:text-ms-text hover:bg-ms-card'
-          }`}
-        >
-          <BarChart2 className="w-3.5 h-3.5" />
-          <span>Telemetry Overview</span>
-        </button>
-        <button
-          type="button"
-          data-testid="stats-tab-year-in-review"
-          onClick={() => setSubView('yearInReview')}
-          className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
-            subView === 'yearInReview'
-              ? 'bg-violet-600 text-white shadow-sm'
-              : 'text-ms-muted hover:text-ms-text hover:bg-ms-card'
-          }`}
-        >
-          <Sparkles className="w-3.5 h-3.5" />
-          <span>Year in Review</span>
-        </button>
-      </div>
+      {isYearInReviewEnabled && (
+        <div className="flex items-center gap-2 border-b border-ms-border/40 pb-2">
+          <button
+            type="button"
+            data-testid="stats-tab-overview"
+            onClick={() => setSubView('overview')}
+            className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
+              subView === 'overview'
+                ? 'bg-violet-600 text-white shadow-sm'
+                : 'text-ms-muted hover:text-ms-text hover:bg-ms-card'
+            }`}
+          >
+            <BarChart2 className="w-3.5 h-3.5" />
+            <span>Telemetry Overview</span>
+          </button>
+          <button
+            type="button"
+            data-testid="stats-tab-year-in-review"
+            onClick={() => setSubView('yearInReview')}
+            className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
+              subView === 'yearInReview'
+                ? 'bg-violet-600 text-white shadow-sm'
+                : 'text-ms-muted hover:text-ms-text hover:bg-ms-card'
+            }`}
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>Year in Review</span>
+          </button>
+        </div>
+      )}
 
-      {subView === 'yearInReview' ? (
+      {isYearInReviewEnabled && subView === 'yearInReview' ? (
         <YearInReviewPage />
       ) : (
         <>
