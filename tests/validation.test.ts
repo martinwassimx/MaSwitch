@@ -30,9 +30,17 @@ describe('Electron Security & Settings Validation', () => {
   });
 
   it('validates trusted renderer sender URLs strictly', () => {
-    expect(isTrustedRendererUrl('file:///C:/MaSwitch/dist/index.html')).toBe(
-      true
-    );
+    const indexUrl = 'file:///C:/Program%20Files/MaSwitch/resources/app.asar/dist/index.html';
+    expect(isTrustedRendererUrl(indexUrl, undefined, indexUrl)).toBe(true);
+    expect(
+      isTrustedRendererUrl('file:///c:/program files/MaSwitch/resources/app.asar/dist/index.html#/library', undefined, indexUrl)
+    ).toBe(true);
+    expect(isTrustedRendererUrl('file:///C:/Users/victim/Downloads/evil.html', undefined, indexUrl)).toBe(false);
+    expect(isTrustedRendererUrl('file://attacker-share/MaSwitch/resources/app.asar/dist/index.html', undefined, indexUrl)).toBe(false);
+    expect(isTrustedRendererUrl('file:///C:/MaSwitch/dist/index.html', undefined, null)).toBe(false);
+    expect(
+      isTrustedRendererUrl('file:///C:/MaSwitch/dist/index.html', 'http://localhost:5173', null)
+    ).toBe(false);
     expect(
       isTrustedRendererUrl('http://localhost:5173/', 'http://localhost:5173')
     ).toBe(true);

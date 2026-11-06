@@ -2,6 +2,7 @@ delete process.env.ELECTRON_RUN_AS_NODE;
 import fs from 'node:fs';
 import path from 'node:path';
 import { Readable } from 'node:stream';
+import { pathToFileURL } from 'node:url';
 import {
   app,
   BrowserWindow,
@@ -12,7 +13,7 @@ import {
   shell,
 } from 'electron';
 import { IPC_CHANNELS } from '../src/shared/types/ipc';
-import { isTrustedRendererUrl } from '../src/shared/validation/settingsValidator';
+import { isTrustedRendererUrl, setTrustedRendererFileUrl } from '../src/shared/validation/settingsValidator';
 import {
   getWindowStatePayload,
   registerIpcHandlers,
@@ -72,7 +73,8 @@ if (process.platform === 'win32') {
   app.setAppUserModelId('com.maswitch.desktop');
 }
 
-if (!app.isPackaged) {
+if (!app.isPackaged && process.env.MASWITCH_REMOTE_DEBUGGING === '1') {
+  app.commandLine.appendSwitch('remote-debugging-address', '127.0.0.1');
   app.commandLine.appendSwitch('remote-debugging-port', '9222');
 }
 
@@ -140,7 +142,7 @@ function configureSecurityPolicies(): void {
   defaultSession.webRequest.onHeadersReceived((details, callback) => {
     const cspPolicy = DEV_SERVER_URL
       ? "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: maswitch-asset: https:; font-src 'self' data:; media-src 'self' data: blob: https:; connect-src 'self' maswitch-asset: https: ws://localhost:5173 http://localhost:5173; object-src 'none'; base-uri 'self'; form-action 'none';"
-      : "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: maswitch-asset: https:; font-src 'self' data:; media-src 'self' data: blob: https:; connect-src 'self' maswitch-asset: https:; object-src 'none'; base-uri 'self'; form-action 'none';";
+      : "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: maswitch-asset: https:; font-src 'self' data:; media-src 'self' data: blob: https:; connect-src 'self' maswitch-asset:; object-src 'none'; base-uri 'self'; form-action 'none'; frame-src 'none'; worker-src 'none';";
 
     callback({
       responseHeaders: {
@@ -240,6 +242,16 @@ function createMainWindow(
     }
   });
 
+  win.webContents.on('will-redirect', (event) => {
+    if (!isTrustedRendererUrl(event.url, DEV_SERVER_URL)) {
+      event.preventDefault();
+    }
+  });
+
+  win.webContents.on('will-attach-webview', (event) => {
+    event.preventDefault();
+  });
+
   // Intercept native window close to support minimize-to-tray when configured
   win.on('close', (event) => {
     if (isExplicitQuit || IS_SMOKE_TEST) {
@@ -302,8 +314,12 @@ function createMainWindow(
     logStartup(`did-fail-load: code ${errorCode}, desc: ${errorDescription}, url: ${validatedURL}`);
   });
 
-  win.webContents.on('console-message', (_event, level, message, line, sourceId) => {
-    logStartup(`[Renderer Console][lvl ${level}] ${message} (${sourceId}:${line})`);
+  win.webContents.on('console-message', (event) => {
+    if (event.level !== 'warning' && event.level !== 'error') {
+      return;
+    }
+    const message = String(event.message ?? '').slice(0, 500);
+    logStartup(`[Renderer Console][${event.level}] ${message} (${event.sourceId}:${event.lineNumber})`);
   });
 
   win.webContents.on('render-process-gone', (_event, details) => {
@@ -350,6 +366,7 @@ function createMainWindow(
       }
       return path.join(__dirname, '../../dist/index.html');
     })();
+    setTrustedRendererFileUrl(pathToFileURL(indexHtmlPath).href);
     void win.loadFile(indexHtmlPath);
   }
 

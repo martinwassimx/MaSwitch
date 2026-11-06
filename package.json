@@ -50,8 +50,8 @@
     "autoprefixer": "^10.4.20",
     "concurrently": "^9.1.0",
     "cross-env": "^7.0.3",
-    "electron": "^33.2.1",
-    "electron-builder": "^25.1.8",
+    "electron": "44.10.2",
+    "electron-builder": "26.18.0",
     "eslint": "^9.15.0",
     "eslint-plugin-react-hooks": "^5.0.0",
     "globals": "^15.12.0",
@@ -69,6 +69,15 @@
     "productName": "MaSwitch",
     "copyright": "Copyright © 2026 MaSwitch",
     "asar": true,
+    "electronFuses": {
+      "runAsNode": false,
+      "enableCookieEncryption": true,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "enableNodeCliInspectArguments": false,
+      "enableEmbeddedAsarIntegrityValidation": true,
+      "onlyLoadAppFromAsar": true,
+      "grantFileProtocolExtraPrivileges": true
+    },
     "asarUnpack": [
       "node_modules/node-sqlite3-wasm/**/*"
     ],

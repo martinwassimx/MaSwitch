@@ -571,6 +571,22 @@ const bridge: MaSwitchBridge = {
   },
 };
 
+interface DropEventLike {
+  preventDefault(): void;
+  dataTransfer?: { dropEffect: string } | null;
+}
+const rendererWindow = globalThis as unknown as {
+  addEventListener(type: 'dragover' | 'drop', listener: (event: DropEventLike) => void, capture: boolean): void;
+};
+const blockExternalDrop = (event: DropEventLike) => {
+  event.preventDefault();
+  if (event.dataTransfer) {
+    event.dataTransfer.dropEffect = 'none';
+  }
+};
+rendererWindow.addEventListener('dragover', blockExternalDrop, true);
+rendererWindow.addEventListener('drop', blockExternalDrop, true);
+
 try {
   contextBridge.exposeInMainWorld('maswitch', bridge);
 } catch (err) {

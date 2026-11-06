@@ -28,6 +28,7 @@ import { registerIpcHandlers, type MainServicesContainer } from '../electron/ipc
 import { IPC_CHANNELS } from '../src/shared/types/ipc';
 import { RiotCredentialVault } from '../electron/services/accounts/riotCredentialVault';
 import { RiotWindowsSessionVault } from '../electron/services/accounts/riotProductionAdapters';
+import { setTrustedRendererFileUrl } from '../src/shared/validation/settingsValidator';
 
 const PRELOAD_SOURCE = fs.readFileSync(path.join(__dirname, '../electron/preload.ts'), 'utf8');
 const SYNTHETIC_PASSWORD = 'Synthetic-IPC-Pass!42';
@@ -57,6 +58,7 @@ describe('Riot credential IPC isolation (MS-01, MS-02, MS-10)', () => {
 
   beforeEach(async () => {
     registered.clear();
+    setTrustedRendererFileUrl(trustedEvent.senderFrame.url);
     root = fs.mkdtempSync(path.join(os.tmpdir(), 'maswitch-ipc-'));
     vault = new RiotCredentialVault(path.join(root, 'creds'), {
       safeStorageOverride: null,
@@ -92,7 +94,18 @@ describe('Riot credential IPC isolation (MS-01, MS-02, MS-10)', () => {
   });
 
   afterEach(() => {
+    setTrustedRendererFileUrl(null);
     fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it('rejects IPC from a local file page other than the registered renderer', async () => {
+    const handler = registered.get(IPC_CHANNELS.ACCOUNTS_RIOT_GET_CREDENTIAL_STATUS);
+    expect(handler).toBeDefined();
+    const dropped = {
+      sender: { id: 1, getURL: () => 'file:///C:/Users/victim/Downloads/evil.html' },
+      senderFrame: { url: 'file:///C:/Users/victim/Downloads/evil.html' },
+    };
+    await expect(Promise.resolve().then(() => handler!(dropped, 'profile-1'))).rejects.toThrow(/Untrusted sender origin/);
   });
 
   it('exposes no channel or preload function that returns decrypted credentials', () => {

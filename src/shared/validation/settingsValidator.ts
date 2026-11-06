@@ -307,9 +307,21 @@ export function sanitizeSettings(
   };
 }
 
+let trustedRendererFileUrl: string | null = null;
+
+/** Registers the single local page (the packaged index.html) that may act as the renderer. */
+export function setTrustedRendererFileUrl(fileUrl: string | null): void {
+  trustedRendererFileUrl = fileUrl;
+}
+
+function normalizedFilePath(url: URL): string {
+  return decodeURIComponent(url.pathname).replace(/\\/g, '/').toLowerCase();
+}
+
 export function isTrustedRendererUrl(
   senderUrl: string | undefined,
-  devServerUrl?: string
+  devServerUrl?: string,
+  trustedFileUrl: string | null = trustedRendererFileUrl
 ): boolean {
   if (!senderUrl || typeof senderUrl !== 'string') {
     return false;
@@ -318,7 +330,15 @@ export function isTrustedRendererUrl(
   try {
     const parsed = new URL(senderUrl);
     if (parsed.protocol === 'file:') {
-      return true;
+      if (!trustedFileUrl) {
+        return false;
+      }
+      const trusted = new URL(trustedFileUrl);
+      return (
+        trusted.protocol === 'file:' &&
+        parsed.host === trusted.host &&
+        normalizedFilePath(parsed) === normalizedFilePath(trusted)
+      );
     }
     if (devServerUrl) {
       const devParsed = new URL(devServerUrl);

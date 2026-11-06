@@ -13,8 +13,8 @@ export default defineConfig({
             "script-src 'self';",
             "script-src 'self' 'unsafe-inline';"
           ).replace(
-            "connect-src 'self';",
-            "connect-src 'self' ws://localhost:5173 http://localhost:5173;"
+            "connect-src 'self' maswitch-asset:;",
+            "connect-src 'self' maswitch-asset: ws://localhost:5173 http://localhost:5173;"
           );
         }
         return html;
