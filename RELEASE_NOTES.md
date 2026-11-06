@@ -92,8 +92,8 @@ Account management is currently active exclusively for **Riot Games**. Multi-acc
 
 | Asset | Size | SHA-256 Checksum |
 | :--- | :--- | :--- |
-| `MaSwitch-Setup-1.0.4.exe` | `81.63 MB` (`85,599,147 bytes`) | `da0f64bb50449a51daeee087c49872000149c6ee032bb42040d7154e8ade92c5` |
-| `win-unpacked/MaSwitch.exe` | `180.08 MB` (`188,827,136 bytes`) | `b8fa97b1276aaa8c8df3bd6334e5b638f1ae5a8697a29beb046df89b33bb0fc5` |
+| `MaSwitch-Setup-1.0.4.exe` | `81.63 MB` (`85,600,313 bytes`) | `7f3a142ba1a9081fd54b93d0c76f16dacda9abeeb88622bb4c0521ec773af370` |
+| `win-unpacked/MaSwitch.exe` | `180.08 MB` (`188,827,136 bytes`) | `ee9d750bc3b88049a672ab8792836e0b399b99d00c037a5933dee2488260e197` |
 
 Verify in PowerShell:
 ```powershell

@@ -64,3 +64,4 @@ export interface UpdaterState {
   downloadedVersion: string | null;
   error: string | null;
 }
+

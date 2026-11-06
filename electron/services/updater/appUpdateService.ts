@@ -3,7 +3,7 @@ import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
-import semver from 'semver';
+import semver from './semverUtils';
 import type {
   UpdateChannel,
   UpdateCheckResult,

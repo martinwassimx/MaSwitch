@@ -95,3 +95,4 @@ export const UpdateBanner: React.FC = () => {
     </div>
   );
 };
+
