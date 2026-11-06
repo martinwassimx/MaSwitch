@@ -1,10 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import type { GameScreenshot, GameSystemRequirements } from '../../../src/shared/types/game';
-
-const execFileAsync = promisify(execFile);
 
 export interface ArtworkCacheStats {
   artworkCount: number;
@@ -33,6 +29,12 @@ export interface SteamStoreMetadata {
   website?: string;
 }
 
+/**
+ * Returns PNG bytes for an executable's icon, or null when it has none. Paths must be
+ * passed to an API directly, never embedded in a command line or script.
+ */
+export type ExeIconExtractor = (executablePath: string) => Promise<Buffer | null>;
+
 export class ArtworkCacheService {
   private readonly artworkDir: string;
   private readonly iconDir: string;
@@ -45,7 +47,10 @@ export class ArtworkCacheService {
   private memoryCacheBytes = 0;
   private static readonly MAX_MEMORY_CACHE_BYTES = 24 * 1024 * 1024; // 24 MB cap
 
-  constructor(userDataDir: string) {
+  private readonly iconExtractor?: ExeIconExtractor;
+
+  constructor(userDataDir: string, options?: { iconExtractor?: ExeIconExtractor }) {
+    this.iconExtractor = options?.iconExtractor;
     this.artworkDir = path.join(userDataDir, 'artwork_cache');
     this.iconDir = path.join(userDataDir, 'icon_cache');
     this.thumbsDir = path.join(userDataDir, 'artwork_thumbs');
@@ -351,7 +356,7 @@ export class ArtworkCacheService {
    * Returns a maswitch-asset:// icon URI if successful.
    */
   public async extractExeIcon(executablePath: string, gameId: string): Promise<string | null> {
-    if (process.platform !== 'win32') {
+    if (process.platform !== 'win32' || !this.iconExtractor) {
       return null;
     }
 
@@ -374,28 +379,9 @@ export class ArtworkCacheService {
     }
 
     try {
-      const psScript = `
-        Add-Type -AssemblyName System.Drawing
-        $icon = [System.Drawing.Icon]::ExtractAssociatedIcon('${executablePath.replace(/'/g, "''")}')
-        if ($icon) {
-          $bmp = $icon.ToBitmap()
-          $bmp.Save('${targetPngPath.replace(/'/g, "''")}', [System.Drawing.Imaging.ImageFormat]::Png)
-          $bmp.Dispose()
-          $icon.Dispose()
-          Write-Output "OK"
-        } else {
-          Write-Output "NO_ICON"
-        }
-      `;
-
-      await execFileAsync('powershell.exe', [
-        '-NoProfile',
-        '-NonInteractive',
-        '-Command',
-        psScript,
-      ], { timeout: 8000 });
-
-      if (fs.existsSync(targetPngPath) && fs.statSync(targetPngPath).size > 200) {
+      const png = await this.iconExtractor(executablePath);
+      if (png && png.length > 200) {
+        fs.writeFileSync(targetPngPath, png);
         return `maswitch-asset://icon/${safeFilename}`;
       }
     } catch {

@@ -41,6 +41,7 @@ import type {
 } from '../services/accounts/riotProductionAdapters';
 import type { RiotCredentialVault } from '../services/accounts/riotCredentialVault';
 import { RiotDesktopLoginAutomationService } from '../services/accounts/riotDesktopLoginAutomation';
+import { removeRiotAccountArtifacts } from '../services/accounts/riotAccountCleanup';
 import { PerformanceMonitorService } from '../services/performanceMonitorService';
 import { NewsService } from '../services/newsService';
 import { BackupService } from '../services/backupService';
@@ -733,12 +734,24 @@ export function registerIpcHandlers(
 
   ipcMain.handle(
     IPC_CHANNELS.ACCOUNTS_DELETE_PROFILE,
-    (event, rawId: unknown) => {
+    async (event, rawId: unknown) => {
       const win = assertTrustedSender(event, getMainWindow, devServerUrl);
       if (typeof rawId !== 'string' || !rawId.trim()) {
         throw new Error('Invalid account ID.');
       }
-      const deleted = sqliteDb.deleteAccountProfile(rawId.trim());
+      const profileId = rawId.trim();
+      const deleted = sqliteDb.deleteAccountProfile(profileId);
+      if (deleted) {
+        const cleanup = await removeRiotAccountArtifacts(profileId, {
+          credentials: services.riotCredentialVault,
+          sessions: services.riotLiveServices?.vault,
+        });
+        if (cleanup.credentials === 'failed' || cleanup.session === 'failed') {
+          console.warn(
+            `[MaSwitch] Account ${profileId} deleted, but stored Riot artifacts could not be fully removed (credentials: ${cleanup.credentials}, session: ${cleanup.session}).`
+          );
+        }
+      }
       if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
         win.webContents.send(IPC_CHANNELS.ACCOUNTS_UPDATED_EVENT);
       }
@@ -1094,7 +1107,9 @@ export function registerIpcHandlers(
       if (!services.riotCredentialVault) {
         return { hasSavedCredentials: false };
       }
-      return services.riotCredentialVault.getCredentialStatus(rawProfileId.trim());
+      return services.riotCredentialVault.getCredentialStatus(rawProfileId.trim(), {
+        resolveLegacyUsername: true,
+      });
     }
   );
 
@@ -1156,20 +1171,6 @@ export function registerIpcHandlers(
   );
 
   ipcMain.handle(
-    IPC_CHANNELS.ACCOUNTS_RIOT_GET_LOGIN_CREDENTIALS,
-    async (event, rawProfileId: unknown) => {
-      assertTrustedSender(event, getMainWindow, devServerUrl);
-      if (typeof rawProfileId !== 'string' || !rawProfileId.trim()) {
-        return null;
-      }
-      if (!services.riotCredentialVault) {
-        return null;
-      }
-      return services.riotCredentialVault.getDecryptedCredentials(rawProfileId.trim());
-    }
-  );
-
-  ipcMain.handle(
     IPC_CHANNELS.ACCOUNTS_RIOT_CHECK_CLIENT_RUNNING,
     async (event) => {
       assertTrustedSender(event, getMainWindow, devServerUrl);
@@ -1215,10 +1216,7 @@ export function registerIpcHandlers(
       event,
       rawProfileId: unknown,
       rawAutoLaunch: unknown,
-      rawAutoSubmit: unknown,
-      rawIsSynthetic: unknown,
-      rawTargetHwnd: unknown,
-      rawTargetPid: unknown
+      rawAutoSubmit: unknown
     ) => {
       const win = assertTrustedSender(event, getMainWindow, devServerUrl);
       if (typeof rawProfileId !== 'string' || !rawProfileId.trim()) {
@@ -1245,9 +1243,6 @@ export function registerIpcHandlers(
         profileId,
         autoLaunchClient: rawAutoLaunch === true,
         autoSubmit: shouldAutoSubmit,
-        isSyntheticTest: rawIsSynthetic === true,
-        targetHwnd: typeof rawTargetHwnd === 'string' ? rawTargetHwnd : undefined,
-        targetPid: typeof rawTargetPid === 'number' ? rawTargetPid : undefined,
         onProgress: (payload) => {
           if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
             win.webContents.send(IPC_CHANNELS.ACCOUNTS_RIOT_LOGIN_AUTOMATION_PROGRESS, payload);

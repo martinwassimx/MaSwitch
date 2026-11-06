@@ -93,7 +93,6 @@ const IPC_CHANNELS = {
   ACCOUNTS_RIOT_GET_ALL_CREDENTIAL_STATUSES: 'maswitch:accounts:riot:get-all-credential-statuses',
   ACCOUNTS_RIOT_SAVE_CREDENTIALS: 'maswitch:accounts:riot:save-credentials',
   ACCOUNTS_RIOT_DELETE_CREDENTIALS: 'maswitch:accounts:riot:delete-credentials',
-  ACCOUNTS_RIOT_GET_LOGIN_CREDENTIALS: 'maswitch:accounts:riot:get-login-credentials',
   ACCOUNTS_RIOT_CHECK_CLIENT_RUNNING: 'maswitch:accounts:riot:check-client-running',
   ACCOUNTS_RIOT_LAUNCH_CLIENT: 'maswitch:accounts:riot:launch-client',
   ACCOUNTS_RIOT_START_DESKTOP_LOGIN: 'maswitch:accounts:riot:start-desktop-login',
@@ -443,14 +442,12 @@ const bridge: MaSwitchBridge = {
       ipcRenderer.invoke(IPC_CHANNELS.ACCOUNTS_RIOT_SAVE_CREDENTIALS, profileId, username, password),
     riotDeleteCredentials: (profileId: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.ACCOUNTS_RIOT_DELETE_CREDENTIALS, profileId),
-    riotGetLoginCredentials: (profileId: string) =>
-      ipcRenderer.invoke(IPC_CHANNELS.ACCOUNTS_RIOT_GET_LOGIN_CREDENTIALS, profileId),
     riotCheckClientRunning: () =>
       ipcRenderer.invoke(IPC_CHANNELS.ACCOUNTS_RIOT_CHECK_CLIENT_RUNNING),
     riotLaunchClient: () =>
       ipcRenderer.invoke(IPC_CHANNELS.ACCOUNTS_RIOT_LAUNCH_CLIENT),
-    riotStartDesktopLogin: (profileId: string, autoLaunchClient?: boolean, autoSubmit?: boolean, isSyntheticTest?: boolean, targetHwnd?: string, targetPid?: number) =>
-      ipcRenderer.invoke(IPC_CHANNELS.ACCOUNTS_RIOT_START_DESKTOP_LOGIN, profileId, autoLaunchClient, autoSubmit, isSyntheticTest, targetHwnd, targetPid),
+    riotStartDesktopLogin: (profileId: string, autoLaunchClient?: boolean, autoSubmit?: boolean) =>
+      ipcRenderer.invoke(IPC_CHANNELS.ACCOUNTS_RIOT_START_DESKTOP_LOGIN, profileId, autoLaunchClient, autoSubmit),
     riotCancelDesktopLogin: () =>
       ipcRenderer.invoke(IPC_CHANNELS.ACCOUNTS_RIOT_CANCEL_DESKTOP_LOGIN),
     onRiotDesktopLoginProgress: (callback: (payload: RiotDesktopLoginProgressPayload) => void) => {

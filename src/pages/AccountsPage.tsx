@@ -92,6 +92,7 @@ export const AccountsPage: React.FC = () => {
   const riotCredentialError = useAppStore((s) => s.riotCredentialError);
   const saveRiotCredentials = useAppStore((s) => s.saveRiotCredentials);
   const deleteRiotCredentials = useAppStore((s) => s.deleteRiotCredentials);
+  const resolveRiotCredentialUsername = useAppStore((s) => s.resolveRiotCredentialUsername);
   const checkRiotClientRunning = useAppStore((s) => s.checkRiotClientRunning);
   const clearRiotCredentialError = useAppStore((s) => s.clearRiotCredentialError);
   const riotLoginAutomationProgress = useAppStore((s) => s.riotLoginAutomationProgress);
@@ -153,11 +154,27 @@ export const AccountsPage: React.FC = () => {
   // Delete Confirmation Modal State
   const [deletingProfile, setDeletingProfile] = useState<AccountProfile | null>(null);
 
+  // Older vault records keep the login username only inside the encrypted payload, so
+  // the list status cannot include it; resolve it for this one profile on demand.
+  const prefillStoredRiotLoginUser = (
+    profile: AccountProfile,
+    setValue: React.Dispatch<React.SetStateAction<string>>
+  ) => {
+    const status = riotCredentialStatuses[profile.id];
+    if (!status?.hasSavedCredentials || status.username) return;
+    void resolveRiotCredentialUsername(profile.id).then((storedUsername) => {
+      if (storedUsername) {
+        setValue((current) => (current === profile.username ? storedUsername : current));
+      }
+    });
+  };
+
   const openCredentialModal = (profile: AccountProfile) => {
     setOpenMenuProfileId(null);
     setCredentialModalProfile(profile);
     const existingUsername = riotCredentialStatuses[profile.id]?.username || profile.username;
     setCredUsername(existingUsername);
+    prefillStoredRiotLoginUser(profile, setCredUsername);
     setCredPassword('');
     setShowPassword(false);
     setCredError(null);
@@ -278,6 +295,7 @@ export const AccountsPage: React.FC = () => {
     setFormNotes(profile.notes ?? '');
     setFormIsPreferred(profile.isPreferred);
     setFormRiotLoginUser(riotCredentialStatuses[profile.id]?.username || profile.username);
+    prefillStoredRiotLoginUser(profile, setFormRiotLoginUser);
     setFormRiotPassword('');
     setShowFormRiotPassword(false);
     setFormError(null);

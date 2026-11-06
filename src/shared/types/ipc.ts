@@ -117,7 +117,6 @@ export const IPC_CHANNELS = {
   ACCOUNTS_RIOT_GET_ALL_CREDENTIAL_STATUSES: 'maswitch:accounts:riot:get-all-credential-statuses',
   ACCOUNTS_RIOT_SAVE_CREDENTIALS: 'maswitch:accounts:riot:save-credentials',
   ACCOUNTS_RIOT_DELETE_CREDENTIALS: 'maswitch:accounts:riot:delete-credentials',
-  ACCOUNTS_RIOT_GET_LOGIN_CREDENTIALS: 'maswitch:accounts:riot:get-login-credentials',
   ACCOUNTS_RIOT_CHECK_CLIENT_RUNNING: 'maswitch:accounts:riot:check-client-running',
   ACCOUNTS_RIOT_LAUNCH_CLIENT: 'maswitch:accounts:riot:launch-client',
   ACCOUNTS_RIOT_START_DESKTOP_LOGIN: 'maswitch:accounts:riot:start-desktop-login',
@@ -361,10 +360,9 @@ export interface MaSwitchBridge {
     riotGetAllCredentialStatuses?: () => Promise<Record<string, { hasSavedCredentials: boolean; username?: string; updatedAtIso?: string }>>;
     riotSaveCredentials?: (profileId: string, username: string, password: string) => Promise<{ success: boolean; updatedAtIso: string }>;
     riotDeleteCredentials?: (profileId: string) => Promise<boolean>;
-    riotGetLoginCredentials?: (profileId: string) => Promise<{ username: string; password: string } | null>;
     riotCheckClientRunning?: () => Promise<boolean>;
     riotLaunchClient?: () => Promise<{ success: boolean; message: string }>;
-    riotStartDesktopLogin?: (profileId: string, autoLaunchClient?: boolean, autoSubmit?: boolean, isSyntheticTest?: boolean, targetHwnd?: string, targetPid?: number) => Promise<RiotDesktopLoginResultPayload>;
+    riotStartDesktopLogin?: (profileId: string, autoLaunchClient?: boolean, autoSubmit?: boolean) => Promise<RiotDesktopLoginResultPayload>;
     riotCancelDesktopLogin?: () => Promise<void>;
     onRiotDesktopLoginProgress?: (callback: (payload: RiotDesktopLoginProgressPayload) => void) => () => void;
   };

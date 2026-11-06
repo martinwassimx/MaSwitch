@@ -264,13 +264,13 @@ export interface AppStoreState {
   recoverRiotLiveSwitch: () => Promise<RiotRecoveryResult>;
   clearRiotLiveSwitchError: () => void;
   loadRiotCredentialStatuses: () => Promise<void>;
+  resolveRiotCredentialUsername: (profileId: string) => Promise<string | undefined>;
   saveRiotCredentials: (profileId: string, username: string, password: string) => Promise<{ success: boolean; updatedAtIso: string }>;
   deleteRiotCredentials: (profileId: string) => Promise<boolean>;
-  getRiotLoginCredentials: (profileId: string) => Promise<{ username: string; password: string } | null>;
   checkRiotClientRunning: () => Promise<boolean>;
   launchRiotClient: () => Promise<{ success: boolean; message: string }>;
   clearRiotCredentialError: () => void;
-  startRiotDesktopLogin: (profileId: string, autoLaunchClient?: boolean, autoSubmit?: boolean, isSyntheticTest?: boolean, targetHwnd?: string, targetPid?: number) => Promise<RiotDesktopLoginResultPayload>;
+  startRiotDesktopLogin: (profileId: string, autoLaunchClient?: boolean, autoSubmit?: boolean) => Promise<RiotDesktopLoginResultPayload>;
   cancelRiotDesktopLogin: () => Promise<void>;
   clearRiotLoginAutomationProgress: () => void;
 
@@ -1597,6 +1597,18 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
     }
   },
 
+  resolveRiotCredentialUsername: async (profileId: string) => {
+    try {
+      const status = await localDatabaseService.riotGetCredentialStatus(profileId);
+      set((state) => ({
+        riotCredentialStatuses: { ...state.riotCredentialStatuses, [profileId]: status },
+      }));
+      return status.username;
+    } catch {
+      return undefined;
+    }
+  },
+
   saveRiotCredentials: async (profileId: string, username: string, password: string) => {
     set({ isSavingRiotCredentials: true, riotCredentialError: null });
     try {
@@ -1624,14 +1636,6 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
     }
   },
 
-  getRiotLoginCredentials: async (profileId: string) => {
-    try {
-      return await localDatabaseService.riotGetLoginCredentials(profileId);
-    } catch {
-      return null;
-    }
-  },
-
   checkRiotClientRunning: async () => {
     try {
       return await localDatabaseService.riotCheckClientRunning();
@@ -1651,7 +1655,7 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
 
   clearRiotCredentialError: () => set({ riotCredentialError: null }),
 
-  startRiotDesktopLogin: async (profileId, autoLaunchClient, autoSubmit, isSyntheticTest, targetHwnd, targetPid) => {
+  startRiotDesktopLogin: async (profileId, autoLaunchClient, autoSubmit) => {
     set({
       isRiotLoginAutomating: true,
       riotLoginAutomationResult: null,
@@ -1668,10 +1672,7 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
       const result = await localDatabaseService.riotStartDesktopLogin(
         profileId,
         autoLaunchClient,
-        shouldAutoSubmit,
-        isSyntheticTest,
-        targetHwnd,
-        targetPid
+        shouldAutoSubmit
       );
       set({
         riotLoginAutomationResult: result,

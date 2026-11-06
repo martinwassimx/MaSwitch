@@ -397,7 +397,12 @@ app.whenReady().then(() => {
   configureSecurityPolicies();
 
   const userDataDir = app.getPath('userData');
-  const artworkCacheService = new ArtworkCacheService(userDataDir);
+  const artworkCacheService = new ArtworkCacheService(userDataDir, {
+    iconExtractor: async (executablePath) => {
+      const icon = await app.getFileIcon(executablePath, { size: 'large' });
+      return icon.isEmpty() ? null : icon.toPNG();
+    },
+  });
 
   // Register maswitch-asset:// streaming & automatic thumbnailing handler
   protocol.handle('maswitch-asset', (request) => {
@@ -776,6 +781,16 @@ app.whenReady().then(() => {
   );
 
   const riotCredentialVault = new RiotCredentialVault(path.join(userDataDir, 'vault', 'riot_credentials'));
+  try {
+    const credentialMigration = riotCredentialVault.migrateLegacyEnvelopes();
+    if (credentialMigration.migrated > 0 || credentialMigration.failed > 0) {
+      console.info(
+        `[MaSwitch] Credential vault format upgrade: ${credentialMigration.migrated} migrated, ${credentialMigration.failed} skipped.`
+      );
+    }
+  } catch {
+    // Legacy records remain readable; migration retries on next start.
+  }
   const riotLiveServices = createProductionRiotLiveSwitchingEngine({
     userDataDir,
     riotLiveSwitchingEnabled: currentSettings.riotLiveSwitchingEnabled ?? false,

@@ -58,6 +58,11 @@ export interface DesktopAutomationAdapters {
     creds: { username: string; password?: string },
     autoSubmit: boolean
   ) => Promise<WorkerRunResult>;
+  /**
+   * Test-only: permits `isSyntheticTest` targets (caller-chosen HWND/PID, no Riot
+   * process validation). Must never be set by production wiring.
+   */
+  allowSyntheticTestTargets?: boolean;
 }
 
 export function isRetryableAutomationError(error?: string): boolean {
@@ -695,6 +700,9 @@ export class RiotDesktopLoginAutomationService {
   }): Promise<DiscoveredWindowInfo | null> {
     const timeoutMs = options?.timeoutMs ?? 30000;
     const startTime = Date.now();
+    const syntheticTargets = Boolean(
+      options?.isSyntheticTest && this.adapters?.allowSyntheticTestTargets
+    );
 
     while (Date.now() - startTime < timeoutMs) {
       if (options?.cancelToken && options.cancelToken()) {
@@ -708,9 +716,9 @@ export class RiotDesktopLoginAutomationService {
       const candidates: { window: DiscoveredWindowInfo; score: number }[] = [];
 
       for (const w of windows) {
-        if (options?.isSyntheticTest) {
-          if (options.targetHwnd && w.hwnd === options.targetHwnd) return w;
-          if (options.targetPid && w.pid === options.targetPid) return w;
+        if (syntheticTargets) {
+          if (options?.targetHwnd && w.hwnd === options.targetHwnd) return w;
+          if (options?.targetPid && w.pid === options.targetPid) return w;
           if (w.title.includes('Synthetic Riot Client Login Window')) return w;
         } else {
           // Official Riot Client matching
@@ -843,6 +851,17 @@ export class RiotDesktopLoginAutomationService {
         profileId: options.profileId,
         message: 'A Riot login automation is already in progress.',
         error: 'AUTOMATION_IN_PROGRESS',
+      };
+    }
+    if (
+      (options.isSyntheticTest || options.targetHwnd || options.targetPid) &&
+      !this.adapters?.allowSyntheticTestTargets
+    ) {
+      return {
+        success: false,
+        profileId: options.profileId,
+        message: 'Caller-selected login targets are not permitted.',
+        error: 'SYNTHETIC_TARGET_NOT_ALLOWED',
       };
     }
     this.isAutomating = true;

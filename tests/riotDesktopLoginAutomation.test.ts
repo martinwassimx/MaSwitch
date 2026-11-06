@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -24,7 +24,9 @@ describe('RiotDesktopLoginAutomationService', () => {
       safeStorageOverride: null,
     });
 
-    service = new RiotDesktopLoginAutomationService(vault);
+    service = new RiotDesktopLoginAutomationService(vault, undefined, {
+      allowSyntheticTestTargets: true,
+    });
   });
 
   afterEach(() => {
@@ -117,6 +119,60 @@ describe('RiotDesktopLoginAutomationService', () => {
     expect(result.success).toBe(false);
     expect(result.error).toBe('CANCELLED');
     expect(progressEvents.some((p) => p.status === 'cancelled')).toBe(true);
+  });
+
+  describe('caller-selected targets without test opt-in (production wiring)', () => {
+    const attempts = [
+      { name: 'synthetic flag', opts: { isSyntheticTest: true } },
+      { name: 'synthetic flag with foreign HWND/PID', opts: { isSyntheticTest: true, targetHwnd: '4660', targetPid: 4242 } },
+      { name: 'bare HWND', opts: { targetHwnd: '4660' } },
+      { name: 'bare PID', opts: { targetPid: 4242 } },
+    ];
+
+    for (const attempt of attempts) {
+      it(`rejects ${attempt.name} before decrypting or typing credentials`, async () => {
+        await vault.saveCredentials('profile-guard', 'GuardUser', 'GuardPass123!');
+        const decryptSpy = vi.spyOn(vault, 'getDecryptedCredentials');
+        const workerRunner = vi.fn();
+        const windowDiscoverer = vi.fn(async () => [
+          { hwnd: '4660', pid: 4242, title: 'Untitled - Notepad', processName: 'notepad' },
+        ]);
+        const productionService = new RiotDesktopLoginAutomationService(
+          vault,
+          new RiotWindowsProcessCoordinator({ processLister: async () => [] }),
+          { workerRunner, windowDiscoverer }
+        );
+
+        const result = await productionService.executeAutofill({
+          profileId: 'profile-guard',
+          ...attempt.opts,
+        });
+
+        expect(result.success).toBe(false);
+        expect(result.error).toBe('SYNTHETIC_TARGET_NOT_ALLOWED');
+        expect(decryptSpy).not.toHaveBeenCalled();
+        expect(workerRunner).not.toHaveBeenCalled();
+        expect(productionService.isLoginInProgress()).toBe(false);
+      });
+    }
+
+    it('findTargetWindow ignores the synthetic flag and only matches Riot processes', async () => {
+      const productionService = new RiotDesktopLoginAutomationService(vault, undefined, {
+        windowDiscoverer: async () => [
+          { hwnd: '4660', pid: 4242, title: 'Synthetic Riot Client Login Window', processName: 'powershell' },
+          { hwnd: '777', pid: 55, title: 'Riot Client', processName: 'RiotClientUx' },
+        ],
+      });
+
+      const found = await productionService.findTargetWindow({
+        isSyntheticTest: true,
+        targetHwnd: '4660',
+        targetPid: 4242,
+        timeoutMs: 300,
+      });
+
+      expect(found?.hwnd).toBe('777');
+    });
   });
 
   it('fails closed and blocks autofill if window process PID does not match target', async () => {

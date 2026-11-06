@@ -776,13 +776,6 @@ export class LocalDatabaseService {
     return false;
   }
 
-  public async riotGetLoginCredentials(profileId: string): Promise<{ username: string; password: string } | null> {
-    if (window.maswitch?.accounts?.riotGetLoginCredentials) {
-      return window.maswitch.accounts.riotGetLoginCredentials(profileId);
-    }
-    return null;
-  }
-
   public async riotCheckClientRunning(): Promise<boolean> {
     if (window.maswitch?.accounts?.riotCheckClientRunning) {
       return window.maswitch.accounts.riotCheckClientRunning();
@@ -800,19 +793,13 @@ export class LocalDatabaseService {
   public async riotStartDesktopLogin(
     profileId: string,
     autoLaunchClient?: boolean,
-    autoSubmit?: boolean,
-    isSyntheticTest?: boolean,
-    targetHwnd?: string,
-    targetPid?: number
+    autoSubmit?: boolean
   ): Promise<RiotDesktopLoginResultPayload> {
     if (window.maswitch?.accounts?.riotStartDesktopLogin) {
       return window.maswitch.accounts.riotStartDesktopLogin(
         profileId,
         autoLaunchClient,
-        autoSubmit,
-        isSyntheticTest,
-        targetHwnd,
-        targetPid
+        autoSubmit
       );
     }
     throw new Error('Riot desktop login automation requires the MaSwitch desktop application.');

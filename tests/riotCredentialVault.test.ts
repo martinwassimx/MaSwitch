@@ -54,7 +54,8 @@ describe('RiotCredentialVault Unit & Integration Test Suite', () => {
     expect(envelope.format).toBe('MS_CRED_V1');
     expect(envelope.profileId).toBe('acc-melynelas');
     expect(envelope.ciphertextBase64).toBeDefined();
-    expect(envelope.payloadSha256).toBeDefined();
+    // An unsalted digest of the plaintext would allow offline password guessing (MS-05)
+    expect(envelope.payloadSha256).toBeUndefined();
   });
 
   it('retrieves credential status without exposing plaintext password', async () => {
@@ -140,9 +141,11 @@ describe('RiotCredentialVault Unit & Integration Test Suite', () => {
     await vault.saveCredentials('acc-tamper', 'TamperUser', 'tamper-pass');
     const credFilePath = path.join(testVaultDir, 'acc-tamper.cred.enc');
 
-    // Corrupt the payload SHA
+    // Flip one ciphertext byte; authenticated encryption must reject it
     const raw = JSON.parse(fs.readFileSync(credFilePath, 'utf8'));
-    raw.payloadSha256 = '0000000000000000000000000000000000000000000000000000000000000000';
+    const ciphertext = Buffer.from(raw.ciphertextBase64, 'base64');
+    ciphertext[ciphertext.length - 1] ^= 0xff;
+    raw.ciphertextBase64 = ciphertext.toString('base64');
     fs.writeFileSync(credFilePath, JSON.stringify(raw));
 
     const decrypted = await vault.getDecryptedCredentials('acc-tamper');
