@@ -11,4 +11,12 @@ import type { UpdateTrustKey } from './updateManifest';
  * Entries must keep the `keyId: '<hex>', publicKeyPem: \`<PEM>\`` layout printed by the
  * keygen command; `scripts/update-signing.mjs` parses this file to verify releases.
  */
-export const UPDATE_TRUSTED_KEYS: readonly UpdateTrustKey[] = [];
+export const UPDATE_TRUSTED_KEYS: readonly UpdateTrustKey[] = [
+  {
+    keyId: '1f4af73de5ed0819',
+    publicKeyPem: `-----BEGIN PUBLIC KEY-----
+MCowBQYDK2VwAyEAIc7lGGQLRnw4FT9DAIWsl5PRv4aatsUU5VBEI8WhsOc=
+-----END PUBLIC KEY-----
+`,
+  },
+];
