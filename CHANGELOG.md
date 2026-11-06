@@ -6,6 +6,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ---
 
+## [1.1.0] - 2026-11-06 — Security Hardening, Signed Updates & Riot Quick Switch
+
+### Security
+- Removed the IPC channel that returned decrypted Riot credentials; credential status no longer decrypts passwords; vault records are bound to their profile and removed with it.
+- Riot login now types credentials only into a focused window whose process is Authenticode-signed by Riot Games, Inc.
+- Updates require an Ed25519-signed manifest pinning installer SHA-256 and size; downgrades, stable-channel pre-releases and unsigned releases are refused.
+- Electron 44.10.2, strict Content Security Policy, navigation/webview/drop blocking, hardened Electron fuses.
+- Absolute System32 paths for Windows tools, approval for custom executables and launch arguments, confirmation for elevated memory cleanup, confined file, backup and artwork paths.
+- Updated build and test dependencies.
+
+### Added
+- Optional account nicknames replace the required display name.
+- League of Legends and VALORANT region detection from Riot Client configuration, manual region overrides, and an EMEA default for VALORANT.
+- Home page Quick Account Switch.
+
+### Changed
+- Account cards show the account name, regions and credential status, and no longer show the private login username.
+- Game icons are extracted with Electron's icon API instead of PowerShell.
+
+### Notes
+- Versions 1.0.4 and earlier must install 1.1.0 manually once; later updates are verified automatically.
+- Riot IDs are not detected automatically; the installer is not Authenticode-signed.
+
+---
+
 ## [1.0.4] - 2026-11-06 — Built-in Update Checker, Windows Auto-Updater & Smooth 60 FPS Scrolling
 
 ### Added

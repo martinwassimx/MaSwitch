@@ -141,10 +141,10 @@ export class LocalDatabaseService {
     }
     return {
       appName: 'MaSwitch',
-      appVersion: '1.0.4',
+      appVersion: '1.1.0',
       phaseLabel: 'MaSwitch 3.0 — Windows Gaming Launcher & Account Manager',
-      electronVersion: '33.x',
-      chromeVersion: '130.x',
+      electronVersion: '44.x',
+      chromeVersion: '152.x',
       nodeVersion: '22.x',
       platform: 'win32',
       arch: 'x64',
@@ -1144,8 +1144,8 @@ export class LocalDatabaseService {
     }
     return {
       updateAvailable: false,
-      currentVersion: '1.0.4',
-      latestVersion: '1.0.4',
+      currentVersion: '1.1.0',
+      latestVersion: '1.1.0',
       channel: channel ?? 'stable',
       checkedAtIso: new Date().toISOString(),
     };
@@ -1158,7 +1158,7 @@ export class LocalDatabaseService {
     return {
       status: 'idle',
       channel: 'stable',
-      currentVersion: '1.0.4',
+      currentVersion: '1.1.0',
       latestCheckResult: null,
       downloadProgress: null,
       downloadedFilePath: null,

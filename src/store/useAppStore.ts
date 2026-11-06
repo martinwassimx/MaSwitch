@@ -521,7 +521,7 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
   updaterState: {
     status: 'idle',
     channel: initialSettings.updateChannel ?? 'stable',
-    currentVersion: '1.0.4',
+    currentVersion: '1.1.0',
     latestCheckResult: null,
     downloadProgress: null,
     downloadedFilePath: null,
