@@ -1980,7 +1980,7 @@ export const SettingsPage: React.FC = () => {
                       MaSwitch
                     </span>
                     <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-gradient-to-r from-violet-500/20 to-fuchsia-500/20 border border-violet-500/30 text-violet-300">
-                      v{runtimeInfo?.appVersion || '1.0.1'}
+                      v{runtimeInfo?.appVersion || '1.0.2'}
                     </span>
                   </div>
                   <p className="text-xs text-ms-muted mt-1 max-w-md">

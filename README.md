@@ -5,11 +5,11 @@
 
   **Lightweight Windows Gaming Launcher & Account Manager**
 
-  [![Release](https://img.shields.io/badge/Release-v1.0.1-8b5cf6?style=for-the-badge)](https://github.com/martinwassimx/MaSwitch/releases/tag/v1.0.1)
-  [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011%20(x64)-0ea5e9?style=for-the-badge)](https://github.com/martinwassimx/MaSwitch/releases/tag/v1.0.1)
+  [![Release](https://img.shields.io/badge/Release-v1.0.2-8b5cf6?style=for-the-badge)](https://github.com/martinwassimx/MaSwitch/releases/tag/v1.0.2)
+  [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011%20(x64)-0ea5e9?style=for-the-badge)](https://github.com/martinwassimx/MaSwitch/releases/tag/v1.0.2)
   [![License](https://img.shields.io/badge/License-MIT-10b981?style=for-the-badge)](LICENSE)
 
-  [**Download Latest Windows Installer (`MaSwitch-Setup-1.0.1.exe`)**](https://github.com/martinwassimx/MaSwitch/releases/tag/v1.0.1) · [Report Issue](https://github.com/martinwassimx/MaSwitch/issues) · [Security Policy](SECURITY.md) · [Changelog](CHANGELOG.md)
+  [**Download Latest Windows Installer (`MaSwitch-Setup-1.0.2.exe`)**](https://github.com/martinwassimx/MaSwitch/releases/tag/v1.0.2) · [Report Issue](https://github.com/martinwassimx/MaSwitch/issues) · [Security Policy](SECURITY.md) · [Changelog](CHANGELOG.md)
 </div>
 
 ---
@@ -41,7 +41,7 @@ Users on low-end PCs can choose **Minimal**, **Recommended**, **Complete**, or *
 1. **Gaming Year in Review**: Personalized annual gaming summary, top played titles, platform breakdown, and shareable summary card export.
 2. **Smart Game Collections**: Dynamic rule-based collections (`Most Played`, `Recently Played`, `Unplayed Backlog`, `Riot Competitive`) and custom manual collections.
 3. **Lightweight Performance Monitor**: On-demand CPU, system RAM, and MaSwitch memory footprint telemetry with zero background polling when closed.
-4. **Game Updates & News**: Offline-cached official Steam RSS patch notes and game announcements fetched only on demand.
+4. **Game Updates & News**: Personalized multi-platform game news and patch notes across **Riot Games** (`League of Legends`, `VALORANT`, `Teamfight Tactics`), **Epic Games** (`Fortnite`), **EA Sports** (`EA SPORTS FC`), **Steam**, **Ubisoft**, **Rockstar**, and supported PC games, with automatic utility exclusion (`Wallpaper Engine`), per-game provider coverage diagnostics, and offline caching.
 5. **Backup & Restore**: Versioned local backup archives for profiles, collections, settings, and playtime history (strictly excluding DPAPI vault secrets).
 6. **Memory Management (Mem Reduct Integration)**: Safe Windows NT memory list cleaning (`Working Sets`, `System File Cache`, `Standby List`, `Modified Page List`) inspired by the open-source [Mem Reduct](https://github.com/henrypp/memreduct) project—never closes user applications and automatically locks while a game is running.
 
@@ -89,15 +89,15 @@ Account management is currently active exclusively for **Riot Games**. Multi-acc
 
 ## Installation
 
-1. Go to the [**Latest GitHub Release (`v1.0.1`)**](https://github.com/martinwassimx/MaSwitch/releases/tag/v1.0.1).
-2. Download **`MaSwitch-Setup-1.0.1.exe`** (and optionally `SHA256SUMS.txt` to verify file integrity).
-3. Run **`MaSwitch-Setup-1.0.1.exe`**.
+1. Go to the [**Latest GitHub Release (`v1.0.2`)**](https://github.com/martinwassimx/MaSwitch/releases/tag/v1.0.2).
+2. Download **`MaSwitch-Setup-1.0.2.exe`** (and optionally `SHA256SUMS.txt` to verify file integrity).
+3. Run **`MaSwitch-Setup-1.0.2.exe`**.
 4. Choose your preferred setup preset (**Minimal**, **Recommended**, **Complete**, or **Custom**).
 5. Complete installation and launch **MaSwitch** from your Desktop or Start Menu.
 
 > **Note on Windows SmartScreen**: Because this open-source release is built without a commercial EV/OV Authenticode certificate, Windows Defender SmartScreen may display an *"Unknown Publisher"* prompt on first download. You can verify the installer's SHA-256 hash against `SHA256SUMS.txt` before running:
 > ```powershell
-> Get-FileHash -Algorithm SHA256 .\MaSwitch-Setup-1.0.1.exe
+> Get-FileHash -Algorithm SHA256 .\MaSwitch-Setup-1.0.2.exe
 > ```
 
 ---

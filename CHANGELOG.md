@@ -6,6 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ---
 
+## [1.0.2] - 2026-11-06 — Multi-Platform Game News, Provider Coverage & Feed Reliability
+
+### Added
+- **Multi-Platform Game News Provider Architecture**:
+  - **Riot Games Official Provider**: Live patch notes, game updates, dev blogs, and announcements for **League of Legends**, **VALORANT**, **Teamfight Tactics**, and **Legends of Runeterra**.
+  - **Epic Games Fortnite Provider**: Official Battle Royale news, seasonal updates, and MOTD announcements with automatic Epic Content API fallback.
+  - **EA Sports Official Provider**: Official Pitch Notes, Title Updates, and developer notes for **EA SPORTS FC** (`FC 27`, `FC 26`, `FC 25`) with Steam Official News fallback.
+  - **Cross-Platform Steam Community Announcements Resolver**: Resolves installed EA, Ubisoft, Rockstar, and Custom PC games (including `F1 25`, `It Takes Two`, `Forza Horizon 5`, `Marvel's Spider-Man: Miles Morales`, `R.E.P.O.`, `Schedule I`, `Rainbow Six Siege`, `Grand Theft Auto V`, `Red Dead Redemption 2`, and 60+ popular titles) to their official developer announcement feeds while filtering out non-English third-party syndication and generic store chart spam.
+- **Library News Coverage & Provider Diagnostics**:
+  - Added a collapsible **Library News Coverage** status bar and per-game diagnostic grid (`Available`, `No Articles`, `Unsupported`, `Temporarily Unavailable`, `Refresh Failed`).
+  - Unsupported games clearly display `"No supported news source available for this game."` without substituting unrelated articles.
+
+### Fixed
+- **Wallpaper Engine Feed Domination**:
+  - Fixed the issue where `NewsService` previously queried only `platformId === 'steam'` entries, causing **Wallpaper Engine** (`431960`) to dominate the entire feed. Background utilities are now automatically excluded from the default multi-game feed while remaining accessible when explicitly selected in the game filter.
+- **Balanced Sorting, Search & Instant Filtering**:
+  - Added **Newest First**, **Recent Updates**, and **By Game** sorting modes, **Recent** vs **Archive** date badges, a **Clear Filters** action, incremental **Load More Articles** pagination, and concurrent refresh deduplication that preserves cached articles and `lastUpdatedIso` when offline.
+
+---
+
 ## [1.0.1] - 2026-11-06 — Riot Accounts UI/UX Polish & Layout Refinement
 
 ### Changed

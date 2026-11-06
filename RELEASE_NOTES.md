@@ -1,4 +1,4 @@
-# MaSwitch v1.0.1 — Riot Accounts Layout Polish & Windows Release
+# MaSwitch v1.0.2 — Multi-Platform Game News, Provider Coverage & Feed Reliability
 
 ## About MaSwitch
 
@@ -6,17 +6,20 @@
 
 ---
 
-## What's New in `v1.0.1`
+## What's New in `v1.0.2`
 
-- **Redesigned Riot Account Cards**:
-  - **Clean Header**: Riot brand icon/avatar, account display name, region badge (`EUW`, `EUNE`, `NA`, `KR`, etc.), username, and a compact top-right overflow menu (`⋮`).
-  - **Streamlined Status Row**: Clear `Credentials Saved` or `Setup Required` badge alongside `Last Selected` and `Preferred` indicators.
-  - **Two-Row Action Hierarchy**: Full-width primary **Login** button (`w-full`) above a separate 2-column secondary row containing **Set Up Credentials** and **Edit Account**—eliminating cramped or overlapping controls.
-  - **Overflow Menu Actions**: Moved **Make Preferred** and **Delete Account** into the card's overflow menu (`⋮`).
-- **Balanced Responsive Account Grid**:
-  - Two balanced columns at standard desktop widths (filling the container symmetrically when 1 or 2 accounts exist), three columns on wide displays when 3+ accounts exist, and one column on narrow windows, with zero horizontal scrolling across `1920×1080`, `1366×768`, `1280×720`, and `1024×768`.
-- **Simplified Security Overview**:
-  - Removed redundant security banners and kept a single visually secondary **Security Overview** section showing Windows DPAPI status, configured credentials count, and accounts requiring setup.
+- **Multi-Platform Game News Provider System**:
+  - **Riot Games Official News**: Real-time official news, patch notes, dev blogs, and game updates for **League of Legends**, **VALORANT**, **Teamfight Tactics**, and **Legends of Runeterra**.
+  - **Epic Games Official News**: Official **Fortnite** Battle Royale news, seasonal updates, and MOTD announcements with Epic Content API fallback.
+  - **EA Sports Official News**: Official Pitch Notes, Title Updates, and Gameplay Developer Notes for **EA SPORTS FC** (`FC 27`, `FC 26`, `FC 25`) with Steam Official News fallback.
+  - **Cross-Platform Steam Community Announcements**: Resolves installed EA, Ubisoft, Rockstar, and Custom PC games (including **F1 25**, **It Takes Two**, **Forza Horizon 5**, **Marvel's Spider-Man: Miles Morales**, **R.E.P.O.**, **Schedule I**, **Rainbow Six Siege**, **Grand Theft Auto V**, **Red Dead Redemption 2**, and 60+ titles) to their official developer community announcement feeds while filtering out non-English third-party syndication and generic store chart spam.
+- **Fixed Wallpaper Engine Feed Domination**:
+  - Previously, `NewsService` only queried `platformId === 'steam'` entries, causing **Wallpaper Engine** (`431960`) to dominate the entire Game News feed. Background utilities are now automatically excluded from the default multi-game feed while remaining accessible when explicitly selected in the game filter dropdown.
+- **Library News Coverage & Provider Status Diagnostics**:
+  - Added a compact **Library News Coverage** status bar and expandable per-game status grid (`Available`, `No Articles`, `Unsupported`, `Temporarily Unavailable`, `Refresh Failed`).
+  - Unsupported games clearly report `"No supported news source available for this game."` without substituting unrelated articles.
+- **Enhanced Sorting, Search, Artwork & Offline Reliability**:
+  - Added **Newest First**, **Recent Updates**, and **By Game** sorting modes, **Recent** vs **Archive** date badges, **Patch / Update** indicators, a **Clear Filters** action, incremental **Load More Articles** pagination, game-specific library artwork resolution, and concurrent refresh deduplication that preserves cached articles and `lastUpdatedIso` when offline.
 
 ---
 
@@ -36,7 +39,7 @@
 
 ## Coming Soon
 
-Account management is currently active exclusively for **Riot Games**. Multi-account management for the following platforms is marked **Coming Soon** in the Accounts tab (while their game library discovery, launching, and playtime tracking remain fully active):
+Account management is currently active exclusively for **Riot Games**. Multi-account management for the following platforms is marked **Coming Soon** in the Accounts tab (while their game library discovery, launching, game news, and playtime tracking remain fully active):
 - Steam account management
 - Epic Games account management
 - EA account management
@@ -49,7 +52,7 @@ Account management is currently active exclusively for **Riot Games**. Multi-acc
 
 ## Installation
 
-1. Download **`MaSwitch-Setup-1.0.1.exe`** from the **Assets** section below.
+1. Download **`MaSwitch-Setup-1.0.2.exe`** from the **Assets** section below.
 2. Run the installer.
 3. Select **Minimal**, **Recommended**, **Complete**, or **Custom**.
 4. Complete installation.
@@ -68,10 +71,10 @@ Account management is currently active exclusively for **Riot Games**. Multi-acc
 
 | Asset | Size | SHA-256 Checksum |
 | :--- | :--- | :--- |
-| `MaSwitch-Setup-1.0.1.exe` | `82.43 MB` (`86,436,054 bytes`) | `6bfab3e27a91de4f07d8c59018abce591ad26b600d1608016d7703534c3b31d9` |
-| `win-unpacked/MaSwitch.exe` | `180.08 MB` (`188,827,136 bytes`) | `5364b3b1a1e76f5dd6b3f2e6e2d207953c8d220e800f54cf2a7dbb03f42e145e` |
+| `MaSwitch-Setup-1.0.2.exe` | `82.44 MB` (`86,444,561 bytes`) | `275efb0a5df9c77851834f8b0e5101e292e32c8faf4f61a9939a03547141cb88` |
+| `win-unpacked/MaSwitch.exe` | `180.08 MB` (`188,827,136 bytes`) | `bc5e33a3bc624fcb657dbf702fb1c53240d9251ef0bb7d541579fcc0ed974e32` |
 
 Verify in PowerShell:
 ```powershell
-Get-FileHash -Algorithm SHA256 .\MaSwitch-Setup-1.0.1.exe
+Get-FileHash -Algorithm SHA256 .\MaSwitch-Setup-1.0.2.exe
 ```
