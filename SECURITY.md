@@ -2,14 +2,17 @@
 
 MaSwitch is built with a strict local-first security philosophy: **no cloud accounts, no third-party telemetry, no kernel drivers, no game file modification, and Windows DPAPI local credential encryption**.
 
+A plain-language summary is available in the [MaSwitch Privacy & Security policy](https://maswitch.martinx.work/privacy) on the [official website](https://maswitch.martinx.work/).
+
 ---
 
 ## 1. Supported Versions
 
 | Version | Supported |
 | :--- | :--- |
-| `1.0.x` | :white_check_mark: Active Support |
-| `< 1.0.0` | :x: Pre-release versions (upgrade to `1.0.0` recommended) |
+| `1.1.x` | :white_check_mark: Active Support |
+| `1.0.x` | :x: Upgrade to `1.1.0` (one-time manual installation required for signed updates) |
+| `< 1.0.0` | :x: Pre-release versions |
 
 ---
 
@@ -73,8 +76,9 @@ MaSwitch includes an optional Windows memory management utility inspired by the 
 
 If a release binary is built without a commercial Authenticode code-signing certificate (`CSC_LINK`):
 - Windows Defender SmartScreen may display an *"Unknown Publisher"* warning until binary reputation is established.
-- Always verify your downloaded `MaSwitch-Setup-1.0.0.exe` against the published `SHA256SUMS.txt` on the official GitHub Release page using PowerShell:
+- Download MaSwitch only from the [official website](https://maswitch.martinx.work/download) or the [GitHub Releases page](https://github.com/martinwassimx/MaSwitch/releases).
+- Always verify your downloaded `MaSwitch-Setup-<version>.exe` against the published `SHA256SUMS.txt` on the official GitHub Release page using PowerShell:
   ```powershell
-  Get-FileHash -Algorithm SHA256 .\MaSwitch-Setup-1.0.0.exe
+  Get-FileHash -Algorithm SHA256 .\MaSwitch-Setup-<version>.exe
   ```
 - Never disable Windows Defender, SmartScreen, or antivirus software to install MaSwitch.

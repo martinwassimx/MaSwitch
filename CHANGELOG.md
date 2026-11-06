@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ---
 
+## [Unreleased]
+
+### Added
+- Settings → About links to the official website ([maswitch.martinx.work](https://maswitch.martinx.work/)), Help & FAQ, Privacy & Security, GitHub and issue reporting. Links open in the default browser.
+
+### Changed
+- The Windows installer's support and information links (Settings → Apps) point to the official website.
+
+---
+
 ## [1.1.0] - 2026-11-06 — Security Hardening, Signed Updates & Riot Quick Switch
 
 ### Security

@@ -5,11 +5,14 @@
 
   **Lightweight Windows Gaming Launcher & Account Manager**
 
+  **Official website: [maswitch.martinx.work](https://maswitch.martinx.work/)**
+
+  [![Website](https://img.shields.io/badge/Website-maswitch.martinx.work-a855f7?style=for-the-badge)](https://maswitch.martinx.work/)
   [![Release](https://img.shields.io/badge/Release-v1.1.0-8b5cf6?style=for-the-badge)](https://github.com/martinwassimx/MaSwitch/releases/tag/v1.1.0)
   [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011%20(x64)-0ea5e9?style=for-the-badge)](https://github.com/martinwassimx/MaSwitch/releases/tag/v1.1.0)
   [![License](https://img.shields.io/badge/License-MIT-10b981?style=for-the-badge)](LICENSE)
 
-  [**Download Latest Windows Installer (`MaSwitch-Setup-1.1.0.exe`)**](https://github.com/martinwassimx/MaSwitch/releases/tag/v1.1.0) · [Report Issue](https://github.com/martinwassimx/MaSwitch/issues) · [Security Policy](SECURITY.md) · [Changelog](CHANGELOG.md)
+  [**Download Latest Windows Installer (`MaSwitch-Setup-1.1.0.exe`)**](https://github.com/martinwassimx/MaSwitch/releases/tag/v1.1.0) · [Website](https://maswitch.martinx.work/) · [FAQ](https://maswitch.martinx.work/faq) · [Report Issue](https://github.com/martinwassimx/MaSwitch/issues) · [Security Policy](SECURITY.md) · [Changelog](CHANGELOG.md)
 </div>
 
 ---
@@ -89,7 +92,7 @@ Account management is currently active exclusively for **Riot Games**. Multi-acc
 
 ## Installation
 
-1. Go to the [**Latest GitHub Release (`v1.1.0`)**](https://github.com/martinwassimx/MaSwitch/releases/tag/v1.1.0).
+1. Go to the [**MaSwitch download page**](https://maswitch.martinx.work/download) or the [**Latest GitHub Release (`v1.1.0`)**](https://github.com/martinwassimx/MaSwitch/releases/tag/v1.1.0).
 2. Download **`MaSwitch-Setup-1.1.0.exe`** (and optionally `SHA256SUMS.txt` to verify file integrity).
 3. Run **`MaSwitch-Setup-1.1.0.exe`**.
 4. Choose your preferred setup preset (**Minimal**, **Recommended**, **Complete**, or **Custom**).
@@ -109,7 +112,16 @@ Account management is currently active exclusively for **Riot Games**. Multi-acc
 - **Official Launcher Integrity**: MaSwitch never injects DLLs, never modifies game executables, and never tampers with anti-cheat services (`Riot Vanguard`, `EasyAntiCheat`, `BattlEye`).
 - **Hardened Electron Sandbox**: Runs with `sandbox: true`, `contextIsolation: true`, `nodeIntegration: false`, strict CSP headers, and `asInvoker` standard user privileges.
 
-See [SECURITY.md](SECURITY.md) for full technical details.
+See [SECURITY.md](SECURITY.md) and the [Privacy & Security policy](https://maswitch.martinx.work/privacy) for full technical details.
+
+---
+
+## Help & Support
+
+- **Website**: [maswitch.martinx.work](https://maswitch.martinx.work/)
+- **FAQ**: [maswitch.martinx.work/faq](https://maswitch.martinx.work/faq)
+- **Bug reports & feature requests**: [GitHub Issues](https://github.com/martinwassimx/MaSwitch/issues)
+- **Security vulnerabilities**: see [SECURITY.md](SECURITY.md)
 
 ---
 

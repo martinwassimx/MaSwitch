@@ -4,6 +4,8 @@
 
 **MaSwitch** is a lightweight Windows gaming launcher and account manager that organizes your installed games, manages Riot Games accounts, and provides gaming utilities.
 
+Official website: [maswitch.martinx.work](https://maswitch.martinx.work/) · [FAQ](https://maswitch.martinx.work/faq) · [Privacy & Security](https://maswitch.martinx.work/privacy)
+
 ---
 
 ## Important for existing users

@@ -30,6 +30,7 @@ import {
   CheckCircle2,
   ExternalLink,
   Loader2,
+  Globe,
 } from 'lucide-react';
 import type {
   AccentColorId,
@@ -47,6 +48,15 @@ import {
 import { useAppStore } from '../store/useAppStore';
 import { BrandMarkImg } from '../components/common/BrandLogo';
 import { localDatabaseService } from '../services/localDatabaseService';
+import { ABOUT_LINKS } from '../shared/officialLinks';
+
+function openOfficialLink(url: string): void {
+  if (window.maswitch?.news?.openExternalLink) {
+    void window.maswitch.news.openExternalLink(url);
+  } else {
+    window.open(url, '_blank', 'noopener,noreferrer');
+  }
+}
 
 export type SettingsTabId =
   | 'all'
@@ -2369,6 +2379,33 @@ export const SettingsPage: React.FC = () => {
                 </div>
               )}
             </div>
+
+            <nav
+              aria-label="MaSwitch links"
+              className="relative z-10 flex flex-wrap items-center gap-2 pt-5 border-t border-ms-border/50"
+            >
+              {ABOUT_LINKS.map((link) => (
+                <a
+                  key={link.id}
+                  href={link.url}
+                  data-testid={`about-link-${link.id}`}
+                  rel="noopener noreferrer"
+                  onClick={(event) => {
+                    event.preventDefault();
+                    openOfficialLink(link.url);
+                  }}
+                  className={
+                    link.id === 'website'
+                      ? 'inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-bold text-violet-200 bg-violet-500/15 border border-violet-500/30 hover:bg-violet-500/25 transition-colors'
+                      : 'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-ms-muted hover:text-ms-text bg-white/5 hover:bg-white/10 transition-colors'
+                  }
+                >
+                  {link.id === 'website' && <Globe className="w-3.5 h-3.5" />}
+                  <span>{link.label}</span>
+                  {link.id !== 'website' && <ExternalLink className="w-3 h-3 opacity-60" />}
+                </a>
+              ))}
+            </nav>
           </div>
         </section>
       )}
