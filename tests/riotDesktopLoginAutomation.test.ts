@@ -239,18 +239,23 @@ describe('RiotDesktopLoginAutomationService', () => {
       ).toBe(false);
     });
 
-    it('caches trusted results per PID and re-checks failures', async () => {
-      const query = vi.fn(async () => ({ path: 'C:\\x.exe', status: 'Valid', subject: riotSubject }));
+    it('re-verifies on every call so a reused PID is never trusted from cache', async () => {
+      const reports = [
+        { path: 'C:\\Riot\\RiotClientServices.exe', status: 'Valid', subject: riotSubject },
+        { path: 'C:\\Users\\x\\evil.exe', status: 'NotSigned', subject: null },
+      ];
+      const query = vi.fn(async () => reports.shift()!);
       const verify = createRiotProcessTrustVerifier(query);
-      await verify(10);
-      await verify(10);
-      expect(query).toHaveBeenCalledTimes(1);
+      expect((await verify(10)).trusted).toBe(true);
+      expect((await verify(10)).trusted).toBe(false);
+      expect(query).toHaveBeenCalledTimes(2);
+    });
 
-      const failing = vi.fn(async () => ({ path: 'C:\\x.exe', status: 'NotSigned', subject: null }));
-      const verifyFailing = createRiotProcessTrustVerifier(failing);
-      await verifyFailing(11);
-      await verifyFailing(11);
-      expect(failing).toHaveBeenCalledTimes(2);
+    it('fails closed when the signature query errors', async () => {
+      const verify = createRiotProcessTrustVerifier(async () => {
+        throw new Error('query failed');
+      });
+      expect((await verify(10)).trusted).toBe(false);
     });
   });
 

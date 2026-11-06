@@ -58,7 +58,8 @@ protocol.registerSchemesAsPrivileged([
   },
 ]);
 
-const DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL;
+// Packaged builds always load the bundled renderer; an inherited environment variable must not redirect them.
+const DEV_SERVER_URL = app.isPackaged ? undefined : process.env.VITE_DEV_SERVER_URL;
 const IS_SMOKE_TEST = process.argv.includes('--smoke-test');
 const START_HIDDEN = process.argv.includes('--hidden');
 

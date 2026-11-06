@@ -3,6 +3,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { windowsPowerShellPath } from '../security/systemBinaries';
 import { parseVdf } from '../scanner/vdfParser';
 
 const exec = promisify(execFile);
@@ -14,7 +15,7 @@ export interface SteamPreferenceAccess {
 
 export function windowsSteamPreferences(): SteamPreferenceAccess {
   const invoke = async (script: string) => {
-    const result = await exec('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand',
+    const result = await exec(windowsPowerShellPath(), ['-NoProfile', '-NonInteractive', '-EncodedCommand',
       Buffer.from("$ErrorActionPreference='Stop'; " + script, 'utf16le').toString('base64')],
     { windowsHide: true, timeout: 10000 });
     return result.stdout.trim();

@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { promisify } from 'node:util';
+import { system32Binary } from '../security/systemBinaries';
 
 const execFileAsync = promisify(execFile);
 
@@ -173,7 +174,7 @@ export async function queryRegistryValue(
 
   try {
     const { stdout } = await execFileAsync(
-      'reg.exe',
+      system32Binary('reg.exe'),
       ['query', keyPath, '/v', valueName],
       { windowsHide: true, timeout: 4000 }
     );
@@ -214,7 +215,7 @@ export async function queryRegistrySubkeys(
 
   try {
     const { stdout } = await execFileAsync(
-      'reg.exe',
+      system32Binary('reg.exe'),
       ['query', rootKeyPath, '/s'],
       {
         windowsHide: true,

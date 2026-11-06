@@ -4,6 +4,7 @@ import type { PlatformDetectionReport } from '../../../src/shared/types/platform
 import type { DiscoveredGameCandidate } from '../../../src/shared/types/scanner';
 import { promisify } from 'node:util';
 import { execFile } from 'node:child_process';
+import { system32Binary } from '../security/systemBinaries';
 import {
   findPrimaryGameExecutable,
   queryRegistrySubkeys,
@@ -224,7 +225,7 @@ export async function scanEaAppInstallations(
 
     try {
       const { stdout } = await execFileAsync(
-        'reg.exe',
+        system32Binary('reg.exe'),
         ['query', root, '/f', 'Electronic Arts', '/s'],
         { windowsHide: true, timeout: 5000 }
       );
@@ -241,7 +242,7 @@ export async function scanEaAppInstallations(
         if (signal?.aborted) break;
         try {
           const { stdout: keyDetails } = await execFileAsync(
-            'reg.exe',
+            system32Binary('reg.exe'),
             ['query', subkey],
             { windowsHide: true, timeout: 2000 }
           );

@@ -665,15 +665,27 @@ export class AppUpdateService {
       return { success: false, message: 'No verified installer is available. Please download the update again.' };
     }
 
+    // Launch a fresh, unpredictably named copy that is verified immediately before spawning,
+    // which narrows the window for swapping the file between the hash check and execution.
+    const launchPath = path.join(
+      path.dirname(download.filePath),
+      `${path.basename(download.filePath, '.exe')}-${crypto.randomUUID().slice(0, 8)}.exe`
+    );
     try {
       const stat = fs.lstatSync(download.filePath);
       if (!stat.isFile() || stat.isSymbolicLink() || stat.size !== download.size) {
         throw new Error('size');
       }
-      if ((await sha256File(download.filePath)) !== download.sha256) {
+      fs.copyFileSync(download.filePath, launchPath, fs.constants.COPYFILE_EXCL);
+      const copyStat = fs.lstatSync(launchPath);
+      if (!copyStat.isFile() || copyStat.isSymbolicLink() || copyStat.size !== download.size) {
+        throw new Error('size');
+      }
+      if ((await sha256File(launchPath)) !== download.sha256) {
         throw new Error('hash');
       }
     } catch {
+      fs.rmSync(launchPath, { force: true });
       this.clearVerifiedDownload(true);
       const msg = 'Security Error: The downloaded installer changed or is missing since it was verified. Please download the update again.';
       this.setStatus('error', msg);
@@ -686,10 +698,11 @@ export class AppUpdateService {
     }
 
     try {
-      const installerProcess = this.spawnImpl(download.filePath, args, {
+      const installerProcess = this.spawnImpl(launchPath, args, {
         detached: true,
         stdio: 'ignore',
       });
+      fs.rmSync(download.filePath, { force: true });
       installerProcess.unref();
 
       // Gracefully quit application

@@ -1,6 +1,7 @@
 import os from 'node:os';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import { windowsPowerShellPath } from '../security/systemBinaries';
 import { app } from 'electron';
 import type {
   MemoryCleanupAction,
@@ -145,7 +146,7 @@ export const ELEVATED_CLEANUP_COOLDOWN_MS = 60_000;
 
 /**
  * Main-process gate in front of any cleanup that may trigger a UAC prompt: the user must
- * confirm in a native dialog, and renderer requests cannot re-prompt within the cooldown.
+ * confirm in a native dialog, and after a decline renderer requests cannot re-prompt within the cooldown.
  */
 export function createElevatedCleanupGate(
   confirm: () => Promise<boolean>,
@@ -153,12 +154,12 @@ export function createElevatedCleanupGate(
   cooldownMs: number = ELEVATED_CLEANUP_COOLDOWN_MS
 ): () => Promise<{ allowed: true } | { allowed: false; message: string }> {
   let pending = false;
-  let lastPromptAt = Number.NEGATIVE_INFINITY;
+  let lastDeclinedAt = Number.NEGATIVE_INFINITY;
   return async () => {
     if (pending) {
       return { allowed: false, message: 'An administrator confirmation is already pending.' };
     }
-    const remainingMs = lastPromptAt + cooldownMs - now();
+    const remainingMs = lastDeclinedAt + cooldownMs - now();
     if (remainingMs > 0) {
       return {
         allowed: false,
@@ -167,9 +168,11 @@ export function createElevatedCleanupGate(
     }
     pending = true;
     try {
-      lastPromptAt = now();
-      const confirmed = await confirm();
-      return confirmed ? { allowed: true } : { allowed: false, message: 'Privileged memory cleanup cancelled.' };
+      if (await confirm()) {
+        return { allowed: true };
+      }
+      lastDeclinedAt = now();
+      return { allowed: false, message: 'Privileged memory cleanup cancelled.' };
     } finally {
       pending = false;
     }
@@ -527,7 +530,7 @@ export class MemoryManagementService {
         [SafeWorkingSetTrimmer]::TrimAllAccessible()
       `;
 
-      const child = spawn('powershell.exe', [
+      const child = spawn(windowsPowerShellPath(), [
         '-NoProfile',
         '-NonInteractive',
         '-ExecutionPolicy',
@@ -657,7 +660,7 @@ export class MemoryManagementService {
       `;
 
       // Check elevation first
-      const checkElevated = spawn('powershell.exe', [
+      const checkElevated = spawn(windowsPowerShellPath(), [
         '-NoProfile',
         '-NonInteractive',
         '-Command',
@@ -671,7 +674,7 @@ export class MemoryManagementService {
 
         if (isAlreadyElevated) {
           // Execute directly without UAC prompt
-          const directProc = spawn('powershell.exe', [
+          const directProc = spawn(windowsPowerShellPath(), [
             '-NoProfile',
             '-NonInteractive',
             '-ExecutionPolicy',
@@ -695,9 +698,9 @@ export class MemoryManagementService {
         } else {
           // Request elevation for narrowly-scoped helper via Start-Process -Verb RunAs
           const encodedScript = Buffer.from(script, 'utf16le').toString('base64');
-          const elevatedCmd = `Start-Process powershell.exe -ArgumentList '-NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand ${encodedScript}' -Verb RunAs -Wait -WindowStyle Hidden`;
+          const elevatedCmd = `Start-Process -FilePath '${windowsPowerShellPath()}' -ArgumentList '-NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand ${encodedScript}' -Verb RunAs -Wait -WindowStyle Hidden`;
 
-          const elevateProc = spawn('powershell.exe', [
+          const elevateProc = spawn(windowsPowerShellPath(), [
             '-NoProfile',
             '-NonInteractive',
             '-ExecutionPolicy',

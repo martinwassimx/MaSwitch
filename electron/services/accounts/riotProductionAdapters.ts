@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import zlib from 'node:zlib';
+import { resolveSystemBinary, system32Binary } from '../security/systemBinaries';
 import { safeStorage } from 'electron';
 import type { RiotSessionFileManifestEntry } from '../../../src/shared/types/account';
 import type {
@@ -47,8 +48,7 @@ function resolveCurrentUserSid(): string | null {
     return cachedUserSid;
   }
   try {
-    const systemRoot = process.env.SystemRoot || 'C:\\Windows';
-    const output = execFileSync(path.join(systemRoot, 'System32', 'whoami.exe'), ['/user', '/fo', 'csv', '/nh'], {
+    const output = execFileSync(system32Binary('whoami.exe'), ['/user', '/fo', 'csv', '/nh'], {
       windowsHide: true,
       timeout: 5000,
       encoding: 'utf8',
@@ -80,7 +80,7 @@ export function enforceSecureDirectoryPermissionsSync(dirPath: string): void {
     if (principal) {
       try {
         execFileSync(
-          'icacls.exe',
+          system32Binary('icacls.exe'),
           [
             dirPath,
             '/inheritance:r',
@@ -1197,7 +1197,7 @@ export class RiotWindowsProcessCoordinator implements RiotProcessCoordinator {
     this.processLister = options?.processLister || listWindowsProcessImageNames;
     this.commandExecutor =
       options?.commandExecutor ||
-      (async (cmd, args) => execFileAsync(cmd, args, { windowsHide: true, timeout: 5000 }));
+      (async (cmd, args) => execFileAsync(resolveSystemBinary(cmd), args, { windowsHide: true, timeout: 5000 }));
     this.clientLauncher =
       options?.clientLauncher ||
       (async (exePath) => {

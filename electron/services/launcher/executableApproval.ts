@@ -1,5 +1,7 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import { normalizeWindowsPath } from '../security/pathApprovalRegistry';
+import { windowsDirectory } from '../security/systemBinaries';
 
 const MAX_LAUNCH_ARGS_LENGTH = 2048;
 
@@ -37,8 +39,29 @@ const DENIED_EXECUTABLE_NAMES = new Set([
 
 export const normalizeExecutablePath = normalizeWindowsPath;
 
-function windowsDirectory(): string {
-  return path.win32.normalize(process.env.SystemRoot || process.env.windir || 'C:\\Windows').toLowerCase();
+/** Chromium/Electron switches that make the launched program run another command line. */
+const COMMAND_PREFIX_SWITCH_PATTERN =
+  /(^|\s)["']?--?(gpu-launcher|renderer-cmd-prefix|utility-cmd-prefix|gpu-process-cmd-prefix|plugin-launcher|ppapi-plugin-launcher|nacl-loader-cmd-prefix|browser-subprocess-path|renderer-process-cmd-prefix|utility-process-cmd-prefix)\b/i;
+
+const DRIVE_PATH_PATTERN = /^[A-Za-z]:\\/;
+const UNC_SHARE_PATH_PATTERN = /^\\\\[^\\?.][^\\]*\\[^\\]+\\/;
+
+function realPathOrSelf(candidate: string): string {
+  try {
+    return fs.realpathSync.native(candidate);
+  } catch {
+    return candidate;
+  }
+}
+
+function isInsideWindowsDirectory(candidate: string): boolean {
+  const winDir = windowsDirectory().toLowerCase();
+  const realWinDir = realPathOrSelf(winDir).toLowerCase();
+  // Resolving a UNC path would contact the remote server (and offer NTLM credentials) during validation.
+  const resolved = DRIVE_PATH_PATTERN.test(candidate) ? realPathOrSelf(candidate) : candidate;
+  return [candidate.toLowerCase(), resolved.toLowerCase()].some(
+    (p) => p === winDir || p.startsWith(`${winDir}\\`) || p === realWinDir || p.startsWith(`${realWinDir}\\`)
+  );
 }
 
 /**
@@ -52,8 +75,12 @@ export function assertAllowedCustomExecutable(rawPath: unknown): string {
     throw new Error('Executable path contains invalid characters.');
   }
   const normalized = path.win32.normalize(rawPath.trim());
-  if (!path.win32.isAbsolute(normalized) || normalized.startsWith('\\\\')) {
-    throw new Error('Executable path must be an absolute local path.');
+  if (!DRIVE_PATH_PATTERN.test(normalized) && !UNC_SHARE_PATH_PATTERN.test(normalized)) {
+    throw new Error('Executable path must be a full drive-letter or network share path.');
+  }
+  const segments = normalized.split('\\').filter(Boolean);
+  if (segments.some((segment) => /[. ]$/.test(segment) || segment.includes(':', segment === segments[0] ? 2 : 0))) {
+    throw new Error('Executable path contains an invalid folder or file name.');
   }
   const lower = normalized.toLowerCase();
   if (!lower.endsWith('.exe')) {
@@ -62,8 +89,7 @@ export function assertAllowedCustomExecutable(rawPath: unknown): string {
   if (DENIED_EXECUTABLE_NAMES.has(path.win32.basename(lower))) {
     throw new Error('This system tool cannot be added as a game or application.');
   }
-  const winDir = windowsDirectory();
-  if (lower === winDir || lower.startsWith(`${winDir}\\`)) {
+  if (isInsideWindowsDirectory(normalized)) {
     throw new Error('Programs inside the Windows system folder cannot be added as games.');
   }
   return normalized;
@@ -75,6 +101,9 @@ export function assertSafeLaunchArguments(rawArgs: unknown): void {
   }
   if (typeof rawArgs !== 'string' || rawArgs.length > MAX_LAUNCH_ARGS_LENGTH || /[\0\r\n]/.test(rawArgs)) {
     throw new Error('Launch arguments are invalid.');
+  }
+  if (COMMAND_PREFIX_SWITCH_PATTERN.test(rawArgs)) {
+    throw new Error('Launch arguments that run other programs are not allowed.');
   }
 }
 

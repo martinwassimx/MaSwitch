@@ -486,6 +486,15 @@ describe('AppUpdateService — authenticated updates', () => {
   });
 
   describe('installation', () => {
+    function launchedCopy(verifiedPath: string): string {
+      const launched = mockSpawn.mock.calls[0]?.[0] as string;
+      expect(path.dirname(launched)).toBe(path.dirname(verifiedPath));
+      expect(path.basename(launched)).toMatch(
+        new RegExp(`^${path.basename(verifiedPath, '.exe').replace(/[.]/g, '\\.')}-[0-9a-f]{8}\\.exe$`)
+      );
+      return launched;
+    }
+
     async function downloaded(payload = Buffer.from('authentic installer')) {
       const { service } = await checkWith(signedRoutes(payload));
       expect((await service.startDownload()).success).toBe(true);
@@ -498,7 +507,10 @@ describe('AppUpdateService — authenticated updates', () => {
         const service = await downloaded();
         const res = await service.installAndRestart();
         expect(res.success).toBe(true);
-        expect(mockSpawn).toHaveBeenCalledWith(installerPath(), [], { detached: true, stdio: 'ignore' });
+        const launched = launchedCopy(installerPath());
+        expect(mockSpawn).toHaveBeenCalledWith(launched, [], { detached: true, stdio: 'ignore' });
+        expect(fs.readFileSync(launched, 'utf8')).toBe('authentic installer');
+        expect(fs.existsSync(installerPath())).toBe(false);
         expect(mockSpawnProcess.unref).toHaveBeenCalled();
         vi.runAllTimers();
         expect(quitApp).toHaveBeenCalled();
@@ -510,7 +522,7 @@ describe('AppUpdateService — authenticated updates', () => {
     it('passes /S only when silent installation is explicitly requested', async () => {
       const service = await downloaded();
       await service.installAndRestart({ silent: true });
-      expect(mockSpawn).toHaveBeenCalledWith(installerPath(), ['/S'], { detached: true, stdio: 'ignore' });
+      expect(mockSpawn).toHaveBeenCalledWith(launchedCopy(installerPath()), ['/S'], { detached: true, stdio: 'ignore' });
     });
 
     it('refuses to run an installer replaced after download', async () => {

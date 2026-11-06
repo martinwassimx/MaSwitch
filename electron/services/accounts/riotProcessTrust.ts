@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import { windowsPowerShellPath } from '../security/systemBinaries';
 
 /**
  * Organization (O=) of the Authenticode signer on the official Riot Client binaries
@@ -64,7 +65,7 @@ export function queryAuthenticode(pid: number): Promise<AuthenticodeReport> {
       return;
     }
     execFile(
-      'powershell.exe',
+      windowsPowerShellPath(),
       ['-NoProfile', '-NonInteractive', '-Command', VERIFY_SCRIPT],
       {
         env: { ...process.env, MASWITCH_VERIFY_PID: String(pid) },
@@ -92,30 +93,18 @@ export function queryAuthenticode(pid: number): Promise<AuthenticodeReport> {
   });
 }
 
-const CACHE_TTL_MS = 2 * 60 * 1000;
-
-/** Verifies (and caches per PID) that a process image is signed by Riot Games. */
+/**
+ * Verifies that a process image is signed by Riot Games. Results are not cached: a PID can be
+ * reused by another process after the Riot Client exits.
+ */
 export function createRiotProcessTrustVerifier(
-  query: (pid: number) => Promise<AuthenticodeReport> = queryAuthenticode,
-  now: () => number = Date.now
+  query: (pid: number) => Promise<AuthenticodeReport> = queryAuthenticode
 ): (pid: number) => Promise<ProcessTrustResult> {
-  const cache = new Map<number, { result: ProcessTrustResult; expiresAt: number }>();
   return async (pid: number) => {
-    const cached = cache.get(pid);
-    if (cached && cached.expiresAt > now()) {
-      return cached.result;
-    }
-    let result: ProcessTrustResult;
     try {
-      result = evaluateRiotSignature(await query(pid));
+      return evaluateRiotSignature(await query(pid));
     } catch (err) {
       return { trusted: false, reason: err instanceof Error ? err.message : String(err) };
     }
-    if (result.trusted) {
-      cache.set(pid, { result, expiresAt: now() + CACHE_TTL_MS });
-    } else {
-      cache.delete(pid);
-    }
-    return result;
   };
 }

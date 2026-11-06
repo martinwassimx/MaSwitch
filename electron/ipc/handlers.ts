@@ -55,6 +55,7 @@ import { PerformanceMonitorService } from '../services/performanceMonitorService
 import { NewsService } from '../services/newsService';
 import { BackupService, isBackupFileName } from '../services/backupService';
 import { PathApprovalRegistry, isPathInside, normalizeWindowsPath } from '../services/security/pathApprovalRegistry';
+import { isCurrentProcessElevated } from '../services/security/systemBinaries';
 import { InstalledFeaturesManager } from '../services/features/installedFeaturesManager';
 import {
   MemoryManagementService,
@@ -310,16 +311,26 @@ export function registerIpcHandlers(
   });
 
   const executableApprovals = new ExecutableApprovalRegistry();
-  const authorizeExecutablePath = async (
+  /**
+   * Approves a renderer-supplied launch target. The path and its arguments are confirmed together:
+   * unchanged targets pass, a picker-approved path passes only without arguments, anything else
+   * needs a native confirmation that shows both.
+   */
+  const authorizeLaunchTarget = async (
     win: BrowserWindow,
     rawPath: unknown,
-    currentPath?: string | null
+    rawArgs: unknown,
+    current?: { executablePath?: string | null; launchArgs?: string | null } | null
   ): Promise<string> => {
     const normalized = assertAllowedCustomExecutable(rawPath);
-    if (currentPath && normalizeExecutablePath(currentPath) === normalizeExecutablePath(normalized)) {
+    assertSafeLaunchArguments(rawArgs);
+    const args = typeof rawArgs === 'string' ? rawArgs.trim() : '';
+    const samePath =
+      !!current?.executablePath && normalizeExecutablePath(current.executablePath) === normalizeExecutablePath(normalized);
+    if (samePath && args === (current?.launchArgs ?? '').trim()) {
       return normalized;
     }
-    if (executableApprovals.isApproved(normalized)) {
+    if (!args && executableApprovals.isApproved(normalized)) {
       return normalized;
     }
     const { response } = await dialog.showMessageBox(win, {
@@ -330,12 +341,13 @@ export function registerIpcHandlers(
       noLink: true,
       title: 'Confirm program',
       message: 'Allow MaSwitch to launch this program?',
-      detail: `${normalized}\n\nOnly allow programs you installed and trust.`,
+      detail:
+        `Program: ${normalized}\nArguments: ${args || '(none)'}\n\n` +
+        'Only allow programs you installed and trust, with arguments you recognise.',
     });
     if (response !== 1) {
       throw new Error('The program was not approved.');
     }
-    executableApprovals.approve(normalized);
     return normalized;
   };
 
@@ -347,8 +359,7 @@ export function registerIpcHandlers(
         throw new Error('Invalid custom game payload.');
       }
       const input = rawInput as CustomGameInput;
-      assertSafeLaunchArguments(input.launchArgs);
-      const executablePath = await authorizeExecutablePath(win, input.executablePath);
+      const executablePath = await authorizeLaunchTarget(win, input.executablePath, input.launchArgs);
       return sqliteDb.addCustomGame({ ...input, executablePath });
     }
   );
@@ -365,9 +376,22 @@ export function registerIpcHandlers(
       }
       const input = { ...(rawInput as EditGameInput) };
       assertSafeLaunchArguments(input.launchArgs);
-      if (input.executablePath !== undefined && input.executablePath !== null && input.executablePath !== '') {
+      const pathProvided = input.executablePath !== undefined && input.executablePath !== null && input.executablePath !== '';
+      const argsProvided = input.launchArgs !== undefined;
+      if (pathProvided || argsProvided) {
         const existing = sqliteDb.getGameById(rawGameId.trim());
-        input.executablePath = await authorizeExecutablePath(win, input.executablePath, existing?.executablePath);
+        const effectivePath = pathProvided ? input.executablePath : existing?.executablePath;
+        if (effectivePath) {
+          const authorizedPath = await authorizeLaunchTarget(
+            win,
+            effectivePath,
+            argsProvided ? input.launchArgs : existing?.launchArgs,
+            existing
+          );
+          if (pathProvided) {
+            input.executablePath = authorizedPath;
+          }
+        }
       }
       const updated = sqliteDb.updateGameDetails(rawGameId.trim(), input);
       if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
@@ -1752,7 +1776,11 @@ export function registerIpcHandlers(
     if (memService.isCleanupInProgress()) {
       return refused('A memory cleanup is already running.');
     }
-    if (process.platform === 'win32' && requiresElevatedCleanup(resolveCleanupOperations(request))) {
+    if (
+      process.platform === 'win32' &&
+      requiresElevatedCleanup(resolveCleanupOperations(request)) &&
+      !isCurrentProcessElevated()
+    ) {
       const gate = await elevatedCleanupGate();
       if (!gate.allowed) {
         return refused(gate.message);

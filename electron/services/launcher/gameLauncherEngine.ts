@@ -16,7 +16,7 @@ import {
   type ParsedEpicManifest,
 } from '../scanner/epicScanner';
 import { resolveGameProcessAliases } from '../tracker/gameProcessAliases';
-import { assertAllowedCustomExecutable } from './executableApproval';
+import { assertAllowedCustomExecutable, assertSafeLaunchArguments } from './executableApproval';
 import { listWindowsProcessImageNames } from '../tracker/playtimeTrackerEngine';
 
 /**
@@ -824,6 +824,7 @@ export class GameLauncherEngine {
           game.executablePath,
           game.workingDirectory
         );
+        assertSafeLaunchArguments(game.launchArgs);
         const args = parseSafeLaunchArguments(game.launchArgs);
 
         const spawned = await this.executeSpawn(exePath, args, cwd);

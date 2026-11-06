@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { system32Binary } from '../security/systemBinaries';
 import type { PlatformId } from '../../../src/shared/types/platform';
 import type {
   PlaytimeSessionRecord,
@@ -61,7 +62,7 @@ export async function listWindowsProcessImageNames(): Promise<
 
   try {
     const { stdout } = await execFileAsync(
-      'tasklist.exe',
+      system32Binary('tasklist.exe'),
       ['/FO', 'CSV', '/NH'],
       {
         windowsHide: true,

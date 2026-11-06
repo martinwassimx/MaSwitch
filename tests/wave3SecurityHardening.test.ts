@@ -38,6 +38,11 @@ import {
 } from '../electron/services/steamgriddb/steamGridDbArtworkService';
 import { SteamGridDbSecretStore } from '../electron/services/steamgriddb/steamGridDbSecretStore';
 import { parseWhoamiUserSid } from '../electron/services/accounts/riotProductionAdapters';
+import {
+  parseElevatedFromWhoamiGroups,
+  resolveSystemBinary,
+  windowsPowerShellPath,
+} from '../electron/services/security/systemBinaries';
 import type { SteamGridDbClient } from '../electron/services/steamgriddb/steamGridDbClient';
 import type { MaSwitchSqliteDatabase } from '../electron/services/database/sqliteDatabase';
 import type { MaSwitchSettings } from '../src/shared/types/settings';
@@ -61,9 +66,18 @@ describe('custom executable approval (MS-07)', () => {
     expect(() => assertAllowedCustomExecutable(`${systemRoot}\\System32\\notepad.exe`)).toThrow(/Windows system folder/);
   });
 
+  it('still accepts games on a network share', () => {
+    expect(assertAllowedCustomExecutable('\\\\nas\\games\\Game\\game.exe')).toBe('\\\\nas\\games\\Game\\game.exe');
+  });
+
   it.each([
-    ['\\\\server\\share\\game.exe', /absolute local path/],
-    ['game.exe', /absolute local path/],
+    ['\\Windows\\System32\\pcalua.exe', /drive-letter or network share/],
+    ['\\\\?\\C:\\Windows\\System32\\pcalua.exe', /invalid characters|drive-letter or network share/],
+    ['\\\\.\\C:\\Games\\game.exe', /drive-letter or network share/],
+    ['C:\\Windows.\\System32\\pcalua.exe', /invalid folder or file name/],
+    ['C:\\Games \\game.exe', /invalid folder or file name/],
+    ['C:\\Games\\game.exe:stream.exe', /invalid folder or file name/],
+    ['game.exe', /drive-letter or network share/],
     ['D:\\Games\\game.bat', /\.exe/],
     ['D:\\Games\\game.exe" --evil', /invalid characters/],
     ['D:\\Games\\game.exe\n', /invalid characters/],
@@ -76,6 +90,15 @@ describe('custom executable approval (MS-07)', () => {
     expect(() => assertSafeLaunchArguments('a\r\nb')).toThrow();
     expect(() => assertSafeLaunchArguments('x'.repeat(5000))).toThrow();
     expect(() => assertSafeLaunchArguments(42)).toThrow();
+  });
+
+  it.each([
+    ['--gpu-launcher="cmd /c calc"'],
+    ['-windowed --renderer-cmd-prefix=evil.exe'],
+    ['"--utility-cmd-prefix=x"'],
+    ['--browser-subprocess-path=C:\\x.exe'],
+  ])('rejects command-prefix switch %s', (args) => {
+    expect(() => assertSafeLaunchArguments(args)).toThrow(/run other programs/);
   });
 });
 
@@ -148,29 +171,26 @@ describe('memory cleanup request validation and UAC gate (MS-14)', () => {
     expect(requiresElevatedCleanup(resolveCleanupOperations(privileged))).toBe(true);
   });
 
-  it('requires main-process confirmation and rate-limits repeated prompts', async () => {
-    let now = 0;
+  it('requires main-process confirmation for every approved privileged cleanup', async () => {
     const confirm = vi.fn(async () => true);
-    const gate = createElevatedCleanupGate(confirm, () => now, 60_000);
-
+    const gate = createElevatedCleanupGate(confirm, () => 0, 60_000);
     expect((await gate()).allowed).toBe(true);
-    const second = await gate();
-    expect(second.allowed).toBe(false);
-    expect(confirm).toHaveBeenCalledTimes(1);
-
-    now = 61_000;
     expect((await gate()).allowed).toBe(true);
     expect(confirm).toHaveBeenCalledTimes(2);
   });
 
-  it('does not run when the user declines, and declines also start the cooldown', async () => {
+  it('suppresses further prompts for the cooldown after the user declines', async () => {
     let now = 0;
-    const confirm = vi.fn(async () => false);
+    const answers = [false, true];
+    const confirm = vi.fn(async () => answers.shift()!);
     const gate = createElevatedCleanupGate(confirm, () => now, 60_000);
     expect((await gate()).allowed).toBe(false);
     now = 1_000;
-    await gate();
+    expect((await gate()).allowed).toBe(false);
     expect(confirm).toHaveBeenCalledTimes(1);
+    now = 61_000;
+    expect((await gate()).allowed).toBe(true);
+    expect(confirm).toHaveBeenCalledTimes(2);
   });
 
   it('refuses concurrent prompts while a confirmation is pending', async () => {
@@ -316,6 +336,22 @@ describe('SteamGridDB key storage (MS-20)', () => {
     electronState.encryptionAvailable = true;
     expect(new SteamGridDbSecretStore(userDataDir).getApiKey()).toBe('synthetic-legacy-key');
     expect(fs.readFileSync(secretFile(), 'utf8')).toBe('dpapi:synthetic-legacy-key');
+  });
+});
+
+describe('system binary resolution', () => {
+  it('starts system tools by absolute path, never by bare name', () => {
+    expect(windowsPowerShellPath()).toMatch(/^[A-Za-z]:\\.+\\System32\\WindowsPowerShell\\v1\.0\\powershell\.exe$/i);
+    expect(resolveSystemBinary('taskkill.exe')).toMatch(/^[A-Za-z]:\\.+\\System32\\taskkill\.exe$/i);
+    expect(resolveSystemBinary('PowerShell.exe')).toBe(windowsPowerShellPath());
+    expect(resolveSystemBinary('C:\\Riot Games\\Riot Client\\RiotClientServices.exe')).toBe(
+      'C:\\Riot Games\\Riot Client\\RiotClientServices.exe'
+    );
+  });
+
+  it('detects elevation from the token integrity level', () => {
+    expect(parseElevatedFromWhoamiGroups('"Mandatory Label\\High Mandatory Level","Label","S-1-16-12288",""')).toBe(true);
+    expect(parseElevatedFromWhoamiGroups('"Mandatory Label\\Medium Mandatory Level","Label","S-1-16-8192",""')).toBe(false);
   });
 });
 

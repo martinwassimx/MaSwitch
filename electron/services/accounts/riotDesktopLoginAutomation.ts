@@ -2,6 +2,7 @@ import { spawn, ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { windowsPowerShellPath } from '../security/systemBinaries';
 import type { RiotCredentialVault } from './riotCredentialVault';
 import { RiotWindowsProcessCoordinator } from './riotProductionAdapters';
 import { createRiotProcessTrustVerifier, type ProcessTrustResult } from './riotProcessTrust';
@@ -675,7 +676,7 @@ export class RiotDesktopLoginAutomationService {
     }
 
     return new Promise((resolve) => {
-      const proc = spawn('powershell.exe', [
+      const proc = spawn(windowsPowerShellPath(), [
         '-NoProfile',
         '-NonInteractive',
         '-ExecutionPolicy',
@@ -816,7 +817,7 @@ export class RiotDesktopLoginAutomationService {
     }
 
     return new Promise<WorkerRunResult>((resolve) => {
-      const proc = spawn('powershell.exe', [
+      const proc = spawn(windowsPowerShellPath(), [
         '-NoProfile',
         '-NonInteractive',
         '-ExecutionPolicy',
