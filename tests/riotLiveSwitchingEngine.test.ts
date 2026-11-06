@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -21,10 +21,10 @@ describe('Phase 9: Riot Games Live Switching Engine & Approval Gate Test Suite',
   let testDir: string;
   let engine: RiotLiveSwitchingEngine;
   let storage: RiotSessionStorage;
-  let isGameRunningMock: ReturnType<typeof vi.fn>;
-  let isClientRunningMock: ReturnType<typeof vi.fn>;
-  let requestGracefulShutdownMock: ReturnType<typeof vi.fn>;
-  let launchClientMock: ReturnType<typeof vi.fn>;
+  let isGameRunningMock: Mock<() => Promise<boolean>>;
+  let isClientRunningMock: Mock<() => Promise<boolean>>;
+  let requestGracefulShutdownMock: Mock<() => Promise<boolean>>;
+  let launchClientMock: Mock<() => Promise<void>>;
 
   const ACCOUNT_A = 'melynelas-euw-id';
   const ACCOUNT_B = 'littleimad-euwn-id';

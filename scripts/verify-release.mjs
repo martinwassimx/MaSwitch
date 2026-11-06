@@ -1,14 +1,20 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import asar from '@electron/asar';
+import { getCurrentFuseWire, FuseV1Options } from '@electron/fuses';
 import { verifyReleaseManifest } from './update-signing.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, '..');
-const releaseDir = path.join(rootDir, 'release');
+const releaseDirArgIndex = process.argv.indexOf('--release-dir');
+const releaseDir =
+  releaseDirArgIndex > 0 && process.argv[releaseDirArgIndex + 1]
+    ? path.resolve(process.argv[releaseDirArgIndex + 1])
+    : path.join(rootDir, 'release');
 const pkg = JSON.parse(fs.readFileSync(path.join(rootDir, 'package.json'), 'utf-8'));
 const appVersion = pkg.version || '1.0.0';
 const installerFileName = `MaSwitch-Setup-${appVersion}.exe`;
@@ -64,9 +70,8 @@ for (const target of targetFiles) {
   };
 
   try {
-    const escapedPath = target.path.replace(/'/g, "''");
     const psCmd = `
-      $sig = Get-AuthenticodeSignature -LiteralPath '${escapedPath}'
+      $sig = Get-AuthenticodeSignature -LiteralPath $env:MASWITCH_VERIFY_PATH
       [PSCustomObject]@{
         Status = [string]$sig.Status
         StatusMessage = [string]$sig.StatusMessage
@@ -74,10 +79,11 @@ for (const target of targetFiles) {
         TimeStamper = if ($sig.TimeStamperCertificate) { $sig.TimeStamperCertificate.Subject } else { $null }
       } | ConvertTo-Json -Compress
     `;
-    const psOut = execSync('powershell.exe -NoProfile -NonInteractive -Command -', {
-      input: psCmd,
+    const psOut = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', psCmd], {
       encoding: 'utf-8',
-      stdio: ['pipe', 'pipe', 'pipe'],
+      env: { ...process.env, MASWITCH_VERIFY_PATH: target.path },
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
     }).trim();
 
     if (psOut) {
@@ -149,6 +155,87 @@ if (isSigned) {
 
 for (const r of results) {
   if (r.exists === false) failures.push(`missing artifact: ${r.target}`);
+}
+
+// 4. Dependency lockfile consistency
+const lockPath = path.join(rootDir, 'package-lock.json');
+if (!fs.existsSync(lockPath)) {
+  failures.push('package-lock.json is missing');
+} else {
+  const lock = JSON.parse(fs.readFileSync(lockPath, 'utf-8'));
+  const lockRoot = (lock.packages && lock.packages['']) || {};
+  if (lock.lockfileVersion < 3) failures.push(`lockfileVersion ${lock.lockfileVersion} is older than 3`);
+  if (lockRoot.version !== pkg.version) failures.push('package-lock.json version does not match package.json');
+  for (const field of ['dependencies', 'devDependencies']) {
+    const declared = pkg[field] || {};
+    const locked = lockRoot[field] || {};
+    for (const [name, range] of Object.entries(declared)) {
+      if (locked[name] !== range) failures.push(`lockfile ${field} out of sync for ${name}`);
+    }
+    for (const name of Object.keys(locked)) {
+      if (!(name in declared)) failures.push(`lockfile ${field} has undeclared ${name}`);
+    }
+  }
+  if (!/^\d+\.\d+\.\d+$/.test(pkg.devDependencies?.electron || '')) {
+    failures.push('electron must be pinned to an exact version');
+  }
+  const insecureResolved = Object.entries(lock.packages || {}).filter(
+    ([, meta]) => meta && typeof meta.resolved === 'string' && !meta.resolved.startsWith('https://registry.npmjs.org/')
+  );
+  for (const [name] of insecureResolved) failures.push(`lockfile entry not resolved from the npm registry over HTTPS: ${name}`);
+  const missingIntegrity = Object.entries(lock.packages || {}).filter(
+    ([key, meta]) => key && meta && meta.resolved && !meta.integrity
+  );
+  for (const [name] of missingIntegrity) failures.push(`lockfile entry without integrity hash: ${name}`);
+  console.log('[i] Lockfile consistency checked.');
+}
+
+// 5. Packaged application contents and Electron fuses
+const unpackedDir = path.join(releaseDir, 'win-unpacked');
+const asarPath = path.join(unpackedDir, 'resources', 'app.asar');
+const exePath = path.join(unpackedDir, 'MaSwitch.exe');
+const FORBIDDEN_ASAR_ENTRIES = [
+  { pattern: /\.(pem|key|pfx|p12|snk|env)$/i, reason: 'key or environment file' },
+  { pattern: /(^|[\\/])\.env(\.|$)/i, reason: 'environment file' },
+  { pattern: /security-audit/i, reason: 'private security audit material' },
+  { pattern: /update-signing/i, reason: 'release signing tooling' },
+  { pattern: /\.map$/i, reason: 'source map' },
+  { pattern: /^[\\/](src|tests|scripts|docs)[\\/]/i, reason: 'source or tooling directory' },
+  { pattern: /(^|[\\/])\.git([\\/]|$)/i, reason: 'git metadata' },
+];
+if (!fs.existsSync(asarPath)) {
+  failures.push(`app.asar not found at ${asarPath}`);
+} else {
+  const entries = asar.listPackage(asarPath);
+  for (const entry of entries) {
+    const hit = FORBIDDEN_ASAR_ENTRIES.find((rule) => rule.pattern.test(entry));
+    if (hit) failures.push(`unexpected file in app.asar (${hit.reason}): ${entry}`);
+  }
+  const asarBytes = fs.readFileSync(asarPath);
+  for (const marker of ['BEGIN PRIVATE KEY', 'BEGIN ENCRYPTED PRIVATE KEY', 'BEGIN RSA PRIVATE KEY', 'MASWITCH_UPDATE_KEY_PASSPHRASE=']) {
+    if (asarBytes.includes(Buffer.from(marker))) failures.push(`app.asar contains private key material marker: ${marker}`);
+  }
+  if (fs.existsSync(path.join(unpackedDir, 'resources', 'app'))) {
+    failures.push('an unpacked resources/app folder exists next to app.asar');
+  }
+  console.log(`[i] Inspected ${entries.length} app.asar entries.`);
+}
+if (fs.existsSync(exePath)) {
+  const wire = await getCurrentFuseWire(exePath);
+  const expected = {
+    [FuseV1Options.RunAsNode]: false,
+    [FuseV1Options.EnableNodeOptionsEnvironmentVariable]: false,
+    [FuseV1Options.EnableNodeCliInspectArguments]: false,
+    [FuseV1Options.EnableCookieEncryption]: true,
+    [FuseV1Options.EnableEmbeddedAsarIntegrityValidation]: true,
+    [FuseV1Options.OnlyLoadAppFromAsar]: true,
+  };
+  for (const [option, want] of Object.entries(expected)) {
+    const raw = wire[option];
+    const enabled = raw === 49 || raw === '1' || raw === 1 || raw === true;
+    if (enabled !== want) failures.push(`Electron fuse ${FuseV1Options[option]} is ${enabled ? 'enabled' : 'disabled'}`);
+  }
+  console.log('[i] Electron fuses checked.');
 }
 
 console.log('====================================================\n');

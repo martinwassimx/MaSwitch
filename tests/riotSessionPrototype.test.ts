@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import {
   RiotSessionPrototypeAdapter,
   createSyntheticFileRiotSystemAccess,
@@ -21,8 +21,8 @@ describe('Phase 7: Riot Games Unofficial Account Switching Safe Prototype', () =
   let dir: string;
   let systemAccess: RiotSystemAccess;
   let adapter: RiotSessionPrototypeAdapter;
-  let isRunningMock: ReturnType<typeof vi.fn>;
-  let openClientMock: ReturnType<typeof vi.fn>;
+  let isRunningMock: Mock<() => Promise<boolean>>;
+  let openClientMock: Mock<() => Promise<void>>;
 
   beforeEach(() => {
     vi.clearAllMocks();

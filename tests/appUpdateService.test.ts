@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -172,7 +172,7 @@ describe('AppUpdateService — authenticated updates', () => {
   let isMemoryCleaning: boolean;
   let mockSpawnProcess: { unref: ReturnType<typeof vi.fn> };
   let mockSpawn: ReturnType<typeof vi.fn>;
-  let quitApp: ReturnType<typeof vi.fn>;
+  let quitApp: Mock<() => void>;
 
   beforeEach(() => {
     tempTestDir = fs.mkdtempSync(path.join(os.tmpdir(), 'maswitch-updater-test-'));
