@@ -141,7 +141,7 @@ export class LocalDatabaseService {
     }
     return {
       appName: 'MaSwitch',
-      appVersion: '1.0.2',
+      appVersion: '1.0.3',
       phaseLabel: 'MaSwitch 3.0 — Windows Gaming Launcher & Account Manager',
       electronVersion: '33.x',
       chromeVersion: '130.x',

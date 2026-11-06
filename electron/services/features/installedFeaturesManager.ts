@@ -59,7 +59,7 @@ export class InstalledFeaturesManager {
     defaultPreset: InstallPresetId;
   }): InstalledFeaturesManifest {
     const now = new Date().toISOString();
-    const appVersion = typeof app?.getVersion === 'function' ? app.getVersion() : '1.0.2';
+    const appVersion = typeof app?.getVersion === 'function' ? app.getVersion() : '1.0.3';
 
     // A. Check if user manifest already exists
     if (fs.existsSync(config.userManifestPath)) {

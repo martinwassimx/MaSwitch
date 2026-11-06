@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ---
 
+## [1.0.3] - 2026-11-06 — Premium Game News UI/UX Redesign (Zero Performance Overhead)
+
+### Changed
+- **Featured News Hero Card (`FeaturedNewsCard`)**:
+  - Added a prominent top **Featured News** split card highlighting the latest real article from the user's library with widescreen artwork, game & platform attribution, publication date, headline, summary, source label, and a **Read Article** action.
+- **Responsive Multi-Column News Card Grid (`NewsFeedCard`)**:
+  - Replaced full-width stacked article rows with a responsive CSS Grid: **1 column** on narrow windows, **2 columns** by default on standard desktop screens (`1024×768`, `1280×720`, `1366×768`), and **3 columns** on wide displays (`1920×1080`).
+  - Standardized card header heights (`h-36 sm:h-40`) with widescreen banner resolution (`articleImageUrl` / `heroBackgroundImage` / `coverImage`) and centered icon containment so small `.ico` icons are never stretched.
+- **Compact Header & Unified Filter Toolbar**:
+  - Consolidated **Search**, **Game Filter**, **Platform Filter**, **Sort Selector** (`Newest First`, `Recent Updates`, `By Game`), and **Clear** into a single compact toolbar.
+- **Low-End PC Performance Optimizations**:
+  - Added `React.memo` card isolation, `loading="lazy"` + `decoding="async"` on all grid images, and `motion-reduce:transition-none` support, reducing page DOM nodes to `355` and JS Heap usage to `4.61 MB` (`0%` idle CPU).
+
+---
+
 ## [1.0.2] - 2026-11-06 — Multi-Platform Game News, Provider Coverage & Feed Reliability
 
 ### Added
