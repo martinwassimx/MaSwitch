@@ -379,6 +379,18 @@ export const SQLITE_MIGRATIONS: readonly MigrationDefinition[] = [
       CREATE INDEX IF NOT EXISTS idx_mem_cleanup_ts ON memory_cleanup_history(timestamp_iso);
     `,
   },
+  {
+    version: 11,
+    name: '011_riot_identity_and_regions',
+    sql: `
+      ALTER TABLE account_profiles ADD COLUMN riot_id TEXT;
+      ALTER TABLE account_profiles ADD COLUMN riot_id_source TEXT;
+      ALTER TABLE account_profiles ADD COLUMN lol_region TEXT;
+      ALTER TABLE account_profiles ADD COLUMN lol_region_source TEXT;
+      ALTER TABLE account_profiles ADD COLUMN valorant_region TEXT;
+      ALTER TABLE account_profiles ADD COLUMN valorant_region_source TEXT;
+    `,
+  },
 ];
 
 const PLATFORM_NAMES: Record<PlatformId, string> = {
@@ -2438,6 +2450,37 @@ export class MaSwitchSqliteDatabase {
     return this.getAccountProfileById(id);
   }
 
+  /** Writes detected or user-selected Riot region metadata. Does not change the nickname or login username. */
+  public updateRiotAccountMetadata(
+    id: string,
+    input: Pick<
+      UpdateAccountProfileInput,
+      'lolRegion' | 'lolRegionSource' | 'valorantRegion' | 'valorantRegionSource' | 'riotId' | 'riotIdSource'
+    >
+  ): AccountProfile | null {
+    const existing = this.getAccountProfileById(id);
+    if (!existing) return null;
+    this.db.run(
+      `UPDATE account_profiles
+       SET lol_region = ?, lol_region_source = ?, valorant_region = ?, valorant_region_source = ?,
+           riot_id = ?, riot_id_source = ?, updated_at = ?
+       WHERE id = ?`,
+      [
+        input.lolRegion !== undefined ? input.lolRegion : existing.lolRegion ?? null,
+        input.lolRegionSource !== undefined ? input.lolRegionSource : existing.lolRegionSource ?? null,
+        input.valorantRegion !== undefined ? input.valorantRegion : existing.valorantRegion ?? null,
+        input.valorantRegionSource !== undefined
+          ? input.valorantRegionSource
+          : existing.valorantRegionSource ?? null,
+        input.riotId !== undefined ? input.riotId : existing.riotId ?? null,
+        input.riotIdSource !== undefined ? input.riotIdSource : existing.riotIdSource ?? null,
+        new Date().toISOString(),
+        id,
+      ]
+    );
+    return this.getAccountProfileById(id);
+  }
+
   public deleteAccountProfile(id: string): boolean {
     let deleted = false;
     this.withTransaction(() => {
@@ -2678,6 +2721,18 @@ export class MaSwitchSqliteDatabase {
       username: String(r.username),
       avatarUrl: typeof r.avatar_url === 'string' ? r.avatar_url : null,
       nickname: typeof r.nickname === 'string' ? r.nickname : null,
+      riotId: typeof r.riot_id === 'string' ? r.riot_id : null,
+      riotIdSource: r.riot_id_source === 'riot-client' ? 'riot-client' : null,
+      lolRegion: typeof r.lol_region === 'string' ? r.lol_region : null,
+      lolRegionSource:
+        r.lol_region_source === 'riot-client' || r.lol_region_source === 'user' ? r.lol_region_source : null,
+      valorantRegion: typeof r.valorant_region === 'string' ? r.valorant_region : null,
+      valorantRegionSource:
+        r.valorant_region_source === 'riot-client' ||
+        r.valorant_region_source === 'user' ||
+        r.valorant_region_source === 'default'
+          ? r.valorant_region_source
+          : null,
       isPreferred: Boolean(r.is_preferred),
       isLastSelected: Number(r.is_last_selected) === 1,
       lastUsedAt: typeof r.last_used_at === 'string' ? r.last_used_at : null,

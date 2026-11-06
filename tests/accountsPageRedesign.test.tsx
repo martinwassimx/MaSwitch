@@ -23,6 +23,10 @@ const mockProfiles: AccountProfile[] = [
     isLastSelected: true,
     lastUsedAt: '2026-11-05T19:00:00.000Z',
     notes: 'Grandmaster ADC',
+    lolRegion: 'EUW',
+    lolRegionSource: 'user',
+    valorantRegion: 'EMEA',
+    valorantRegionSource: 'riot-client',
     createdAt: '2026-01-10T10:00:00.000Z',
     updatedAt: '2026-11-05T19:00:00.000Z',
   },
@@ -37,6 +41,10 @@ const mockProfiles: AccountProfile[] = [
     isLastSelected: false,
     lastUsedAt: '2026-11-01T12:00:00.000Z',
     notes: null,
+    lolRegion: 'NA',
+    lolRegionSource: 'user',
+    valorantRegion: 'NA',
+    valorantRegionSource: 'user',
     createdAt: '2026-02-15T10:00:00.000Z',
     updatedAt: '2026-11-01T12:00:00.000Z',
   },
@@ -324,14 +332,14 @@ describe('MaSwitch 3.0 — Accounts Page Redesign & Riot-First Account Managemen
     expect(screen.getByTestId('form-platform-riot')).not.toBeDisabled();
 
     // Fill out new Riot account + inline DPAPI credentials
-    fireEvent.change(screen.getByTestId('input-display-name'), {
-      target: { value: 'LOL KR — FakerFan' },
+    fireEvent.change(screen.getByTestId('input-nickname'), {
+      target: { value: 'My KR Account' },
     });
     fireEvent.change(screen.getByTestId('input-username'), {
-      target: { value: 'FakerFan#KR1' },
+      target: { value: 'faker_login' },
     });
-    fireEvent.change(screen.getByTestId('input-nickname'), {
-      target: { value: 'League of Legends — KR' },
+    fireEvent.change(screen.getByTestId('input-lol-region'), {
+      target: { value: 'KR' },
     });
     fireEvent.change(screen.getByTestId('form-riot-login-username'), {
       target: { value: 'faker_kr_login' },
@@ -346,9 +354,9 @@ describe('MaSwitch 3.0 — Accounts Page Redesign & Riot-First Account Managemen
     await waitFor(() => {
       expect(createAccountProfileSpy).toHaveBeenCalledWith({
         platformId: 'riot',
-        displayName: 'LOL KR — FakerFan',
-        username: 'FakerFan#KR1',
-        nickname: 'League of Legends — KR',
+        displayName: 'My KR Account',
+        username: 'faker_kr_login',
+        nickname: 'My KR Account',
         notes: null,
         isPreferred: true,
       });

@@ -271,6 +271,8 @@ export interface AppStoreState {
   launchRiotClient: () => Promise<{ success: boolean; message: string }>;
   clearRiotCredentialError: () => void;
   startRiotDesktopLogin: (profileId: string, autoLaunchClient?: boolean, autoSubmit?: boolean) => Promise<RiotDesktopLoginResultPayload>;
+  refreshRiotRegions: (profileId: string) => Promise<void>;
+  setRiotRegions: (profileId: string, regions: { lolRegion: string | null; valorantRegion: string | null }) => Promise<void>;
   cancelRiotDesktopLogin: () => Promise<void>;
   clearRiotLoginAutomationProgress: () => void;
 
@@ -1674,6 +1676,13 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
         autoLaunchClient,
         shouldAutoSubmit
       );
+      if (result.success) {
+        try {
+          await localDatabaseService.riotRefreshRegions(profileId);
+        } catch {
+          // Region files can be missing. Login itself already succeeded.
+        }
+      }
       set({
         riotLoginAutomationResult: result,
         isRiotLoginAutomating: false,
@@ -1701,6 +1710,16 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
       });
       return failResult;
     }
+  },
+
+  refreshRiotRegions: async (profileId) => {
+    await localDatabaseService.riotRefreshRegions(profileId);
+    await get().loadAccountProfiles();
+  },
+
+  setRiotRegions: async (profileId, regions) => {
+    await localDatabaseService.riotSetRegions(profileId, regions);
+    await get().loadAccountProfiles();
   },
 
   cancelRiotDesktopLogin: async () => {

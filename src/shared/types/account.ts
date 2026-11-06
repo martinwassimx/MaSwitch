@@ -20,6 +20,13 @@ export interface AccountProfile {
   isEnrolled?: boolean;
   lastUsedAt: string | null;
   notes?: string | null;
+  /** Verified Riot ID (`Name#TAG`). Set only from a supported client source, never from the login username. */
+  riotId?: string | null;
+  riotIdSource?: 'riot-client' | null;
+  lolRegion?: string | null;
+  lolRegionSource?: 'riot-client' | 'user' | null;
+  valorantRegion?: string | null;
+  valorantRegionSource?: 'riot-client' | 'user' | 'default' | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -41,6 +48,12 @@ export interface UpdateAccountProfileInput {
   nickname?: string | null;
   isPreferred?: boolean;
   notes?: string | null;
+  lolRegion?: string | null;
+  lolRegionSource?: 'riot-client' | 'user' | null;
+  valorantRegion?: string | null;
+  valorantRegionSource?: 'riot-client' | 'user' | 'default' | null;
+  riotId?: string | null;
+  riotIdSource?: 'riot-client' | null;
 }
 
 export type SupportedSwitchingMethodId =

@@ -21,6 +21,7 @@ import { GameCoverCard } from '../components/common/GameCoverCard';
 import { PlatformLogo } from '../components/platforms/PlatformLogo';
 import { ScanDiagnosticsModal } from '../components/scanner/ScanDiagnosticsModal';
 import { ScanningFeedbackBanner } from '../components/scanner/ScanningFeedbackBanner';
+import { QuickAccountSwitch } from '../components/home/QuickAccountSwitch';
 
 export const HomePage: React.FC = () => {
   const games = useAppStore((s) => s.games);
@@ -187,6 +188,8 @@ export const HomePage: React.FC = () => {
           </button>
         </div>
       </div>
+
+      <QuickAccountSwitch />
 
       {/* Real-time Scanning Activity / Error / Completion Feedback */}
       <ScanningFeedbackBanner

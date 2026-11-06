@@ -51,6 +51,13 @@ import type {
 import type { RiotCredentialVault } from '../services/accounts/riotCredentialVault';
 import { RiotDesktopLoginAutomationService } from '../services/accounts/riotDesktopLoginAutomation';
 import { removeRiotAccountArtifacts } from '../services/accounts/riotAccountCleanup';
+import { readRiotClientRegions } from '../services/accounts/riotClientRegionReader';
+import {
+  mergeDetectedRegions,
+  normalizeLolRegion,
+  normalizeValorantRegion,
+  VALORANT_DEFAULT_REGION,
+} from '../../src/shared/riot/riotAccountIdentity';
 import { PerformanceMonitorService } from '../services/performanceMonitorService';
 import { NewsService } from '../services/newsService';
 import { BackupService, isBackupFileName } from '../services/backupService';
@@ -919,6 +926,85 @@ export function registerIpcHandlers(
       return result;
     }
   );
+
+  const applyRiotRegionReading = (profileId: string) => {
+    const profile = sqliteDb.getAccountProfileById(profileId);
+    if (!profile || profile.platformId !== 'riot') {
+      throw new Error('Riot account was not found.');
+    }
+    const localAppData = process.env.LOCALAPPDATA || '';
+    const detected = localAppData ? readRiotClientRegions(localAppData) : { lolRegion: null, valorantRegion: null };
+    const merged = mergeDetectedRegions(
+      {
+        lolRegion: profile.lolRegion ?? null,
+        lolRegionSource: profile.lolRegionSource ?? null,
+        valorantRegion: profile.valorantRegion ?? null,
+        valorantRegionSource: profile.valorantRegionSource ?? null,
+      },
+      detected
+    );
+    return sqliteDb.updateRiotAccountMetadata(profileId, {
+      lolRegion: merged.lolRegion,
+      lolRegionSource: merged.lolRegionSource === 'riot-client' || merged.lolRegionSource === 'user' ? merged.lolRegionSource : null,
+      valorantRegion: merged.valorantRegion,
+      valorantRegionSource: merged.valorantRegionSource,
+      riotId: profile.riotId ?? null,
+      riotIdSource: profile.riotIdSource ?? null,
+    });
+  };
+
+  ipcMain.handle(IPC_CHANNELS.ACCOUNTS_RIOT_REFRESH_REGIONS, (event, rawProfileId: unknown) => {
+    assertTrustedSender(event, getMainWindow, devServerUrl);
+    if (typeof rawProfileId !== 'string' || !rawProfileId.trim()) {
+      throw new Error('Invalid account ID.');
+    }
+    const updated = applyRiotRegionReading(rawProfileId.trim());
+    const win = getMainWindow();
+    if (win && !win.isDestroyed() && !win.webContents.isDestroyed()) {
+      win.webContents.send(IPC_CHANNELS.ACCOUNTS_UPDATED_EVENT);
+    }
+    return updated;
+  });
+
+  ipcMain.handle(IPC_CHANNELS.ACCOUNTS_RIOT_SET_REGIONS, (event, rawProfileId: unknown, rawRegions: unknown) => {
+    assertTrustedSender(event, getMainWindow, devServerUrl);
+    if (typeof rawProfileId !== 'string' || !rawProfileId.trim()) {
+      throw new Error('Invalid account ID.');
+    }
+    const profile = sqliteDb.getAccountProfileById(rawProfileId.trim());
+    if (!profile || profile.platformId !== 'riot') {
+      throw new Error('Riot account was not found.');
+    }
+    if (!rawRegions || typeof rawRegions !== 'object') {
+      throw new Error('Invalid region selection.');
+    }
+    const candidate = rawRegions as { lolRegion?: unknown; valorantRegion?: unknown };
+    const lol =
+      candidate.lolRegion === null || candidate.lolRegion === ''
+        ? null
+        : normalizeLolRegion(typeof candidate.lolRegion === 'string' ? candidate.lolRegion : null);
+    if (candidate.lolRegion && !lol) {
+      throw new Error('Unknown League of Legends region.');
+    }
+    const valorant =
+      candidate.valorantRegion === null || candidate.valorantRegion === ''
+        ? null
+        : normalizeValorantRegion(typeof candidate.valorantRegion === 'string' ? candidate.valorantRegion : null);
+    if (candidate.valorantRegion && !valorant) {
+      throw new Error('Unknown VALORANT region.');
+    }
+    const updated = sqliteDb.updateRiotAccountMetadata(profile.id, {
+      lolRegion: lol,
+      lolRegionSource: lol ? 'user' : null,
+      valorantRegion: valorant ?? VALORANT_DEFAULT_REGION,
+      valorantRegionSource: valorant ? 'user' : 'default',
+    });
+    const win = getMainWindow();
+    if (win && !win.isDestroyed() && !win.webContents.isDestroyed()) {
+      win.webContents.send(IPC_CHANNELS.ACCOUNTS_UPDATED_EVENT);
+    }
+    return updated;
+  });
 
   ipcMain.handle(IPC_CHANNELS.ACCOUNTS_CANCEL_SWITCH, (event, switchId: unknown) => {
     assertTrustedSender(event, getMainWindow, devServerUrl);

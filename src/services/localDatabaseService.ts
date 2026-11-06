@@ -790,6 +790,23 @@ export class LocalDatabaseService {
     throw new Error('Launching Riot Client requires the MaSwitch desktop application.');
   }
 
+  public async riotRefreshRegions(profileId: string): Promise<AccountProfile | null> {
+    if (window.maswitch?.accounts?.riotRefreshRegions) {
+      return window.maswitch.accounts.riotRefreshRegions(profileId);
+    }
+    return null;
+  }
+
+  public async riotSetRegions(
+    profileId: string,
+    regions: { lolRegion: string | null; valorantRegion: string | null }
+  ): Promise<AccountProfile | null> {
+    if (window.maswitch?.accounts?.riotSetRegions) {
+      return window.maswitch.accounts.riotSetRegions(profileId, regions);
+    }
+    return null;
+  }
+
   public async riotStartDesktopLogin(
     profileId: string,
     autoLaunchClient?: boolean,

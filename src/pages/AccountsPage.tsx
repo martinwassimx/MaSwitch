@@ -31,6 +31,13 @@ import type {
   PlatformLauncherStatus,
   UpdateAccountProfileInput,
 } from '../shared/types/account';
+import {
+  LOL_REGIONS,
+  VALORANT_REGIONS,
+  accountPrimaryLabel,
+  lolRegionLine,
+  valorantRegionLine,
+} from '../shared/riot/riotAccountIdentity';
 import type { PlatformId } from '../shared/types/platform';
 import { useAppStore } from '../store/useAppStore';
 import { DemoNoticeBanner } from '../components/common/DemoNoticeBanner';
@@ -58,28 +65,6 @@ const SUPPORTED_ACCOUNT_PLATFORMS: PlatformId[] = [
 type CredentialFilterMode = 'all' | 'configured' | 'missing';
 type AccountSortMode = 'platform' | 'name' | 'recent';
 
-/**
- * Extracts a clean region badge (e.g. EUW, NA, EUNE, KR) from a profile's metadata when available.
- */
-function extractAccountRegion(profile: AccountProfile): string | null {
-  const hashMatch = profile.username.match(/#([A-Za-z0-9]{2,6})$/);
-  if (hashMatch) {
-    return hashMatch[1].toUpperCase();
-  }
-
-  const combined = `${profile.displayName} ${profile.nickname ?? ''} ${profile.notes ?? ''}`;
-  const regionMatch = combined.match(
-    /\b(EUWN|EUW|EUNE|NA1|NA|KR|BR1|BR|LAN|LAS|OCE|TR1|TR|RU|JP1|JP|ME1|ME|AP|LATAM)\b/i
-  );
-  if (regionMatch) {
-    return regionMatch[1].toUpperCase();
-  }
-
-  if (profile.platformId === 'riot') {
-    return 'EUW';
-  }
-  return null;
-}
 
 export const AccountsPage: React.FC = () => {
   const accountProfiles = useAppStore((s) => s.accountProfiles);
@@ -98,6 +83,8 @@ export const AccountsPage: React.FC = () => {
   const riotLoginAutomationProgress = useAppStore((s) => s.riotLoginAutomationProgress);
   const isRiotLoginAutomating = useAppStore((s) => s.isRiotLoginAutomating);
   const startRiotDesktopLogin = useAppStore((s) => s.startRiotDesktopLogin);
+  const refreshRiotRegions = useAppStore((s) => s.refreshRiotRegions);
+  const setRiotRegions = useAppStore((s) => s.setRiotRegions);
   const cancelRiotDesktopLogin = useAppStore((s) => s.cancelRiotDesktopLogin);
   const clearRiotLoginAutomationProgress = useAppStore((s) => s.clearRiotLoginAutomationProgress);
   const riotAutoSubmitLogin = useAppStore((s) => s.settings.riotAutoSubmitLogin ?? true);
@@ -140,9 +127,10 @@ export const AccountsPage: React.FC = () => {
   // Add / Edit Riot Profile Modal State
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
   const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
-  const [formDisplayName, setFormDisplayName] = useState('');
   const [formUsername, setFormUsername] = useState('');
   const [formNickname, setFormNickname] = useState('');
+  const [formLolRegion, setFormLolRegion] = useState('');
+  const [formValorantRegion, setFormValorantRegion] = useState('');
   const [formNotes, setFormNotes] = useState('');
   const [formIsPreferred, setFormIsPreferred] = useState(false);
   // Optional inline DPAPI credential setup when creating a Riot profile
@@ -273,9 +261,10 @@ export const AccountsPage: React.FC = () => {
   const openCreateModal = () => {
     setOpenMenuProfileId(null);
     setEditingProfileId(null);
-    setFormDisplayName('');
     setFormUsername('');
     setFormNickname('');
+    setFormLolRegion('');
+    setFormValorantRegion('');
     setFormNotes('');
     setFormIsPreferred(false);
     setFormRiotLoginUser('');
@@ -289,9 +278,10 @@ export const AccountsPage: React.FC = () => {
     if (profile.platformId !== 'riot') return;
     setOpenMenuProfileId(null);
     setEditingProfileId(profile.id);
-    setFormDisplayName(profile.displayName);
     setFormUsername(profile.username);
     setFormNickname(profile.nickname ?? '');
+    setFormLolRegion(profile.lolRegionSource === 'user' || profile.lolRegionSource === 'riot-client' ? profile.lolRegion ?? '' : '');
+    setFormValorantRegion(profile.valorantRegionSource === 'user' || profile.valorantRegionSource === 'riot-client' ? profile.valorantRegion ?? '' : '');
     setFormNotes(profile.notes ?? '');
     setFormIsPreferred(profile.isPreferred);
     setFormRiotLoginUser(riotCredentialStatuses[profile.id]?.username || profile.username);
@@ -306,28 +296,36 @@ export const AccountsPage: React.FC = () => {
     e.preventDefault();
     setFormError(null);
 
-    const displayName = formDisplayName.trim();
-    const username = formUsername.trim();
+    const nickname = formNickname.trim();
+    const username = (formRiotLoginUser.trim() || formUsername.trim());
 
-    if (!displayName) {
-      setFormError('Account display name is required.');
-      return;
-    }
     if (!username) {
-      setFormError('Username or public identifier is required.');
+      setFormError('A private login username is required so MaSwitch can match this account when enrolling a session.');
       return;
     }
 
     try {
       if (editingProfileId) {
         const updatePayload: UpdateAccountProfileInput = {
-          displayName,
           username,
-          nickname: formNickname.trim() || null,
+          nickname: nickname || null,
           notes: formNotes.trim() || null,
           isPreferred: formIsPreferred,
         };
         await updateAccountProfile(editingProfileId, updatePayload);
+        const existing = accountProfiles.find((profile) => profile.id === editingProfileId);
+        const currentLol =
+          existing?.lolRegionSource === 'user' || existing?.lolRegionSource === 'riot-client' ? existing.lolRegion ?? '' : '';
+        const currentValorant =
+          existing?.valorantRegionSource === 'user' || existing?.valorantRegionSource === 'riot-client'
+            ? existing.valorantRegion ?? ''
+            : '';
+        if (formLolRegion !== currentLol || formValorantRegion !== currentValorant) {
+          await setRiotRegions(editingProfileId, {
+            lolRegion: formLolRegion || null,
+            valorantRegion: formValorantRegion || null,
+          });
+        }
         if (formRiotPassword) {
           await saveRiotCredentials(
             editingProfileId,
@@ -338,13 +336,19 @@ export const AccountsPage: React.FC = () => {
       } else {
         const createPayload: CreateAccountProfileInput = {
           platformId: 'riot',
-          displayName,
+          displayName: nickname || 'Riot Account',
           username,
-          nickname: formNickname.trim() || null,
+          nickname: nickname || null,
           notes: formNotes.trim() || null,
           isPreferred: formIsPreferred,
         };
         const created = await createAccountProfile(createPayload);
+        if (created) {
+          await setRiotRegions(created.id, {
+            lolRegion: formLolRegion || null,
+            valorantRegion: formValorantRegion || null,
+          });
+        }
         if (created && formRiotPassword) {
           await saveRiotCredentials(
             created.id,
@@ -412,12 +416,11 @@ export const AccountsPage: React.FC = () => {
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         const matchesName = p.displayName.toLowerCase().includes(q);
-        const matchesUser = p.username.toLowerCase().includes(q);
         const matchesNick = p.nickname?.toLowerCase().includes(q) ?? false;
         const matchesNotes = p.notes?.toLowerCase().includes(q) ?? false;
-        const region = extractAccountRegion(p)?.toLowerCase() ?? '';
-        const matchesRegion = region.includes(q);
-        return matchesName || matchesUser || matchesNick || matchesNotes || matchesRegion;
+        const matchesRiotId = p.riotId?.toLowerCase().includes(q) ?? false;
+        const matchesRegion = `${p.lolRegion ?? ''} ${p.valorantRegion ?? ''}`.toLowerCase().includes(q);
+        return matchesName || matchesNick || matchesNotes || matchesRiotId || matchesRegion;
       }
       return true;
     });
@@ -814,7 +817,7 @@ export const AccountsPage: React.FC = () => {
               {filteredAndSortedRiotProfiles.map((profile) => {
                 const credStatus = riotCredentialStatuses[profile.id];
                 const hasCredentials = Boolean(credStatus?.hasSavedCredentials);
-                const region = extractAccountRegion(profile);
+                const primaryLabel = accountPrimaryLabel(profile);
                 const isMenuOpen = openMenuProfileId === profile.id;
 
                 const isThisRiotAutomating =
@@ -855,29 +858,29 @@ export const AccountsPage: React.FC = () => {
                               <h3
                                 data-testid={`riot-display-name-${profile.id}`}
                                 className="text-[15px] font-bold text-ms-text truncate"
-                                title={profile.displayName}
+                                title={primaryLabel}
                               >
-                                {profile.displayName}
+                                {primaryLabel}
                               </h3>
-                              {region && (
+                              {profile.lolRegion && (
                                 <span
                                   data-testid={`account-region-${profile.id}`}
                                   className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-violet-500/15 border border-violet-500/30 text-[10px] font-bold text-violet-300 shrink-0"
                                 >
                                   <Globe className="w-2.5 h-2.5" />
-                                  {region}
+                                  {profile.lolRegion}
                                 </span>
                               )}
                             </div>
-
-                            <div className="flex items-center gap-2 text-xs text-ms-muted min-w-0">
-                              <span
-                                data-testid={`account-username-${profile.id}`}
-                                className="font-mono text-ms-muted/90 truncate"
-                              >
-                                {credStatus?.username || profile.username}
-                              </span>
-                            </div>
+                            <p className="text-[11px] text-ms-muted truncate" data-testid={`account-lol-region-${profile.id}`}>
+                              {lolRegionLine(profile.lolRegion ?? null, profile.lolRegionSource ?? null)}
+                            </p>
+                            <p className="text-[11px] text-ms-muted truncate" data-testid={`account-valorant-region-${profile.id}`}>
+                              {valorantRegionLine(profile.valorantRegion ?? null, profile.valorantRegionSource ?? null)}
+                            </p>
+                            {!profile.riotId && (
+                              <p className="text-[10px] text-ms-muted/80">Player name not detected</p>
+                            )}
                           </div>
                         </div>
 
@@ -924,6 +927,18 @@ export const AccountsPage: React.FC = () => {
                                     ? 'Preferred Account'
                                     : 'Make Preferred'}
                                 </span>
+                              </button>
+                              <button
+                                type="button"
+                                data-testid={`refresh-regions-${profile.id}`}
+                                onClick={() => {
+                                  setOpenMenuProfileId(null);
+                                  void refreshRiotRegions(profile.id);
+                                }}
+                                className="w-full px-3 py-2 text-left text-ms-text hover:bg-ms-card flex items-center gap-2"
+                              >
+                                <RefreshCw className="w-3.5 h-3.5 text-ms-muted" />
+                                <span>Refresh regions</span>
                               </button>
                               <button
                                 type="button"
@@ -1208,50 +1223,72 @@ export const AccountsPage: React.FC = () => {
                 </div>
               )}
 
-              {/* Display Name */}
               <div>
                 <label className="block font-semibold text-ms-text mb-1">
-                  Account Display Name *
+                  Account Nickname (Optional)
                 </label>
                 <input
                   type="text"
-                  data-testid="input-display-name"
-                  value={formDisplayName}
-                  onChange={(e) => setFormDisplayName(e.target.value)}
-                  placeholder="e.g. LOL EUW — Melynelas"
+                  data-testid="input-nickname"
+                  value={formNickname}
+                  onChange={(e) => setFormNickname(e.target.value)}
+                  placeholder="e.g. My Main Account"
                   className="w-full h-9 bg-ms-bg border border-ms-border focus:border-ms-accent rounded-xl px-3 text-xs text-ms-text placeholder:text-ms-muted focus:outline-none"
-                  required
                 />
+                <p className="mt-1 text-[10px] text-ms-muted">
+                  Shown only when a verified Riot ID is unavailable, or when you prefer this name.
+                </p>
               </div>
 
-              {/* Username / Public Identifier / Riot ID */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-semibold text-ms-text mb-1">
-                    Riot ID or Username *
-                  </label>
-                  <input
-                    type="text"
-                    data-testid="input-username"
-                    value={formUsername}
-                    onChange={(e) => setFormUsername(e.target.value)}
-                    placeholder="e.g. Melynelas#EUW"
-                    className="w-full h-9 bg-ms-bg border border-ms-border focus:border-ms-accent rounded-xl px-3 font-mono text-xs text-ms-text placeholder:text-ms-muted focus:outline-none"
-                    required
-                  />
+                  <label className="block font-semibold text-ms-text mb-1">League of Legends region</label>
+                  <select
+                    data-testid="input-lol-region"
+                    value={formLolRegion}
+                    onChange={(e) => setFormLolRegion(e.target.value)}
+                    className="w-full h-9 bg-ms-bg border border-ms-border focus:border-ms-accent rounded-xl px-3 text-xs text-ms-text focus:outline-none"
+                  >
+                    <option value="">Region not detected</option>
+                    {LOL_REGIONS.map((region) => (
+                      <option key={region.code} value={region.code}>
+                        {region.code}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="mt-1 text-[10px] text-ms-muted">A choice here is saved as set by you.</p>
                 </div>
-
                 <div>
-                  <label className="block font-semibold text-ms-text mb-1">Region / Game Tag</label>
-                  <input
-                    type="text"
-                    data-testid="input-nickname"
-                    value={formNickname}
-                    onChange={(e) => setFormNickname(e.target.value)}
-                    placeholder="e.g. League of Legends — EUW"
-                    className="w-full h-9 bg-ms-bg border border-ms-border focus:border-ms-accent rounded-xl px-3 text-xs text-ms-text placeholder:text-ms-muted focus:outline-none"
-                  />
+                  <label className="block font-semibold text-ms-text mb-1">VALORANT region</label>
+                  <select
+                    data-testid="input-valorant-region"
+                    value={formValorantRegion}
+                    onChange={(e) => setFormValorantRegion(e.target.value)}
+                    className="w-full h-9 bg-ms-bg border border-ms-border focus:border-ms-accent rounded-xl px-3 text-xs text-ms-text focus:outline-none"
+                  >
+                    <option value="">EMEA (default)</option>
+                    {VALORANT_REGIONS.map((region) => (
+                      <option key={region.code} value={region.code}>
+                        {region.code}
+                      </option>
+                    ))}
+                  </select>
                 </div>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-ms-text mb-1">Login username (private)</label>
+                <input
+                  type="text"
+                  data-testid="input-username"
+                  value={formUsername}
+                  onChange={(e) => setFormUsername(e.target.value)}
+                  placeholder="Riot login name, not the Riot ID"
+                  className="w-full h-9 bg-ms-bg border border-ms-border focus:border-ms-accent rounded-xl px-3 text-xs text-ms-text placeholder:text-ms-muted focus:outline-none"
+                />
+                <p className="mt-1 text-[10px] text-ms-muted">
+                  Used only to match a Riot Client session during enrollment. It is not shown on the account card.
+                </p>
               </div>
 
               {/* Optional Notes */}
@@ -1445,7 +1482,7 @@ export const AccountsPage: React.FC = () => {
             <form onSubmit={handleSaveCredentials} className="space-y-4 text-xs">
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <label className="font-semibold text-ms-text">Account Display Name</label>
+                  <label className="font-semibold text-ms-text">Account</label>
                   <button
                     type="button"
                     onClick={() => {
@@ -1460,7 +1497,7 @@ export const AccountsPage: React.FC = () => {
                 </div>
                 <input
                   type="text"
-                  value={credentialModalProfile.displayName}
+                  value={accountPrimaryLabel(credentialModalProfile)}
                   disabled
                   className="w-full h-9 bg-ms-elevated/50 border border-ms-border/80 rounded-xl px-3 text-xs text-ms-muted cursor-not-allowed"
                 />

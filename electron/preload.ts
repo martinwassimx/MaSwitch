@@ -98,6 +98,8 @@ const IPC_CHANNELS = {
   ACCOUNTS_RIOT_START_DESKTOP_LOGIN: 'maswitch:accounts:riot:start-desktop-login',
   ACCOUNTS_RIOT_CANCEL_DESKTOP_LOGIN: 'maswitch:accounts:riot:cancel-desktop-login',
   ACCOUNTS_RIOT_LOGIN_AUTOMATION_PROGRESS: 'maswitch:accounts:riot:login-automation-progress',
+  ACCOUNTS_RIOT_REFRESH_REGIONS: 'maswitch:accounts:riot:refresh-regions',
+  ACCOUNTS_RIOT_SET_REGIONS: 'maswitch:accounts:riot:set-regions',
 
   // MaSwitch 3.0: Gaming Year in Review
   STATISTICS_GET_YEAR_IN_REVIEW: 'maswitch:statistics:get-year-in-review',
@@ -446,6 +448,10 @@ const bridge: MaSwitchBridge = {
       ipcRenderer.invoke(IPC_CHANNELS.ACCOUNTS_RIOT_CHECK_CLIENT_RUNNING),
     riotLaunchClient: () =>
       ipcRenderer.invoke(IPC_CHANNELS.ACCOUNTS_RIOT_LAUNCH_CLIENT),
+    riotRefreshRegions: (profileId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.ACCOUNTS_RIOT_REFRESH_REGIONS, profileId),
+    riotSetRegions: (profileId: string, regions: { lolRegion: string | null; valorantRegion: string | null }) =>
+      ipcRenderer.invoke(IPC_CHANNELS.ACCOUNTS_RIOT_SET_REGIONS, profileId, regions),
     riotStartDesktopLogin: (profileId: string, autoLaunchClient?: boolean, autoSubmit?: boolean) =>
       ipcRenderer.invoke(IPC_CHANNELS.ACCOUNTS_RIOT_START_DESKTOP_LOGIN, profileId, autoLaunchClient, autoSubmit),
     riotCancelDesktopLogin: () =>
