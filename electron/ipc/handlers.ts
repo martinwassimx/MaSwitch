@@ -1,3 +1,4 @@
+import path from 'node:path';
 import {
   app,
   BrowserWindow,
@@ -17,15 +18,23 @@ import type { AppRuntimeInfo } from '../../src/shared/types/settings';
 import { isTrustedRendererUrl } from '../../src/shared/validation/settingsValidator';
 import type { MaSwitchSqliteDatabase } from '../services/database/sqliteDatabase';
 import type { GameLauncherEngine } from '../services/launcher/gameLauncherEngine';
+import {
+  ExecutableApprovalRegistry,
+  assertAllowedCustomExecutable,
+  assertSafeLaunchArguments,
+  normalizeExecutablePath,
+} from '../services/launcher/executableApproval';
 import type { GameScannerEngine } from '../services/scanner/gameScannerEngine';
 import type { ElectronSettingsStore } from '../services/settingsStore';
 import type { MaSwitchStartupService } from '../services/startupService';
 import type { PlaytimeTrackerEngine } from '../services/tracker/playtimeTrackerEngine';
 import type { ArtworkCacheService } from '../services/artwork/artworkCacheService';
-import type { SteamGridDbArtworkService } from '../services/steamgriddb/steamGridDbArtworkService';
+import {
+  sanitizeApplyArtworkInput,
+  type SteamGridDbArtworkService,
+} from '../services/steamgriddb/steamGridDbArtworkService';
 import type { SteamGridDbClient } from '../services/steamgriddb/steamGridDbClient';
 import type { SteamGridDbSecretStore } from '../services/steamgriddb/steamGridDbSecretStore';
-import type { ApplyArtworkInput } from '../../src/shared/types/steamgriddb';
 import type { AccountSwitcherService } from '../services/accounts/accountSwitcherService';
 import { listWindowsProcessImageNames } from '../services/tracker/playtimeTrackerEngine';
 import type {
@@ -44,9 +53,16 @@ import { RiotDesktopLoginAutomationService } from '../services/accounts/riotDesk
 import { removeRiotAccountArtifacts } from '../services/accounts/riotAccountCleanup';
 import { PerformanceMonitorService } from '../services/performanceMonitorService';
 import { NewsService } from '../services/newsService';
-import { BackupService } from '../services/backupService';
+import { BackupService, isBackupFileName } from '../services/backupService';
+import { PathApprovalRegistry, isPathInside, normalizeWindowsPath } from '../services/security/pathApprovalRegistry';
 import { InstalledFeaturesManager } from '../services/features/installedFeaturesManager';
-import { MemoryManagementService } from '../services/memory/memoryManagementService';
+import {
+  MemoryManagementService,
+  createElevatedCleanupGate,
+  requiresElevatedCleanup,
+  resolveCleanupOperations,
+  sanitizeMemoryCleanupRequest,
+} from '../services/memory/memoryManagementService';
 import { AppUpdateService } from '../services/updater/appUpdateService';
 import type { UpdateChannel } from '../../src/shared/types/updater';
 import type { MemoryCleanupRequest } from '../../src/shared/types/memory';
@@ -293,32 +309,68 @@ export function registerIpcHandlers(
     return sqliteDb.getAllLibraryGames();
   });
 
+  const executableApprovals = new ExecutableApprovalRegistry();
+  const authorizeExecutablePath = async (
+    win: BrowserWindow,
+    rawPath: unknown,
+    currentPath?: string | null
+  ): Promise<string> => {
+    const normalized = assertAllowedCustomExecutable(rawPath);
+    if (currentPath && normalizeExecutablePath(currentPath) === normalizeExecutablePath(normalized)) {
+      return normalized;
+    }
+    if (executableApprovals.isApproved(normalized)) {
+      return normalized;
+    }
+    const { response } = await dialog.showMessageBox(win, {
+      type: 'warning',
+      buttons: ['Cancel', 'Allow'],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+      title: 'Confirm program',
+      message: 'Allow MaSwitch to launch this program?',
+      detail: `${normalized}\n\nOnly allow programs you installed and trust.`,
+    });
+    if (response !== 1) {
+      throw new Error('The program was not approved.');
+    }
+    executableApprovals.approve(normalized);
+    return normalized;
+  };
+
   ipcMain.handle(
     IPC_CHANNELS.LIBRARY_ADD_CUSTOM_GAME,
-    (event, rawInput: unknown) => {
-      assertTrustedSender(event, getMainWindow, devServerUrl);
+    async (event, rawInput: unknown) => {
+      const win = assertTrustedSender(event, getMainWindow, devServerUrl);
       if (!rawInput || typeof rawInput !== 'object') {
         throw new Error('Invalid custom game payload.');
       }
       const input = rawInput as CustomGameInput;
-      return sqliteDb.addCustomGame(input);
+      assertSafeLaunchArguments(input.launchArgs);
+      const executablePath = await authorizeExecutablePath(win, input.executablePath);
+      return sqliteDb.addCustomGame({ ...input, executablePath });
     }
   );
 
   ipcMain.handle(
     IPC_CHANNELS.LIBRARY_UPDATE_GAME,
-    (event, rawGameId: unknown, rawInput: unknown) => {
-      assertTrustedSender(event, getMainWindow, devServerUrl);
+    async (event, rawGameId: unknown, rawInput: unknown) => {
+      const win = assertTrustedSender(event, getMainWindow, devServerUrl);
       if (typeof rawGameId !== 'string' || rawGameId.trim().length === 0) {
         throw new Error('Invalid game ID.');
       }
       if (!rawInput || typeof rawInput !== 'object') {
         throw new Error('Invalid update game payload.');
       }
-      const input = rawInput as EditGameInput;
+      const input = { ...(rawInput as EditGameInput) };
+      assertSafeLaunchArguments(input.launchArgs);
+      if (input.executablePath !== undefined && input.executablePath !== null && input.executablePath !== '') {
+        const existing = sqliteDb.getGameById(rawGameId.trim());
+        input.executablePath = await authorizeExecutablePath(win, input.executablePath, existing?.executablePath);
+      }
       const updated = sqliteDb.updateGameDetails(rawGameId.trim(), input);
-      const win = getMainWindow();
-      if (win && !win.isDestroyed() && !win.webContents.isDestroyed()) {
+      if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
         win.webContents.send(IPC_CHANNELS.LIBRARY_UPDATED_EVENT);
       }
       return updated;
@@ -376,7 +428,11 @@ export function registerIpcHandlers(
     if (result.canceled || result.filePaths.length === 0) {
       return null;
     }
-    return result.filePaths[0] ?? null;
+    const selected = result.filePaths[0] ?? null;
+    if (selected) {
+      executableApprovals.approve(selected);
+    }
+    return selected;
   });
 
   ipcMain.handle(IPC_CHANNELS.LIBRARY_SELECT_FOLDER, async (event) => {
@@ -604,7 +660,13 @@ export function registerIpcHandlers(
     if (!testResult.success) {
       return { success: false, message: testResult.message };
     }
-    services.steamGridDbSecretStore.saveApiKey(cleanKey);
+    if (!services.steamGridDbSecretStore.saveApiKey(cleanKey)) {
+      return {
+        success: true,
+        message:
+          'SteamGridDB API key verified for this session only. Windows secure storage is unavailable, so it was not saved to disk.',
+      };
+    }
     return { success: true, message: 'SteamGridDB API key verified and saved securely.' };
   });
 
@@ -648,10 +710,11 @@ export function registerIpcHandlers(
 
   ipcMain.handle(IPC_CHANNELS.STEAMGRIDDB_APPLY_ARTWORK, async (event, rawInput: unknown) => {
     const win = assertTrustedSender(event, getMainWindow, devServerUrl);
-    if (!rawInput || typeof rawInput !== 'object') {
+    const input = sanitizeApplyArtworkInput(rawInput);
+    if (!input) {
       return null;
     }
-    const result = await services.steamGridDbService.applyManualArtwork(rawInput as ApplyArtworkInput);
+    const result = await services.steamGridDbService.applyManualArtwork(input);
     if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
       win.webContents.send(IPC_CHANNELS.LIBRARY_UPDATED_EVENT);
     }
@@ -1501,31 +1564,62 @@ export function registerIpcHandlers(
     return svc.getBackupInfo();
   });
 
-  ipcMain.handle(IPC_CHANNELS.BACKUP_CREATE, async (event, customPath?: string) => {
+  const backupReadApprovals = new PathApprovalRegistry();
+  const backupWriteApprovals = new PathApprovalRegistry();
+  const assertBackupPath = (svc: BackupService, rawPath: unknown, mode: 'read' | 'write'): string => {
+    if (typeof rawPath !== 'string' || rawPath.trim().length === 0 || rawPath.includes('\0') || !isBackupFileName(rawPath)) {
+      throw new Error('Backup files must be .json files.');
+    }
+    const approvals = mode === 'read' ? backupReadApprovals : backupWriteApprovals;
+    if (approvals.isApproved(rawPath)) {
+      return rawPath;
+    }
+    const backupsDir = svc.getDefaultBackupDir();
+    if (isPathInside(backupsDir, rawPath) && normalizeWindowsPath(path.win32.dirname(path.win32.resolve(rawPath))) === normalizeWindowsPath(backupsDir)) {
+      return rawPath;
+    }
+    throw new Error('Choose the backup file with the file picker.');
+  };
+
+  ipcMain.handle(IPC_CHANNELS.BACKUP_CREATE, async (event, customPath?: unknown) => {
     assertTrustedSender(event, getMainWindow, devServerUrl);
     const svc = getBackupService();
     if (!svc) {
       throw new Error('Feature "Backup & Restore" is not enabled in this installation.');
     }
-    return await svc.createBackup(customPath);
+    const target = customPath === undefined || customPath === null || customPath === ''
+      ? undefined
+      : assertBackupPath(svc, customPath, 'write');
+    return await svc.createBackup(target);
   });
 
-  ipcMain.handle(IPC_CHANNELS.BACKUP_VALIDATE, (event, filePath: string) => {
+  ipcMain.handle(IPC_CHANNELS.BACKUP_VALIDATE, (event, filePath: unknown) => {
     assertTrustedSender(event, getMainWindow, devServerUrl);
     const svc = getBackupService();
+    const reportedPath = typeof filePath === 'string' ? filePath : '';
     if (!svc) {
-      return { valid: false, filePath, fileSizeBytes: 0, error: 'Feature "Backup & Restore" is disabled.' };
+      return { valid: false, filePath: reportedPath, fileSizeBytes: 0, error: 'Feature "Backup & Restore" is disabled.' };
     }
-    return svc.validateBackup(filePath);
+    try {
+      return svc.validateBackup(assertBackupPath(svc, filePath, 'read'));
+    } catch (err) {
+      return { valid: false, filePath: reportedPath, fileSizeBytes: 0, error: err instanceof Error ? err.message : String(err) };
+    }
   });
 
-  ipcMain.handle(IPC_CHANNELS.BACKUP_RESTORE, async (event, filePath: string) => {
+  ipcMain.handle(IPC_CHANNELS.BACKUP_RESTORE, async (event, filePath: unknown) => {
     assertTrustedSender(event, getMainWindow, devServerUrl);
     const svc = getBackupService();
     if (!svc) {
       return { success: false, error: 'Feature "Backup & Restore" is disabled.' };
     }
-    return await svc.restoreBackup(filePath);
+    let approvedPath: string;
+    try {
+      approvedPath = assertBackupPath(svc, filePath, 'read');
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+    return await svc.restoreBackup(approvedPath);
   });
 
   ipcMain.handle(IPC_CHANNELS.BACKUP_SELECT_FILE, async (event) => {
@@ -1536,6 +1630,7 @@ export function registerIpcHandlers(
       properties: ['openFile'],
     });
     if (res.canceled || !res.filePaths[0]) return null;
+    backupReadApprovals.approve(res.filePaths[0]);
     return res.filePaths[0];
   });
 
@@ -1547,6 +1642,10 @@ export function registerIpcHandlers(
       filters: [{ name: 'MaSwitch Backup (*.json)', extensions: ['json'] }],
     });
     if (res.canceled || !res.filePath) return null;
+    if (!isBackupFileName(res.filePath)) {
+      throw new Error('Backup files must be saved with the .json extension.');
+    }
+    backupWriteApprovals.approve(res.filePath);
     return res.filePath;
   });
 
@@ -1616,9 +1715,49 @@ export function registerIpcHandlers(
     return [];
   });
 
-  ipcMain.handle(IPC_CHANNELS.MEMORY_PERFORM_CLEANUP, async (event, request: MemoryCleanupRequest) => {
+  const elevatedCleanupGate = createElevatedCleanupGate(async () => {
+    const options = {
+      type: 'warning' as const,
+      title: 'Administrator permission required',
+      message: 'Advanced memory cleanup needs administrator permission.',
+      detail:
+        'If you continue, Windows will ask you to approve an elevated MaSwitch memory helper. ' +
+        'Choose Cancel if you did not start this cleanup.',
+      buttons: ['Cancel', 'Continue'],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+    };
+    const win = getMainWindow();
+    const { response } = win ? await dialog.showMessageBox(win, options) : await dialog.showMessageBox(options);
+    return response === 1;
+  });
+
+  ipcMain.handle(IPC_CHANNELS.MEMORY_PERFORM_CLEANUP, async (event, rawRequest: unknown) => {
     assertTrustedSender(event, getMainWindow, devServerUrl);
+    const request: MemoryCleanupRequest = sanitizeMemoryCleanupRequest(rawRequest);
     const memService = getMemoryService();
+    const refused = (message: string) => {
+      const usedMb = memService.getSystemMemoryMetrics().usedPhysicalMb;
+      return {
+        success: false,
+        mode: request.mode,
+        status: 'cancelled' as const,
+        ramBeforeMb: usedMb,
+        ramAfterMb: usedMb,
+        freedMb: 0,
+        message,
+      };
+    };
+    if (memService.isCleanupInProgress()) {
+      return refused('A memory cleanup is already running.');
+    }
+    if (process.platform === 'win32' && requiresElevatedCleanup(resolveCleanupOperations(request))) {
+      const gate = await elevatedCleanupGate();
+      if (!gate.allowed) {
+        return refused(gate.message);
+      }
+    }
     return await memService.performCleanup(request);
   });
 

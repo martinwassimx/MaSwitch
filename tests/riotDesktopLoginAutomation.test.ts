@@ -8,6 +8,11 @@ import {
   RiotDesktopLoginAutomationService,
 } from '../electron/services/accounts/riotDesktopLoginAutomation';
 import { RiotWindowsProcessCoordinator } from '../electron/services/accounts/riotProductionAdapters';
+import {
+  createRiotProcessTrustVerifier,
+  evaluateRiotSignature,
+  readSignerOrganization,
+} from '../electron/services/accounts/riotProcessTrust';
 import type { RiotDesktopLoginProgressPayload } from '../src/shared/types/ipc';
 
 describe('RiotDesktopLoginAutomationService', () => {
@@ -172,6 +177,80 @@ describe('RiotDesktopLoginAutomationService', () => {
       });
 
       expect(found?.hwnd).toBe('777');
+    });
+
+    const lookalikeWindow = { hwnd: '777', pid: 55, title: 'Riot Client', processName: 'RiotClientUx' };
+    const runningCoordinator = () =>
+      new RiotWindowsProcessCoordinator({
+        processLister: async () => [{ pid: 55, imageNameLower: 'riotclientservices.exe' }],
+      });
+
+    it('never sends credentials to a Riot-named process without a valid Riot signature', async () => {
+      await vault.saveCredentials('profile-sig', 'SigUser', 'SigPass123!');
+      const workerRunner = vi.fn();
+      const processTrustVerifier = vi.fn(async () => ({ trusted: false, reason: 'Process is not signed by Riot Games.' }));
+      const productionService = new RiotDesktopLoginAutomationService(vault, runningCoordinator(), {
+        windowDiscoverer: async () => [lookalikeWindow],
+        workerRunner,
+        processTrustVerifier,
+      });
+
+      const result = await productionService.executeAutofill({ profileId: 'profile-sig', timeoutMs: 2000 });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('UNTRUSTED_TARGET_PROCESS');
+      expect(processTrustVerifier).toHaveBeenCalledWith(55);
+      expect(workerRunner).not.toHaveBeenCalled();
+    });
+
+    it('sends credentials once the target process signature is verified', async () => {
+      await vault.saveCredentials('profile-sig-ok', 'SigUser', 'SigPass123!');
+      const workerRunner = vi.fn(async () => ({ success: true, methodUsed: 'uia-value-pattern', fieldsIdentified: true }));
+      const productionService = new RiotDesktopLoginAutomationService(vault, runningCoordinator(), {
+        windowDiscoverer: async () => [lookalikeWindow],
+        workerRunner,
+        processTrustVerifier: async () => ({ trusted: true }),
+      });
+
+      const result = await productionService.executeAutofill({ profileId: 'profile-sig-ok', timeoutMs: 2000 });
+
+      expect(result.success).toBe(true);
+      expect(workerRunner).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('Riot process signature evaluation (MS-11)', () => {
+    const riotSubject =
+      'CN="Riot Games, Inc.", O="Riot Games, Inc.", L=Los Angeles, S=California, C=US, SERIALNUMBER=4155843';
+
+    it('accepts a valid signature from Riot Games', () => {
+      expect(readSignerOrganization(riotSubject)).toBe('Riot Games, Inc.');
+      expect(evaluateRiotSignature({ path: 'C:\\x.exe', status: 'Valid', subject: riotSubject }).trusted).toBe(true);
+    });
+
+    it('rejects unsigned, invalid, or other-publisher signatures', () => {
+      expect(evaluateRiotSignature({ path: 'C:\\x.exe', status: 'NotSigned', subject: null }).trusted).toBe(false);
+      expect(evaluateRiotSignature({ path: 'C:\\x.exe', status: 'HashMismatch', subject: riotSubject }).trusted).toBe(false);
+      expect(
+        evaluateRiotSignature({ path: 'C:\\x.exe', status: 'Valid', subject: 'CN=Riot Games, O=Riot Games Imposter LLC, C=US' }).trusted
+      ).toBe(false);
+      expect(
+        evaluateRiotSignature({ path: 'C:\\x.exe', status: 'Valid', subject: 'CN="O=Riot Games, Inc.", O=Evil Corp' }).trusted
+      ).toBe(false);
+    });
+
+    it('caches trusted results per PID and re-checks failures', async () => {
+      const query = vi.fn(async () => ({ path: 'C:\\x.exe', status: 'Valid', subject: riotSubject }));
+      const verify = createRiotProcessTrustVerifier(query);
+      await verify(10);
+      await verify(10);
+      expect(query).toHaveBeenCalledTimes(1);
+
+      const failing = vi.fn(async () => ({ path: 'C:\\x.exe', status: 'NotSigned', subject: null }));
+      const verifyFailing = createRiotProcessTrustVerifier(failing);
+      await verifyFailing(11);
+      await verifyFailing(11);
+      expect(failing).toHaveBeenCalledTimes(2);
     });
   });
 

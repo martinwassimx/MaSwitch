@@ -34,6 +34,33 @@ export interface SafeStorageLike {
 
 // --- Restrictive Permissions Helper (Synchronous & Fail-Closed) ---
 
+let cachedUserSid: string | null | undefined;
+
+/** Parses `whoami /user /fo csv /nh` output; the SID avoids %USERNAME% spoofing and local/domain name ambiguity. */
+export function parseWhoamiUserSid(output: string): string | null {
+  const match = output.trim().match(/,"(S-1-[0-9]+(?:-[0-9]+)+)"\s*$/);
+  return match ? match[1] : null;
+}
+
+function resolveCurrentUserSid(): string | null {
+  if (cachedUserSid !== undefined) {
+    return cachedUserSid;
+  }
+  try {
+    const systemRoot = process.env.SystemRoot || 'C:\\Windows';
+    const output = execFileSync(path.join(systemRoot, 'System32', 'whoami.exe'), ['/user', '/fo', 'csv', '/nh'], {
+      windowsHide: true,
+      timeout: 5000,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    cachedUserSid = parseWhoamiUserSid(output);
+  } catch {
+    cachedUserSid = null;
+  }
+  return cachedUserSid;
+}
+
 /**
  * Enforces restrictive filesystem ACL permissions on Windows synchronously.
  * Fails closed (throws RiotStorageError) if permission configuration fails on Windows.
@@ -47,8 +74,10 @@ export function enforceSecureDirectoryPermissionsSync(dirPath: string): void {
   }
 
   if (process.platform === 'win32') {
+    const sid = resolveCurrentUserSid();
     const username = process.env.USERNAME;
-    if (username) {
+    const principal = sid ? `*${sid}` : username;
+    if (principal) {
       try {
         execFileSync(
           'icacls.exe',
@@ -56,8 +85,8 @@ export function enforceSecureDirectoryPermissionsSync(dirPath: string): void {
             dirPath,
             '/inheritance:r',
             '/grant:r',
-            `${username}:(OI)(CI)F`,
-            'SYSTEM:(OI)(CI)F',
+            `${principal}:(OI)(CI)F`,
+            '*S-1-5-18:(OI)(CI)F',
           ],
           { windowsHide: true, timeout: 5000, stdio: 'ignore' }
         );

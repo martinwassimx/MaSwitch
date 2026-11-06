@@ -16,6 +16,7 @@ import {
   type ParsedEpicManifest,
 } from '../scanner/epicScanner';
 import { resolveGameProcessAliases } from '../tracker/gameProcessAliases';
+import { assertAllowedCustomExecutable } from './executableApproval';
 import { listWindowsProcessImageNames } from '../tracker/playtimeTrackerEngine';
 
 /**
@@ -214,6 +215,8 @@ export function validateExecutableLaunchTarget(
   if (!normalizedExe.toLowerCase().endsWith('.exe')) {
     throw new Error('Target file must be a Windows executable (.exe).');
   }
+
+  assertAllowedCustomExecutable(normalizedExe);
 
   let exeStat: fs.Stats;
   try {

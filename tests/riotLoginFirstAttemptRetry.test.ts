@@ -11,6 +11,8 @@ import {
 import { RiotWindowsProcessCoordinator } from '../electron/services/accounts/riotProductionAdapters';
 import type { RiotDesktopLoginProgressPayload } from '../src/shared/types/ipc';
 
+const trustSignedRiot = async () => ({ trusted: true, imagePath: 'C:\\Riot Games\\Riot Client\\RiotClientServices.exe' });
+
 describe('Riot Login First-Attempt Failure & Silent Retry Test Suite', () => {
   let tempDir: string;
   let vault: RiotCredentialVault;
@@ -62,6 +64,7 @@ describe('Riot Login First-Attempt Failure & Silent Retry Test Suite', () => {
       vault,
       mockCoordinator,
       {
+        processTrustVerifier: trustSignedRiot,
         windowDiscoverer: async () => (clientRunning ? [targetWin] : []),
         workerRunner: async () => ({
           success: true,
@@ -109,6 +112,7 @@ describe('Riot Login First-Attempt Failure & Silent Retry Test Suite', () => {
       vault,
       mockCoordinator,
       {
+        processTrustVerifier: trustSignedRiot,
         windowDiscoverer: async () => {
           discoveryCalls++;
           // Window only appears on the 3rd discovery call
@@ -166,6 +170,7 @@ describe('Riot Login First-Attempt Failure & Silent Retry Test Suite', () => {
       vault,
       mockCoordinator,
       {
+        processTrustVerifier: trustSignedRiot,
         windowDiscoverer: async () => {
           callCount++;
           if (callCount === 1) return [staleWin];
@@ -220,6 +225,7 @@ describe('Riot Login First-Attempt Failure & Silent Retry Test Suite', () => {
       vault,
       mockCoordinator,
       {
+        processTrustVerifier: trustSignedRiot,
         windowDiscoverer: async () => [targetWin],
         workerRunner: async () => {
           workerAttempts++;
@@ -280,6 +286,7 @@ describe('Riot Login First-Attempt Failure & Silent Retry Test Suite', () => {
       vault,
       mockCoordinator,
       {
+        processTrustVerifier: trustSignedRiot,
         windowDiscoverer: async () => [targetWin],
         workerRunner: async () => {
           workerAttempts++;
@@ -337,6 +344,7 @@ describe('Riot Login First-Attempt Failure & Silent Retry Test Suite', () => {
       vault,
       mockCoordinator,
       {
+        processTrustVerifier: trustSignedRiot,
         windowDiscoverer: async () => [targetWin],
         workerRunner: async () => {
           // Simulate user closing client
@@ -382,6 +390,7 @@ describe('Riot Login First-Attempt Failure & Silent Retry Test Suite', () => {
       vault,
       mockCoordinator,
       {
+        processTrustVerifier: trustSignedRiot,
         windowDiscoverer: async () => [targetWin],
         workerRunner: async () => ({
           success: false,
@@ -428,6 +437,7 @@ describe('Riot Login First-Attempt Failure & Silent Retry Test Suite', () => {
       vault,
       mockCoordinator,
       {
+        processTrustVerifier: trustSignedRiot,
         windowDiscoverer: async () => [targetWin],
         workerRunner: async () => ({
           success: false,
@@ -480,6 +490,7 @@ describe('Riot Login First-Attempt Failure & Silent Retry Test Suite', () => {
       vault,
       mockCoordinator,
       {
+        processTrustVerifier: trustSignedRiot,
         windowDiscoverer: async () => [targetWin],
         workerRunner: async () => firstWorkerPromise,
       }
@@ -525,6 +536,7 @@ describe('Riot Login First-Attempt Failure & Silent Retry Test Suite', () => {
       vault,
       mockCoordinator,
       {
+        processTrustVerifier: trustSignedRiot,
         windowDiscoverer: async () => [targetWin],
         workerRunner: async () => {
           attemptCount++;

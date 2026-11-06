@@ -51,7 +51,8 @@ export class SteamGridDbSecretStore {
         }
       }
 
-      // 2. Fallback decryption for test or non-DPAPI environments
+      // 2. Legacy read-only format written by older versions with a fixed key (obfuscation, not encryption).
+      // It is migrated to DPAPI when available; new keys are never written in this format.
       const raw = encryptedBuffer.toString('utf8');
       if (raw.startsWith('fb:')) {
         const payload = raw.slice(3);
@@ -63,6 +64,9 @@ export class SteamGridDbSecretStore {
         let decrypted = decipher.update(payload, 'hex', 'utf8');
         decrypted += decipher.final('utf8');
         this.cachedApiKey = decrypted.trim();
+        if (this.isSecureStorageAvailable()) {
+          this.writeProtected(this.cachedApiKey);
+        }
         return this.cachedApiKey;
       }
 
@@ -72,31 +76,39 @@ export class SteamGridDbSecretStore {
     }
   }
 
+  public isSecureStorageAvailable(): boolean {
+    try {
+      return Boolean(
+        safeStorage && typeof safeStorage.isEncryptionAvailable === 'function' && safeStorage.isEncryptionAvailable()
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Persists the key with DPAPI. Without DPAPI the key is kept for this session only and
+   * `false` is returned, so a weakly protected copy is never written to disk.
+   */
   public saveApiKey(apiKey: string): boolean {
     const trimmed = (apiKey || '').trim();
     if (!trimmed) {
       return this.removeApiKey();
     }
 
-    try {
-      // 1. Try Electron safeStorage (DPAPI on Windows)
-      if (safeStorage && typeof safeStorage.isEncryptionAvailable === 'function' && safeStorage.isEncryptionAvailable()) {
-        const encrypted = safeStorage.encryptString(trimmed);
-        fs.writeFileSync(this.secretFilePath, encrypted);
-        this.cachedApiKey = trimmed;
-        return true;
-      }
+    this.cachedApiKey = trimmed;
+    if (!this.isSecureStorageAvailable()) {
+      return false;
+    }
+    return this.writeProtected(trimmed);
+  }
 
-      // 2. Fallback encryption for test environments
-      const cipher = crypto.createCipheriv(
-        'aes-256-cbc',
-        crypto.scryptSync('maswitch-local-secret-salt', 'salt', 32),
-        Buffer.alloc(16, 0)
-      );
-      let encrypted = cipher.update(trimmed, 'utf8', 'hex');
-      encrypted += cipher.final('hex');
-      fs.writeFileSync(this.secretFilePath, `fb:${encrypted}`, 'utf8');
-      this.cachedApiKey = trimmed;
+  private writeProtected(apiKey: string): boolean {
+    try {
+      const encrypted = safeStorage.encryptString(apiKey);
+      const tempPath = `${this.secretFilePath}.tmp-${process.pid}`;
+      fs.writeFileSync(tempPath, encrypted, { mode: 0o600 });
+      fs.renameSync(tempPath, this.secretFilePath);
       return true;
     } catch {
       return false;

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
-import { Readable } from 'node:stream';
+import { Readable, Transform } from 'node:stream';
 import type {
   ApplyArtworkInput,
   ArtworkSyncProgress,
@@ -14,8 +14,46 @@ import { SteamGridDbClient } from './steamGridDbClient';
 
 const MAX_DOWNLOAD_SIZE_BYTES = 15 * 1024 * 1024; // 15 MB
 const ALLOWED_CDN_HOSTS = ['cdn2.steamgriddb.com', 'steamgriddb.com'];
+const ASSET_TYPES = new Set<SteamGridDbAssetType>(['grid', 'hero', 'logo', 'icon']);
 
 export type AutoArtworkResult = 'downloaded' | 'unmatched' | 'failed' | 'skipped';
+
+const MAX_ARTWORK_URL_LENGTH = 4096;
+const MAX_DATA_URL_LENGTH = 8 * 1024 * 1024;
+
+/** Validates the renderer-supplied manual artwork selection before any download or database write. */
+export function sanitizeApplyArtworkInput(raw: unknown): ApplyArtworkInput | null {
+  if (!raw || typeof raw !== 'object') {
+    return null;
+  }
+  const candidate = raw as Record<string, unknown>;
+  if (typeof candidate.gameId !== 'string' || !candidate.gameId.trim() || candidate.gameId.length > 256) {
+    return null;
+  }
+  const input: ApplyArtworkInput = { gameId: candidate.gameId.trim() };
+  if (candidate.sgdbGameId !== undefined && candidate.sgdbGameId !== null) {
+    if (!Number.isSafeInteger(candidate.sgdbGameId) || (candidate.sgdbGameId as number) < 0) {
+      return null;
+    }
+    input.sgdbGameId = candidate.sgdbGameId as number;
+  }
+  for (const key of ['coverUrl', 'heroUrl', 'logoUrl', 'iconUrl'] as const) {
+    const value = candidate[key];
+    if (value === undefined || value === null || value === '') {
+      continue;
+    }
+    if (typeof value !== 'string') {
+      return null;
+    }
+    const isDataImage = value.startsWith('data:image/') && value.length <= MAX_DATA_URL_LENGTH;
+    const isBoundedUrl =
+      value.length <= MAX_ARTWORK_URL_LENGTH && (value.startsWith('https://') || value.startsWith('maswitch-asset://'));
+    if (isDataImage || isBoundedUrl) {
+      input[key] = value;
+    }
+  }
+  return input;
+}
 
 export class SteamGridDbArtworkService {
   private readonly client: SteamGridDbClient;
@@ -73,22 +111,30 @@ export class SteamGridDbArtworkService {
       return null;
     }
 
-    // If it's already a local maswitch-asset:// URL or data: URL, return as-is
-    if (assetUrl.startsWith('maswitch-asset://') || assetUrl.startsWith('data:')) {
+    // If it's already a local maswitch-asset:// URL or data: image, return as-is
+    if (assetUrl.startsWith('maswitch-asset://') || assetUrl.startsWith('data:image/')) {
       return assetUrl;
     }
 
     if (!this.isValidSteamGridDbUrl(assetUrl)) {
       return null;
     }
+    if (!ASSET_TYPES.has(type)) {
+      return null;
+    }
+    const safeGameId = Number.isSafeInteger(sgdbGameId) && sgdbGameId >= 0 ? sgdbGameId : 0;
 
     const extMatch = assetUrl.match(/\.(png|jpg|jpeg|webp|ico)(\?.*)?$/i);
     const ext = extMatch ? extMatch[1].toLowerCase() : type === 'logo' || type === 'icon' ? 'png' : 'jpg';
 
     // Stable filename e.g. sgdb_1234_grid_5678.jpg
-    const safeAssetId = assetId ?? Math.abs(this.hashCode(assetUrl));
-    const filename = `sgdb_${sgdbGameId}_${type}_${safeAssetId}.${ext}`;
+    const safeAssetId =
+      assetId !== undefined && Number.isSafeInteger(assetId) && assetId >= 0 ? assetId : Math.abs(this.hashCode(assetUrl));
+    const filename = `sgdb_${safeGameId}_${type}_${safeAssetId}.${ext}`;
     const destinationPath = path.join(this.artworkDir, filename);
+    if (path.dirname(path.resolve(destinationPath)) !== path.resolve(this.artworkDir)) {
+      return null;
+    }
 
     // Cache hit: file already exists on disk and is non-empty
     try {
@@ -116,16 +162,37 @@ export class SteamGridDbArtworkService {
       if (!response.ok || !response.body) {
         return null;
       }
-
-      const contentLength = Number(response.headers.get('content-length') || 0);
-      if (contentLength > MAX_DOWNLOAD_SIZE_BYTES) {
+      if (response.url && !this.isValidSteamGridDbUrl(response.url)) {
+        await response.body.cancel().catch(() => undefined);
+        return null;
+      }
+      const contentType = (response.headers.get('content-type') || '').toLowerCase();
+      if (contentType && !contentType.startsWith('image/') && !contentType.startsWith('application/octet-stream')) {
+        await response.body.cancel().catch(() => undefined);
         return null;
       }
 
-      // Stream to file
+      const contentLength = Number(response.headers.get('content-length') || 0);
+      if (contentLength > MAX_DOWNLOAD_SIZE_BYTES) {
+        await response.body.cancel().catch(() => undefined);
+        return null;
+      }
+
+      // Stream to file; Content-Length is advisory, so the cap is enforced on the bytes received.
+      let received = 0;
+      const sizeLimiter = new Transform({
+        transform(chunk: Buffer, _encoding, callback) {
+          received += chunk.length;
+          if (received > MAX_DOWNLOAD_SIZE_BYTES) {
+            callback(new Error('Artwork exceeds the maximum download size.'));
+            return;
+          }
+          callback(null, chunk);
+        },
+      });
       const nodeStream = Readable.fromWeb(response.body as import('stream/web').ReadableStream);
-      const writeStream = fs.createWriteStream(tempPath);
-      await pipeline(nodeStream, writeStream);
+      const writeStream = fs.createWriteStream(tempPath, { flags: 'wx' });
+      await pipeline(nodeStream, sizeLimiter, writeStream);
 
       // Verify file was written and is non-empty
       const st = fs.statSync(tempPath);

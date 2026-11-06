@@ -4,6 +4,7 @@ import path from 'node:path';
 import os from 'node:os';
 import type { RiotCredentialVault } from './riotCredentialVault';
 import { RiotWindowsProcessCoordinator } from './riotProductionAdapters';
+import { createRiotProcessTrustVerifier, type ProcessTrustResult } from './riotProcessTrust';
 import type {
   RiotDesktopLoginProgressPayload,
   RiotDesktopLoginProgressStatus,
@@ -58,6 +59,8 @@ export interface DesktopAutomationAdapters {
     creds: { username: string; password?: string },
     autoSubmit: boolean
   ) => Promise<WorkerRunResult>;
+  /** Confirms the target process image is signed by Riot Games before credentials are sent. */
+  processTrustVerifier?: (pid: number) => Promise<ProcessTrustResult>;
   /**
    * Test-only: permits `isSyntheticTest` targets (caller-chosen HWND/PID, no Riot
    * process validation). Must never be set by production wiring.
@@ -148,7 +151,11 @@ if (-not ([System.Management.Automation.PSTypeName]'Win32AutomationHelper').Type
 
 # Read configuration securely from stdin
 if (-not $InputJson) {
-  $InputJson = [Console]::In.ReadToEnd()
+  $stdinBuffer = New-Object System.IO.MemoryStream
+  [Console]::OpenStandardInput().CopyTo($stdinBuffer)
+  $InputJson = (New-Object System.Text.UTF8Encoding($false)).GetString($stdinBuffer.ToArray())
+  $stdinBuffer.SetLength(0)
+  $stdinBuffer.Dispose()
 }
 
 if (-not $InputJson) {
@@ -162,6 +169,9 @@ $targetPid = [int]$config.targetPid
 $username = [string]$config.username
 $password = [string]$config.password
 $autoSubmit = [bool]$config.autoSubmit
+# SendKeys treats + ^ % ~ ( ) { } [ ] as commands; brace them so they are typed literally
+$usernameKeys = [regex]::Replace($username, '[+^%~(){}\\[\\]]', '{$0}')
+$passwordKeys = [regex]::Replace($password, '[+^%~(){}\\[\\]]', '{$0}')
 $method = "none"
 $fieldsIdentified = $false
 
@@ -344,9 +354,9 @@ if ($usernameElem -and $passwordElem) {
       $currentFg = [Win32AutomationHelper]::GetForegroundWindow()
       $curPid = 0
       if ($currentFg -ne [IntPtr]::Zero) { [Win32AutomationHelper]::GetWindowThreadProcessId($currentFg, [ref]$curPid) | Out-Null }
-      if ($currentFg -eq $targetHwnd -or $curPid -eq $procId -or $currentFg -eq [IntPtr]::Zero) {
+      if ($currentFg -eq $targetHwnd -or $curPid -eq $procId) {
         [System.Windows.Forms.SendKeys]::SendWait("^a{BACKSPACE}")
-        [System.Windows.Forms.SendKeys]::SendWait($username)
+        [System.Windows.Forms.SendKeys]::SendWait($usernameKeys)
         $usernameSet = $true
         Start-Sleep -Milliseconds 100
       }
@@ -357,9 +367,9 @@ if ($usernameElem -and $passwordElem) {
       $currentFg = [Win32AutomationHelper]::GetForegroundWindow()
       $curPid = 0
       if ($currentFg -ne [IntPtr]::Zero) { [Win32AutomationHelper]::GetWindowThreadProcessId($currentFg, [ref]$curPid) | Out-Null }
-      if ($currentFg -eq $targetHwnd -or $curPid -eq $procId -or $currentFg -eq [IntPtr]::Zero) {
+      if ($currentFg -eq $targetHwnd -or $curPid -eq $procId) {
         [System.Windows.Forms.SendKeys]::SendWait("^a{BACKSPACE}")
-        [System.Windows.Forms.SendKeys]::SendWait($password)
+        [System.Windows.Forms.SendKeys]::SendWait($passwordKeys)
         $passwordSet = $true
         $method = "uia-focused-input"
       }
@@ -373,16 +383,16 @@ if (-not $usernameSet -or -not $passwordSet) {
   $curPid = 0
   if ($currentFg -ne [IntPtr]::Zero) { [Win32AutomationHelper]::GetWindowThreadProcessId($currentFg, [ref]$curPid) | Out-Null }
 
-  if ($currentFg -eq $targetHwnd -or $curPid -eq $procId -or $currentFg -eq [IntPtr]::Zero) {
+  if ($currentFg -eq $targetHwnd -or $curPid -eq $procId) {
     [System.Windows.Forms.SendKeys]::SendWait("^a{BACKSPACE}")
-    [System.Windows.Forms.SendKeys]::SendWait($username)
+    [System.Windows.Forms.SendKeys]::SendWait($usernameKeys)
     Start-Sleep -Milliseconds 150
 
     $currentFg = [Win32AutomationHelper]::GetForegroundWindow()
     $curPid = 0
     if ($currentFg -ne [IntPtr]::Zero) { [Win32AutomationHelper]::GetWindowThreadProcessId($currentFg, [ref]$curPid) | Out-Null }
 
-    if ($currentFg -eq $targetHwnd -or $curPid -eq $procId -or $currentFg -eq [IntPtr]::Zero) {
+    if ($currentFg -eq $targetHwnd -or $curPid -eq $procId) {
       [System.Windows.Forms.SendKeys]::SendWait("{TAB}")
       Start-Sleep -Milliseconds 150
 
@@ -390,9 +400,9 @@ if (-not $usernameSet -or -not $passwordSet) {
       $curPid = 0
       if ($currentFg -ne [IntPtr]::Zero) { [Win32AutomationHelper]::GetWindowThreadProcessId($currentFg, [ref]$curPid) | Out-Null }
 
-      if ($currentFg -eq $targetHwnd -or $curPid -eq $procId -or $currentFg -eq [IntPtr]::Zero) {
+      if ($currentFg -eq $targetHwnd -or $curPid -eq $procId) {
         [System.Windows.Forms.SendKeys]::SendWait("^a{BACKSPACE}")
-        [System.Windows.Forms.SendKeys]::SendWait($password)
+        [System.Windows.Forms.SendKeys]::SendWait($passwordKeys)
         $usernameSet = $true
         $passwordSet = $true
         $method = "verified-window-fallback"
@@ -438,7 +448,7 @@ if (($usernameSet -and $passwordSet) -and $autoSubmit) {
     $currentFg = [Win32AutomationHelper]::GetForegroundWindow()
     $curPid = 0
     if ($currentFg -ne [IntPtr]::Zero) { [Win32AutomationHelper]::GetWindowThreadProcessId($currentFg, [ref]$curPid) | Out-Null }
-    if ($currentFg -eq $targetHwnd -or $curPid -eq $procId -or $currentFg -eq [IntPtr]::Zero) {
+    if ($currentFg -eq $targetHwnd -or $curPid -eq $procId) {
       if ($passwordElem) {
         try { $passwordElem.SetFocus() } catch {}
         Start-Sleep -Milliseconds 100
@@ -452,6 +462,8 @@ if (($usernameSet -and $passwordSet) -and $autoSubmit) {
 # Wipe variables from memory
 $username = $null
 $password = $null
+$usernameKeys = $null
+$passwordKeys = $null
 $config = $null
 $InputJson = $null
 
@@ -578,11 +590,9 @@ export class RiotDesktopLoginAutomationService {
   private readonly coordinator: RiotWindowsProcessCoordinator;
   private readonly adapters?: DesktopAutomationAdapters;
   private activeWorkerProcess: ChildProcess | null = null;
+  private processTrustVerifier: ((pid: number) => Promise<ProcessTrustResult>) | null = null;
   private isCancelled = false;
   private isAutomating = false;
-  private scriptFilePath: string | null = null;
-  private discoveryFilePath: string | null = null;
-
   constructor(
     vault: RiotCredentialVault,
     coordinator?: RiotWindowsProcessCoordinator,
@@ -595,6 +605,13 @@ export class RiotDesktopLoginAutomationService {
 
   public isLoginInProgress(): boolean {
     return this.isAutomating;
+  }
+
+  private verifyProcessTrust(pid: number): Promise<ProcessTrustResult> {
+    if (!this.processTrustVerifier) {
+      this.processTrustVerifier = this.adapters?.processTrustVerifier ?? createRiotProcessTrustVerifier();
+    }
+    return this.processTrustVerifier(pid);
   }
 
   private emitProgress(
@@ -610,26 +627,21 @@ export class RiotDesktopLoginAutomationService {
     }
   }
 
-  private ensureWorkerScriptFiles(): { workerPath: string; discoveryPath: string } {
+  /**
+   * Rewrites the helper scripts before every use and verifies the bytes on disk, so a copy
+   * modified between runs is never executed with credentials on stdin.
+   */
+  private writeVerifiedScript(fileName: string, contents: string): string {
     const tempDir = path.join(os.tmpdir(), 'maswitch_automation');
     fs.mkdirSync(tempDir, { recursive: true });
-
-    if (!this.scriptFilePath || !fs.existsSync(this.scriptFilePath)) {
-      const p = path.join(tempDir, 'uiaWorker.ps1');
-      fs.writeFileSync(p, UIA_WORKER_SCRIPT, 'utf8');
-      this.scriptFilePath = p;
+    const target = path.join(tempDir, fileName);
+    const expected = Buffer.from(contents, 'utf8');
+    fs.rmSync(target, { force: true });
+    fs.writeFileSync(target, expected, { flag: 'wx' });
+    if (!fs.readFileSync(target).equals(expected)) {
+      throw new Error('Automation helper script failed integrity verification.');
     }
-
-    if (!this.discoveryFilePath || !fs.existsSync(this.discoveryFilePath)) {
-      const p = path.join(tempDir, 'winDiscovery.ps1');
-      fs.writeFileSync(p, WINDOW_DISCOVERY_SCRIPT, 'utf8');
-      this.discoveryFilePath = p;
-    }
-
-    return {
-      workerPath: this.scriptFilePath,
-      discoveryPath: this.discoveryFilePath,
-    };
+    return target;
   }
 
   public async isClientRunning(): Promise<boolean> {
@@ -655,7 +667,12 @@ export class RiotDesktopLoginAutomationService {
       return await this.adapters.windowDiscoverer();
     }
 
-    const { discoveryPath } = this.ensureWorkerScriptFiles();
+    let discoveryPath: string;
+    try {
+      discoveryPath = this.writeVerifiedScript('winDiscovery.ps1', WINDOW_DISCOVERY_SCRIPT);
+    } catch {
+      return [];
+    }
 
     return new Promise((resolve) => {
       const proc = spawn('powershell.exe', [
@@ -786,7 +803,17 @@ export class RiotDesktopLoginAutomationService {
       return await this.adapters.workerRunner(targetWindow, creds, autoSubmit);
     }
 
-    const { workerPath } = this.ensureWorkerScriptFiles();
+    let workerPath: string;
+    try {
+      workerPath = this.writeVerifiedScript('uiaWorker.ps1', UIA_WORKER_SCRIPT);
+    } catch (err) {
+      return {
+        success: false,
+        error: 'WORKER_SCRIPT_INTEGRITY',
+        details: err instanceof Error ? err.message : String(err),
+        retryable: false,
+      };
+    }
 
     return new Promise<WorkerRunResult>((resolve) => {
       const proc = spawn('powershell.exe', [
@@ -1019,6 +1046,16 @@ export class RiotDesktopLoginAutomationService {
 
         // Window found! Report progress
         report('verifying-window', `Verifying target window: HWND ${targetWindow.hwnd} (PID ${targetWindow.pid})...`);
+
+        if (!isSyntheticTest) {
+          const trust = await this.verifyProcessTrust(targetWindow.pid);
+          if (!trust.trusted) {
+            lastError = 'UNTRUSTED_TARGET_PROCESS';
+            lastErrorMessage = `The login window does not belong to a genuine Riot Client (${trust.reason ?? 'signature check failed'}). Credentials were not sent.`;
+            break;
+          }
+        }
+
         report('finding-fields', 'Locating username and password fields via Windows UI Automation...');
 
         // Execute worker

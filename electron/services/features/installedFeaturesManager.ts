@@ -12,6 +12,19 @@ import {
   PRESET_CONFIGURATIONS,
 } from '../../../src/shared/types/features';
 
+const INSTALLER_FILE_NAME_PATTERN = /^MaSwitch[-_ ]Setup[\w .()-]*\.exe$/i;
+
+/** The recorded installer path is read from a user-writable manifest, so only accept a local MaSwitch setup executable. */
+export function isAcceptableInstallerPath(candidate: string): boolean {
+  if (typeof candidate !== 'string' || candidate.length > 1024 || /[\0\r\n"<>|*?]/.test(candidate)) {
+    return false;
+  }
+  if (!path.win32.isAbsolute(candidate) || /^[\\/]{2}/.test(candidate)) {
+    return false;
+  }
+  return INSTALLER_FILE_NAME_PATTERN.test(path.win32.basename(candidate));
+}
+
 export class InstalledFeaturesManager {
   private manifest: InstalledFeaturesManifest;
   private manifestPath: string;
@@ -274,11 +287,13 @@ export class InstalledFeaturesManager {
 
   public async launchInstallerModify(): Promise<{ success: boolean; message?: string }> {
     // 1. If explicit installer path is recorded, try that
-    if (this.manifest.installerPath && fs.existsSync(this.manifest.installerPath)) {
+    const recordedPath = this.manifest.installerPath;
+    if (recordedPath && isAcceptableInstallerPath(recordedPath) && fs.existsSync(recordedPath)) {
       try {
-        const child = spawn(this.manifest.installerPath, ['--modify'], {
+        const child = spawn(recordedPath, ['--modify'], {
           detached: true,
           stdio: 'ignore',
+          shell: false,
         });
         child.on('error', () => {});
         child.unref?.();
@@ -291,10 +306,16 @@ export class InstalledFeaturesManager {
     // 2. Check standard release or download locations
     const exeDir = typeof app?.getPath === 'function' ? path.dirname(app.getPath('exe')) : process.cwd();
     const version = typeof app?.getVersion === 'function' ? app.getVersion() : '1.0.0';
+    // The working directory is caller-controlled (shortcuts, other launchers), so packaged builds never search it.
+    const devCandidates = app?.isPackaged
+      ? []
+      : [
+          path.join(process.cwd(), 'release', `MaSwitch-Setup-${version}.exe`),
+          path.join(process.cwd(), 'release', 'MaSwitch-Setup-1.0.0.exe'),
+          path.join(process.cwd(), 'release', 'MaSwitch-Setup-0.2.0.exe'),
+        ];
     const candidatePaths = [
-      path.join(process.cwd(), 'release', `MaSwitch-Setup-${version}.exe`),
-      path.join(process.cwd(), 'release', 'MaSwitch-Setup-1.0.0.exe'),
-      path.join(process.cwd(), 'release', 'MaSwitch-Setup-0.2.0.exe'),
+      ...devCandidates,
       path.join(exeDir, `MaSwitch-Setup-${version}.exe`),
       path.join(exeDir, 'MaSwitch-Setup-1.0.0.exe'),
       path.join(exeDir, 'MaSwitch-Setup-0.2.0.exe'),
@@ -305,7 +326,7 @@ export class InstalledFeaturesManager {
     for (const p of candidatePaths) {
       if (fs.existsSync(p)) {
         try {
-          const child = spawn(p, ['--modify'], { detached: true, stdio: 'ignore' });
+          const child = spawn(p, ['--modify'], { detached: true, stdio: 'ignore', shell: false });
           child.on('error', () => {});
           child.unref?.();
           return { success: true };

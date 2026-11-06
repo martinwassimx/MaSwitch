@@ -216,7 +216,7 @@ Function ComponentsSelectionPage
   ${NSD_CreateCheckbox} 10u 26u 285u 11u "Smart Game Collections [~4 MB disk, ~6 MB RAM] (Rule-based sorting)"
   Pop $HwndChkCollections
 
-  ${NSD_CreateCheckbox} 10u 38u 285u 11u "Backup & Restore [~6 MB disk, ~10 MB RAM] (Local DPAPI backups)"
+  ${NSD_CreateCheckbox} 10u 38u 285u 11u "Backup & Restore [~6 MB disk, ~10 MB RAM] (Local backups, no passwords)"
   Pop $HwndChkBackup
 
   ${NSD_CreateCheckbox} 10u 50u 285u 11u "Gaming Year in Review [~14 MB disk, ~12 MB RAM] (Annual retrospect)"

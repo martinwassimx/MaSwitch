@@ -12,6 +12,42 @@ import type {
   RestoreResult,
 } from '../../src/shared/types/backup';
 
+/** Settings carried by backups. Security-sensitive settings are never exported or restored. */
+export const RESTORABLE_SETTING_KEYS = [
+  'theme',
+  'accentColor',
+  'animationsEnabled',
+  'reducedMotion',
+  'sidebarCollapsed',
+  'showSidebarCounts',
+  'compactGameCards',
+  'defaultLibraryView',
+  'defaultLandingPage',
+  'favoriteGameIds',
+  'favoriteAccountIds',
+  'favoritePlatformIds',
+  'lowEndPcMode',
+  'gameAwarePerformanceMode',
+  'playtimeTrackingEnabled',
+  'notificationsEnabled',
+  'suppressNotificationsInGame',
+  'excludedApplications',
+] as const satisfies readonly (keyof MaSwitchSettings)[];
+
+export function pickRestorableSettings(source: Partial<MaSwitchSettings>): Partial<MaSwitchSettings> {
+  const picked: Partial<MaSwitchSettings> = {};
+  for (const key of RESTORABLE_SETTING_KEYS) {
+    if (Object.prototype.hasOwnProperty.call(source, key) && source[key] !== undefined) {
+      (picked as Record<string, unknown>)[key] = source[key];
+    }
+  }
+  return picked;
+}
+
+export function isBackupFileName(filePath: string): boolean {
+  return path.win32.extname(filePath).toLowerCase() === '.json';
+}
+
 export class BackupService {
   private db: MaSwitchSqliteDatabase;
   private getSettingsFn: () => MaSwitchSettings;
@@ -96,23 +132,7 @@ export class BackupService {
     }));
 
     const sanitizedSettings: Partial<MaSwitchSettings> = {
-      theme: settings.theme,
-      accentColor: settings.accentColor,
-      animationsEnabled: settings.animationsEnabled,
-      reducedMotion: settings.reducedMotion,
-      sidebarCollapsed: settings.sidebarCollapsed,
-      showSidebarCounts: settings.showSidebarCounts,
-      compactGameCards: settings.compactGameCards,
-      defaultLibraryView: settings.defaultLibraryView,
-      defaultLandingPage: settings.defaultLandingPage,
-      favoriteGameIds: settings.favoriteGameIds,
-      favoriteAccountIds: settings.favoriteAccountIds,
-      favoritePlatformIds: settings.favoritePlatformIds,
-      lowEndPcMode: settings.lowEndPcMode,
-      gameAwarePerformanceMode: settings.gameAwarePerformanceMode,
-      playtimeTrackingEnabled: settings.playtimeTrackingEnabled,
-      notificationsEnabled: settings.notificationsEnabled,
-      suppressNotificationsInGame: settings.suppressNotificationsInGame,
+      ...pickRestorableSettings(settings),
       excludedApplications: exclusions,
     };
 
@@ -273,9 +293,9 @@ export class BackupService {
         }
       }
 
-      // Restore settings & exclusions
-      if (data.settings) {
-        await this.saveSettingsFn(data.settings);
+      // Restore settings & exclusions (allowlisted keys only)
+      if (data.settings && typeof data.settings === 'object') {
+        await this.saveSettingsFn(pickRestorableSettings(data.settings));
       }
 
       return {

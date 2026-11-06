@@ -89,6 +89,93 @@ export const PROTECTED_PROCESS_NAMES = new Set<string>([
   'electron.exe',
 ]);
 
+const CLEANUP_OPERATION_KEYS: readonly (keyof MemoryCleanupOperations)[] = [
+  'workingSets',
+  'systemFileCache',
+  'standbyPriority0',
+  'standbyList',
+  'modifiedPageList',
+  'combineMemoryLists',
+  'registryCache',
+];
+
+/** Validates an untrusted cleanup request; unknown keys and non-boolean values are dropped. */
+export function sanitizeMemoryCleanupRequest(raw: unknown): MemoryCleanupRequest {
+  if (!raw || typeof raw !== 'object') {
+    throw new Error('Invalid memory cleanup request.');
+  }
+  const candidate = raw as { mode?: unknown; operations?: unknown };
+  if (candidate.mode !== 'standard' && candidate.mode !== 'advanced') {
+    throw new Error('Invalid memory cleanup mode.');
+  }
+  const request: MemoryCleanupRequest = { mode: candidate.mode };
+  if (candidate.operations !== undefined) {
+    if (!candidate.operations || typeof candidate.operations !== 'object') {
+      throw new Error('Invalid memory cleanup operations.');
+    }
+    const source = candidate.operations as Record<string, unknown>;
+    const operations: Partial<MemoryCleanupOperations> = {};
+    for (const key of CLEANUP_OPERATION_KEYS) {
+      if (typeof source[key] === 'boolean') {
+        operations[key] = source[key] as boolean;
+      }
+    }
+    request.operations = operations;
+  }
+  return request;
+}
+
+export function resolveCleanupOperations(request: MemoryCleanupRequest): MemoryCleanupOperations {
+  const baseDefaults = request.mode === 'advanced' ? DEFAULT_ADVANCED_OPERATIONS : DEFAULT_STANDARD_OPERATIONS;
+  return { ...baseDefaults, ...(request.operations || {}) };
+}
+
+export function requiresElevatedCleanup(operations: MemoryCleanupOperations): boolean {
+  return (
+    operations.systemFileCache ||
+    operations.standbyPriority0 ||
+    operations.standbyList ||
+    operations.modifiedPageList ||
+    operations.combineMemoryLists ||
+    operations.registryCache
+  );
+}
+
+export const ELEVATED_CLEANUP_COOLDOWN_MS = 60_000;
+
+/**
+ * Main-process gate in front of any cleanup that may trigger a UAC prompt: the user must
+ * confirm in a native dialog, and renderer requests cannot re-prompt within the cooldown.
+ */
+export function createElevatedCleanupGate(
+  confirm: () => Promise<boolean>,
+  now: () => number = Date.now,
+  cooldownMs: number = ELEVATED_CLEANUP_COOLDOWN_MS
+): () => Promise<{ allowed: true } | { allowed: false; message: string }> {
+  let pending = false;
+  let lastPromptAt = Number.NEGATIVE_INFINITY;
+  return async () => {
+    if (pending) {
+      return { allowed: false, message: 'An administrator confirmation is already pending.' };
+    }
+    const remainingMs = lastPromptAt + cooldownMs - now();
+    if (remainingMs > 0) {
+      return {
+        allowed: false,
+        message: `Please wait ${Math.ceil(remainingMs / 1000)} seconds before requesting another privileged cleanup.`,
+      };
+    }
+    pending = true;
+    try {
+      lastPromptAt = now();
+      const confirmed = await confirm();
+      return confirmed ? { allowed: true } : { allowed: false, message: 'Privileged memory cleanup cancelled.' };
+    } finally {
+      pending = false;
+    }
+  };
+}
+
 export interface MemoryServiceAdapters {
   rawMemoryQuery?: () => {
     totalBytes: number;
@@ -242,12 +329,7 @@ export class MemoryManagementService {
       };
     }
 
-    // Resolve operations to execute
-    const baseDefaults = request.mode === 'advanced' ? DEFAULT_ADVANCED_OPERATIONS : DEFAULT_STANDARD_OPERATIONS;
-    const operations: MemoryCleanupOperations = {
-      ...baseDefaults,
-      ...(request.operations || {}),
-    };
+    const operations = resolveCleanupOperations(request);
 
     let trimmedCount = 0;
     let privilegedSuccess = true;
@@ -281,15 +363,7 @@ export class MemoryManagementService {
 
     // 2. Privileged NT Memory List Operations
     // Mem Reduct operations: System File Cache, Standby Priority 0, Full Standby List, Modified Page List, etc.
-    const requiresPrivilege =
-      operations.systemFileCache ||
-      operations.standbyPriority0 ||
-      operations.standbyList ||
-      operations.modifiedPageList ||
-      operations.combineMemoryLists ||
-      operations.registryCache;
-
-    if (requiresPrivilege) {
+    if (requiresElevatedCleanup(operations)) {
       elevationRequired = true;
       if (this.adapters?.privilegedListCleaner) {
         const privRes = await this.adapters.privilegedListCleaner(operations);

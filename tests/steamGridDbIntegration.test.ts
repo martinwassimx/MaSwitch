@@ -2,6 +2,17 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+
+vi.mock('electron', () => ({
+  app: { getPath: () => os.tmpdir(), isPackaged: false },
+  safeStorage: {
+    isEncryptionAvailable: () => true,
+    encryptString: (value: string) => Buffer.from(`mock-dpapi:${Buffer.from(value, 'utf8').toString('base64')}`, 'utf8'),
+    decryptString: (buffer: Buffer) =>
+      Buffer.from(buffer.toString('utf8').replace(/^mock-dpapi:/, ''), 'base64').toString('utf8'),
+  },
+}));
+
 import {
   normalizeTitleForArtworkSearch,
   calculateTitleSimilarity,

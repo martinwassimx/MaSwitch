@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { InstalledFeaturesManager } from '../electron/services/features/installedFeaturesManager';
+import { InstalledFeaturesManager, isAcceptableInstallerPath } from '../electron/services/features/installedFeaturesManager';
 import {
   OPTIONAL_FEATURES_METADATA,
   PRESET_CONFIGURATIONS,
@@ -313,6 +313,29 @@ describe('MaSwitch 3.0 Modular Installer & Feature Gating Test Suite', () => {
       expect(result.success).toBe(false);
       expect(result.message).toMatch(/installer setup file was not found/i);
 
+      existsSpy.mockRestore();
+    });
+
+    it('only accepts a local MaSwitch setup executable as the recorded installer path', () => {
+      expect(isAcceptableInstallerPath('C:\\Users\\u\\Downloads\\MaSwitch-Setup-1.0.5.exe')).toBe(true);
+      expect(isAcceptableInstallerPath('C:/Users/u/Downloads/MaSwitch-Setup-1.0.5 (1).exe')).toBe(true);
+      expect(isAcceptableInstallerPath('C:\\Windows\\System32\\cmd.exe')).toBe(false);
+      expect(isAcceptableInstallerPath('\\\\attacker\\share\\MaSwitch-Setup.exe')).toBe(false);
+      expect(isAcceptableInstallerPath('//attacker/share/MaSwitch-Setup.exe')).toBe(false);
+      expect(isAcceptableInstallerPath('MaSwitch-Setup.exe')).toBe(false);
+      expect(isAcceptableInstallerPath('C:\\x\\MaSwitch-Setup.exe" --evil')).toBe(false);
+      expect(isAcceptableInstallerPath('C:\\x\\MaSwitch-Setup.bat')).toBe(false);
+    });
+
+    it('does not launch a recorded installer path that is not a MaSwitch setup executable', async () => {
+      const existsSpy = vi.spyOn(fs, 'existsSync').mockImplementation((p) => p === 'C:\\Windows\\System32\\cmd.exe');
+      const manager = new InstalledFeaturesManager({
+        customManifestPath,
+        installerPath: 'C:\\Windows\\System32\\cmd.exe',
+      });
+
+      const result = await manager.launchInstallerModify();
+      expect(result.success).toBe(false);
       existsSpy.mockRestore();
     });
   });
