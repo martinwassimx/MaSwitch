@@ -24,8 +24,12 @@ export interface UpdateInfo {
   isPrerelease: boolean;
   htmlUrl: string;
   installerAsset: UpdateAssetInfo;
-  sha256Asset?: UpdateAssetInfo;
+  /** SHA-256 from the signature-verified manifest; absent when unverified. */
   expectedSha256?: string;
+  /** True only when the release manifest was verified against an embedded trust key. */
+  signatureVerified: boolean;
+  /** Why automatic installation is unavailable for this release. */
+  verificationError?: string;
 }
 
 export interface UpdateDownloadProgress {

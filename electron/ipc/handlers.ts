@@ -1637,12 +1637,15 @@ export function registerIpcHandlers(
   // 8. Application Updates Handlers
   const updateService = services.updateService;
 
-  ipcMain.handle(IPC_CHANNELS.UPDATER_CHECK_FOR_UPDATES, async (event, channel?: UpdateChannel) => {
+  ipcMain.handle(IPC_CHANNELS.UPDATER_CHECK_FOR_UPDATES, async (event, channel?: unknown) => {
     assertTrustedSender(event, getMainWindow, devServerUrl);
     if (!updateService) {
       throw new Error('Update service is not initialized.');
     }
-    return await updateService.checkForUpdates(channel, true);
+    if (channel !== undefined && channel !== 'stable' && channel !== 'beta') {
+      throw new Error('Invalid update channel.');
+    }
+    return await updateService.checkForUpdates(channel as UpdateChannel | undefined, true);
   });
 
   ipcMain.handle(IPC_CHANNELS.UPDATER_GET_STATUS, (event) => {
@@ -1686,11 +1689,13 @@ export function registerIpcHandlers(
     return updateService.precheckInstall();
   });
 
-  ipcMain.handle(IPC_CHANNELS.UPDATER_INSTALL_AND_RESTART, async (event, options?: { silent?: boolean }) => {
+  ipcMain.handle(IPC_CHANNELS.UPDATER_INSTALL_AND_RESTART, async (event, options?: unknown) => {
     assertTrustedSender(event, getMainWindow, devServerUrl);
     if (!updateService) {
       throw new Error('Update service is not initialized.');
     }
-    return await updateService.installAndRestart(options);
+    const silent =
+      typeof options === 'object' && options !== null && (options as { silent?: unknown }).silent === true;
+    return await updateService.installAndRestart({ silent });
   });
 }

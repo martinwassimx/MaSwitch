@@ -3,6 +3,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { verifyReleaseManifest } from './update-signing.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -32,6 +33,8 @@ const targetFiles = [
 
 const results = [];
 const checksumLines = [];
+const failures = [];
+const strict = process.argv.includes('--strict');
 
 for (const target of targetFiles) {
   console.log(`Checking: ${target.name}...`);
@@ -124,6 +127,16 @@ console.log('----------------------------------------------------');
 console.log('             Security & Signing Summary             ');
 console.log('----------------------------------------------------');
 
+const updateManifest = verifyReleaseManifest(releaseDir, { quiet: true });
+if (updateManifest.ok) {
+  console.log('[✓] Signed update manifest verified against the embedded update trust root.');
+} else {
+  console.log(`[!] Update manifest: ${updateManifest.reason}`);
+  console.log('    Installed clients will NOT auto-install this release; users must download it manually.');
+  failures.push(`update manifest: ${updateManifest.reason}`);
+}
+console.log('[i] SHA256SUMS.txt is a convenience for manual downloads; it is not independent proof of authenticity.');
+
 const isSigned = results.every((r) => r.signature && r.signature.status === 'Valid');
 if (isSigned) {
   console.log('[✓] Artifacts are digitally signed with a verified Authenticode certificate.');
@@ -134,4 +147,16 @@ if (isSigned) {
   console.log('    • To sign in production/CI, provide CSC_LINK (PFX path/base64) & CSC_KEY_PASSWORD.');
 }
 
+for (const r of results) {
+  if (r.exists === false) failures.push(`missing artifact: ${r.target}`);
+}
+
 console.log('====================================================\n');
+
+if (failures.length > 0) {
+  console.log(`Release check found ${failures.length} problem(s):`);
+  for (const f of failures) console.log(`  - ${f}`);
+  if (strict) process.exit(1);
+} else {
+  console.log('Release check passed.');
+}

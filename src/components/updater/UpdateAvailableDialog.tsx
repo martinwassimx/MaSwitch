@@ -203,6 +203,23 @@ export const UpdateAvailableDialog: React.FC = () => {
                 </div>
               )}
 
+              {!updateInfo.signatureVerified && status !== 'downloading' && status !== 'downloaded' && (
+                <div
+                  data-testid="update-unverified-warning"
+                  className="flex items-start gap-3 p-3.5 rounded-xl border border-amber-500/30 bg-amber-950/20 text-amber-300 text-xs"
+                >
+                  <AlertTriangle className="w-5 h-5 shrink-0 text-amber-400 mt-0.5" />
+                  <div>
+                    <span className="font-semibold text-amber-200">Automatic installation unavailable</span>
+                    <p className="text-slate-300 mt-0.5">
+                      This release could not be verified with a trusted MaSwitch update signature
+                      {updateInfo.verificationError ? ` (${updateInfo.verificationError})` : ''}. Only download it
+                      manually from the official release page if you trust it.
+                    </p>
+                  </div>
+                </div>
+              )}
+
               {/* Downloaded State */}
               {status === 'downloaded' && (
                 <div className="flex items-center gap-3 p-3.5 rounded-xl border border-emerald-500/30 bg-emerald-950/20 text-emerald-300 text-xs">
@@ -212,7 +229,7 @@ export const UpdateAvailableDialog: React.FC = () => {
                       Update Downloaded & Verified!
                     </span>
                     <p className="text-slate-300 mt-0.5">
-                      Installer is verified against official SHA-256 checksums and ready to install.
+                      Installer matches the signed MaSwitch release manifest and is ready to install.
                     </p>
                   </div>
                 </div>
@@ -290,6 +307,15 @@ export const UpdateAvailableDialog: React.FC = () => {
                     <span>Install & Restart</span>
                   </>
                 )}
+              </button>
+            ) : updateInfo && !updateInfo.signatureVerified ? (
+              <button
+                type="button"
+                onClick={() => handleOpenExternal(updateInfo.htmlUrl)}
+                className="flex items-center gap-2 px-4 py-1.5 rounded-lg text-xs font-semibold text-amber-200 border border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 transition-all"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                <span>Open Release Page</span>
               </button>
             ) : (
               <button

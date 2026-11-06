@@ -96,6 +96,7 @@ describe('Settings Page — Application Updates UI & Updater Components', () => 
               size: 52 * 1024 * 1024,
               contentType: 'application/octet-stream',
             },
+            signatureVerified: true,
           },
         },
         downloadProgress: null,
@@ -139,6 +140,7 @@ describe('Settings Page — Application Updates UI & Updater Components', () => 
               size: 52 * 1024 * 1024,
               contentType: 'application/octet-stream',
             },
+            signatureVerified: true,
           },
         },
         downloadProgress: null,
@@ -180,6 +182,7 @@ describe('Settings Page — Application Updates UI & Updater Components', () => 
               size: 52 * 1024 * 1024,
               contentType: 'application/octet-stream',
             },
+            signatureVerified: true,
           },
         },
         downloadProgress: null,
@@ -194,5 +197,45 @@ describe('Settings Page — Application Updates UI & Updater Components', () => 
     expect(screen.getByText(/Security and updater enhancements/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Download Update/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Remind Later/i })).toBeInTheDocument();
+  });
+
+  it('withholds automatic download for releases without a verified signature', () => {
+    const baseState = useAppStore.getState().updaterState;
+    useAppStore.setState({
+      showUpdateModal: true,
+      updaterState: {
+        ...baseState,
+        status: 'available',
+        currentVersion: '1.0.4',
+        latestCheckResult: {
+          updateAvailable: true,
+          currentVersion: '1.0.4',
+          latestVersion: '1.0.5',
+          channel: 'stable',
+          checkedAtIso: '2026-11-06T12:00:00Z',
+          updateInfo: {
+            version: '1.0.5',
+            releaseName: 'MaSwitch 1.0.5',
+            releaseNotes: 'Unsigned release',
+            publishedAtIso: '2026-11-06T12:00:00Z',
+            isPrerelease: false,
+            htmlUrl: 'https://github.com/martinwassimx/MaSwitch/releases/tag/v1.0.5',
+            installerAsset: {
+              name: 'MaSwitch-Setup-1.0.5.exe',
+              downloadUrl: 'https://github.com/martinwassimx/MaSwitch/releases/download/v1.0.5/MaSwitch-Setup-1.0.5.exe',
+              size: 52 * 1024 * 1024,
+              contentType: 'application/octet-stream',
+            },
+            signatureVerified: false,
+            verificationError: 'This release does not include a signed update manifest.',
+          },
+        },
+      },
+    });
+
+    render(<UpdateAvailableDialog />);
+    expect(screen.getByTestId('update-unverified-warning')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Download Update/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Open Release Page/i })).toBeInTheDocument();
   });
 });

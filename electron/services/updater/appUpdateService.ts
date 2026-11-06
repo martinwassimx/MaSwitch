@@ -1,9 +1,17 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import os from 'node:os';
 import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
 import semver from './semverUtils';
+import {
+  MAX_MANIFEST_BYTES,
+  UPDATE_MANIFEST_ASSET_NAME,
+  UPDATE_SIGNATURE_ASSET_NAME,
+  verifySignedUpdateManifest,
+  type SignedUpdateManifest,
+  type UpdateTrustKey,
+} from './updateManifest';
+import { UPDATE_TRUSTED_KEYS } from './updateTrustRoot';
 import type {
   UpdateChannel,
   UpdateCheckResult,
@@ -36,6 +44,7 @@ export interface GitHubReleaseItem {
 export interface AppUpdateServiceDependencies {
   currentVersion: string;
   userDataDir: string;
+  /** Overrides the download directory (defaults to `<userData>/updates`). */
   tempDir?: string;
   getTrackerStatus: () => PlaytimeTrackerStatus;
   isRiotLoginInProgress?: () => boolean;
@@ -47,18 +56,50 @@ export interface AppUpdateServiceDependencies {
   broadcastProgress?: (progress: UpdateDownloadProgress) => void;
   fetchFn?: typeof fetch;
   spawnFn?: typeof spawn;
+  trustedKeys?: readonly UpdateTrustKey[];
+}
+
+interface VerifiedDownload {
+  filePath: string;
+  sha256: string;
+  size: number;
+  version: string;
 }
 
 const GITHUB_RELEASES_API = 'https://api.github.com/repos/martinwassimx/MaSwitch/releases';
+const RELEASE_DOWNLOAD_PATH_PREFIX = '/martinwassimx/MaSwitch/releases/download/';
+const TRUSTED_ASSET_CDN_HOSTS = new Set([
+  'objects.githubusercontent.com',
+  'release-assets.githubusercontent.com',
+  'github-releases.githubusercontent.com',
+]);
 const AUTO_CHECK_STARTUP_DELAY_MS = 10_000;
 const AUTO_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
 const CHECK_THROTTLE_HOURS = 24;
+
+export const UNVERIFIED_UPDATE_MESSAGE =
+  'Automatic installation is unavailable because this release could not be verified with a trusted MaSwitch update signature. Download the installer manually from the release page only if you trust it.';
+
+export function isValidUpdateChannel(value: unknown): value is UpdateChannel {
+  return value === 'stable' || value === 'beta';
+}
+
+async function sha256File(filePath: string): Promise<string> {
+  const hash = crypto.createHash('sha256');
+  for await (const chunk of fs.createReadStream(filePath)) {
+    hash.update(chunk as Buffer);
+  }
+  return hash.digest('hex');
+}
 
 export class AppUpdateService {
   private readonly dependencies: AppUpdateServiceDependencies;
   private readonly fetchImpl: typeof fetch;
   private readonly spawnImpl: typeof spawn;
+  private readonly trustedKeys: readonly UpdateTrustKey[];
   private state: UpdaterState;
+  private verifiedManifest: SignedUpdateManifest | null = null;
+  private verifiedDownload: VerifiedDownload | null = null;
   private downloadAbortController: AbortController | null = null;
   private startupTimer: NodeJS.Timeout | null = null;
   private periodicTimer: NodeJS.Timeout | null = null;
@@ -68,11 +109,12 @@ export class AppUpdateService {
     this.dependencies = dependencies;
     this.fetchImpl = dependencies.fetchFn ?? globalThis.fetch;
     this.spawnImpl = dependencies.spawnFn ?? spawn;
+    this.trustedKeys = dependencies.trustedKeys ?? UPDATE_TRUSTED_KEYS;
 
     const initialSettings = dependencies.loadSettings();
     this.state = {
       status: 'idle',
-      channel: initialSettings.updateChannel ?? 'stable',
+      channel: isValidUpdateChannel(initialSettings.updateChannel) ? initialSettings.updateChannel : 'stable',
       currentVersion: dependencies.currentVersion,
       latestCheckResult: null,
       downloadProgress: null,
@@ -91,6 +133,9 @@ export class AppUpdateService {
   }
 
   public setChannel(channel: UpdateChannel): void {
+    if (!isValidUpdateChannel(channel)) {
+      throw new Error('Invalid update channel.');
+    }
     if (this.state.channel !== channel) {
       this.state.channel = channel;
       this.dependencies.saveSettings({ updateChannel: channel });
@@ -113,53 +158,86 @@ export class AppUpdateService {
     this.dependencies.broadcastProgress?.(progress);
   }
 
+  private getDownloadDir(): string {
+    return this.dependencies.tempDir ?? path.join(this.dependencies.userDataDir, 'updates');
+  }
+
   /**
-   * Validate that a remote URL strictly belongs to trusted GitHub download domains and uses HTTPS.
+   * HTTPS only. Initial URLs must be this repository's release downloads; redirects
+   * may only land on GitHub's release-asset CDN hosts.
    */
   public isTrustedDownloadUrl(rawUrl: string): boolean {
     try {
       const parsed = new URL(rawUrl);
-      if (parsed.protocol !== 'https:') {
+      if (parsed.protocol !== 'https:' || parsed.username || parsed.password || parsed.port) {
         return false;
       }
       const host = parsed.hostname.toLowerCase();
-      return (
-        host === 'github.com' ||
-        host === 'api.github.com' ||
-        host === 'objects.githubusercontent.com' ||
-        host === 'raw.githubusercontent.com' ||
-        host.endsWith('.githubusercontent.com')
-      );
+      if (host === 'github.com') {
+        return parsed.pathname.startsWith(RELEASE_DOWNLOAD_PATH_PREFIX);
+      }
+      return TRUSTED_ASSET_CDN_HOSTS.has(host);
     } catch {
       return false;
     }
   }
 
-  /**
-   * Parse SHA-256 checksum from SHA256SUMS.txt text for a target file.
-   */
-  public parseChecksumFromSha256Sums(sha256Text: string, targetFilename: string): string | null {
-    const lines = sha256Text.split(/\r?\n/);
-    const normalizedTarget = targetFilename.toLowerCase().trim();
+  private async fetchSmallAsset(url: string): Promise<Buffer> {
+    if (!this.isTrustedDownloadUrl(url)) {
+      throw new Error('Untrusted update metadata URL.');
+    }
+    const response = await this.fetchImpl(url, {
+      headers: { 'User-Agent': `MaSwitch-Desktop-Updater/${this.state.currentVersion}` },
+    });
+    if (!response.ok) {
+      throw new Error(`Update metadata download failed (HTTP ${response.status}).`);
+    }
+    if (response.url && !this.isTrustedDownloadUrl(response.url)) {
+      throw new Error('Update metadata was redirected to an untrusted host.');
+    }
+    const declared = Number(response.headers?.get?.('content-length') ?? 0);
+    if (declared > MAX_MANIFEST_BYTES) {
+      throw new Error('Update metadata is too large.');
+    }
+    const bytes = Buffer.from(await response.arrayBuffer());
+    if (bytes.length > MAX_MANIFEST_BYTES) {
+      throw new Error('Update metadata is too large.');
+    }
+    return bytes;
+  }
 
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith('#')) {
-        continue;
-      }
-      const parts = trimmed.split(/\s+/);
-      if (parts.length >= 2) {
-        const hash = parts[0].toLowerCase().trim();
-        const file = parts.slice(1).join(' ').replace(/^\*/, '').toLowerCase().trim();
-        const baseName = path.basename(file);
-        if (file === normalizedTarget || baseName === normalizedTarget) {
-          if (/^[a-f0-9]{64}$/i.test(hash)) {
-            return hash;
-          }
-        }
+  private async verifyReleaseManifest(
+    release: GitHubReleaseItem,
+    channel: UpdateChannel
+  ): Promise<SignedUpdateManifest> {
+    const manifestAsset = release.assets.find((a) => a.name === UPDATE_MANIFEST_ASSET_NAME);
+    const signatureAsset = release.assets.find((a) => a.name === UPDATE_SIGNATURE_ASSET_NAME);
+    if (!manifestAsset || !signatureAsset) {
+      throw new Error('This release does not include a signed update manifest.');
+    }
+    const [manifestBytes, signatureBytes] = await Promise.all([
+      this.fetchSmallAsset(manifestAsset.browser_download_url),
+      this.fetchSmallAsset(signatureAsset.browser_download_url),
+    ]);
+    return verifySignedUpdateManifest(manifestBytes, signatureBytes, this.trustedKeys, {
+      currentVersion: this.state.currentVersion,
+      requestedChannel: channel,
+      releaseTag: release.tag_name,
+      releaseAssetNames: release.assets.map((a) => a.name),
+    });
+  }
+
+  private clearVerifiedDownload(deleteFile: boolean): void {
+    if (deleteFile && this.verifiedDownload) {
+      try {
+        fs.rmSync(this.verifiedDownload.filePath, { force: true });
+      } catch {
+        // ignore
       }
     }
-    return null;
+    this.verifiedDownload = null;
+    this.state.downloadedFilePath = null;
+    this.state.downloadedVersion = null;
   }
 
   /**
@@ -180,7 +258,7 @@ export class AppUpdateService {
       };
     }
 
-    const channel = targetChannel ?? this.state.channel;
+    const channel = isValidUpdateChannel(targetChannel) ? targetChannel : this.state.channel;
     this.state.channel = channel;
     this.setStatus('checking', null);
 
@@ -226,7 +304,7 @@ export class AppUpdateService {
 
       // Filter releases based on channel
       const filteredReleases = releases.filter((r) => {
-        if (!r.tag_name) return false;
+        if (!r || typeof r.tag_name !== 'string' || !Array.isArray(r.assets)) return false;
         if (channel === 'stable') {
           if (r.prerelease) return false;
           const tagLower = r.tag_name.toLowerCase();
@@ -263,87 +341,78 @@ export class AppUpdateService {
       const bestCandidate = parsedReleases[0];
       const isNewer = semver.gt(bestCandidate.version, this.state.currentVersion);
 
-      // Find Windows installer asset (.exe)
-      const installerAsset = bestCandidate.release.assets.find(
-        (a) =>
-          a.name.toLowerCase().endsWith('.exe') &&
-          !a.name.toLowerCase().includes('portable')
-      ) ?? bestCandidate.release.assets.find((a) => a.name.toLowerCase().endsWith('.exe'));
-
-      const sha256Asset = bestCandidate.release.assets.find(
-        (a) => a.name.toLowerCase() === 'sha256sums.txt' || a.name.toLowerCase().endsWith('.sha256')
-      );
-
       // Save check timestamp in settings
       this.dependencies.saveSettings({ lastUpdateCheckIso: nowIso });
 
-      if (isNewer && installerAsset) {
-        let expectedSha256: string | undefined;
+      if (isNewer) {
+        let manifest: SignedUpdateManifest | null = null;
+        let verificationError: string | undefined;
+        try {
+          manifest = await this.verifyReleaseManifest(bestCandidate.release, channel);
+        } catch (verifyErr) {
+          verificationError = verifyErr instanceof Error ? verifyErr.message : String(verifyErr);
+        }
 
-        // Attempt pre-fetching SHA256SUMS if present
-        if (sha256Asset && this.isTrustedDownloadUrl(sha256Asset.browser_download_url)) {
-          try {
-            const shaResp = await this.fetchImpl(sha256Asset.browser_download_url);
-            if (shaResp.ok) {
-              const shaText = await shaResp.text();
-              const parsedHash = this.parseChecksumFromSha256Sums(shaText, installerAsset.name);
-              if (parsedHash) {
-                expectedSha256 = parsedHash;
-              }
-            }
-          } catch {
-            // Checksum asset fetch failure will be handled gracefully during download
+        const installerAsset = manifest
+          ? bestCandidate.release.assets.find((a) => a.name === manifest!.installer.fileName)
+          : bestCandidate.release.assets.find(
+              (a) => a.name.toLowerCase().endsWith('.exe') && !a.name.toLowerCase().includes('portable')
+            ) ?? bestCandidate.release.assets.find((a) => a.name.toLowerCase().endsWith('.exe'));
+
+        if (manifest && (!installerAsset || !this.isTrustedDownloadUrl(installerAsset.browser_download_url))) {
+          manifest = null;
+          verificationError = 'The signed installer asset is missing or hosted at an untrusted URL.';
+        }
+
+        if (installerAsset) {
+          if (this.verifiedManifest?.version !== manifest?.version) {
+            this.clearVerifiedDownload(false);
           }
+          this.verifiedManifest = manifest;
+
+          const updateInfo: UpdateInfo = {
+            version: bestCandidate.version,
+            releaseName: bestCandidate.release.name || `MaSwitch v${bestCandidate.version}`,
+            releaseNotes: bestCandidate.release.body || 'No release notes provided.',
+            publishedAtIso: bestCandidate.release.published_at || nowIso,
+            isPrerelease: bestCandidate.release.prerelease,
+            htmlUrl: bestCandidate.release.html_url,
+            installerAsset: {
+              name: installerAsset.name,
+              downloadUrl: installerAsset.browser_download_url,
+              size: manifest ? manifest.installer.size : installerAsset.size,
+              contentType: installerAsset.content_type,
+            },
+            expectedSha256: manifest?.installer.sha256,
+            signatureVerified: Boolean(manifest),
+            verificationError: manifest ? undefined : verificationError,
+          };
+
+          const result: UpdateCheckResult = {
+            updateAvailable: true,
+            currentVersion: this.state.currentVersion,
+            latestVersion: bestCandidate.version,
+            channel,
+            updateInfo,
+            checkedAtIso: nowIso,
+          };
+
+          this.state.latestCheckResult = result;
+          if (
+            manifest &&
+            this.verifiedDownload?.version === manifest.version &&
+            fs.existsSync(this.verifiedDownload.filePath)
+          ) {
+            this.setStatus('downloaded');
+          } else {
+            this.setStatus('available');
+          }
+
+          return result;
         }
-
-        const updateInfo: UpdateInfo = {
-          version: bestCandidate.version,
-          releaseName: bestCandidate.release.name || `MaSwitch v${bestCandidate.version}`,
-          releaseNotes: bestCandidate.release.body || 'No release notes provided.',
-          publishedAtIso: bestCandidate.release.published_at || nowIso,
-          isPrerelease: bestCandidate.release.prerelease,
-          htmlUrl: bestCandidate.release.html_url,
-          installerAsset: {
-            name: installerAsset.name,
-            downloadUrl: installerAsset.browser_download_url,
-            size: installerAsset.size,
-            contentType: installerAsset.content_type,
-          },
-          sha256Asset: sha256Asset
-            ? {
-                name: sha256Asset.name,
-                downloadUrl: sha256Asset.browser_download_url,
-                size: sha256Asset.size,
-                contentType: sha256Asset.content_type,
-              }
-            : undefined,
-          expectedSha256,
-        };
-
-        const result: UpdateCheckResult = {
-          updateAvailable: true,
-          currentVersion: this.state.currentVersion,
-          latestVersion: bestCandidate.version,
-          channel,
-          updateInfo,
-          checkedAtIso: nowIso,
-        };
-
-        this.state.latestCheckResult = result;
-        // If downloaded file already exists for this exact version, mark downloaded
-        if (
-          this.state.downloadedVersion === bestCandidate.version &&
-          this.state.downloadedFilePath &&
-          fs.existsSync(this.state.downloadedFilePath)
-        ) {
-          this.setStatus('downloaded');
-        } else {
-          this.setStatus('available');
-        }
-
-        return result;
       }
 
+      this.verifiedManifest = null;
       this.setStatus('not-available');
       const res: UpdateCheckResult = {
         updateAvailable: false,
@@ -377,7 +446,7 @@ export class AppUpdateService {
   }
 
   /**
-   * Start downloading the available update executable.
+   * Download the installer named in the verified manifest and check its size and SHA-256.
    */
   public async startDownload(): Promise<{ success: boolean; message?: string }> {
     if (this.state.status === 'downloading') {
@@ -389,54 +458,39 @@ export class AppUpdateService {
       return { success: false, message: 'No update available to download.' };
     }
 
+    const manifest = this.verifiedManifest;
+    if (!manifest || !updateInfo.signatureVerified || manifest.version !== updateInfo.version) {
+      return { success: false, message: updateInfo.verificationError ? `${UNVERIFIED_UPDATE_MESSAGE} (${updateInfo.verificationError})` : UNVERIFIED_UPDATE_MESSAGE };
+    }
+
     const downloadUrl = updateInfo.installerAsset.downloadUrl;
-    if (!this.isTrustedDownloadUrl(downloadUrl)) {
-      const msg = `Security Error: Untrusted update download domain (${downloadUrl})`;
+    if (!this.isTrustedDownloadUrl(downloadUrl) || updateInfo.installerAsset.name !== manifest.installer.fileName) {
+      const msg = 'Security Error: Untrusted update download location.';
       this.setStatus('error', msg);
       return { success: false, message: msg };
     }
 
-    // Prepare download directory
-    const tempRoot = this.dependencies.tempDir ?? path.join(os.tmpdir(), 'maswitch-updates');
+    const downloadDir = this.getDownloadDir();
     try {
-      fs.mkdirSync(tempRoot, { recursive: true });
+      fs.mkdirSync(downloadDir, { recursive: true });
     } catch (mkdirErr) {
       const msg = `Failed to create update cache directory: ${mkdirErr instanceof Error ? mkdirErr.message : String(mkdirErr)}`;
       this.setStatus('error', msg);
       return { success: false, message: msg };
     }
 
-    const targetFileName = updateInfo.installerAsset.name;
-    const targetFilePath = path.join(tempRoot, targetFileName);
-    const partFilePath = `${targetFilePath}.part`;
+    this.clearVerifiedDownload(false);
+    const targetFilePath = path.join(downloadDir, manifest.installer.fileName);
+    const partFilePath = `${targetFilePath}.${crypto.randomUUID()}.part`;
+    const expectedSize = manifest.installer.size;
 
-    // Abort controller for cancellation
     this.downloadAbortController = new AbortController();
     this.setStatus('downloading');
 
     let bytesDownloaded = 0;
-    const totalBytes = updateInfo.installerAsset.size || 0;
-    let expectedHash = updateInfo.expectedSha256;
-
-    // Fetch SHA-256 checksum if not yet fetched
-    if (!expectedHash && updateInfo.sha256Asset && this.isTrustedDownloadUrl(updateInfo.sha256Asset.downloadUrl)) {
-      try {
-        const shaResp = await this.fetchImpl(updateInfo.sha256Asset.downloadUrl);
-        if (shaResp.ok) {
-          const shaText = await shaResp.text();
-          const parsed = this.parseChecksumFromSha256Sums(shaText, targetFileName);
-          if (parsed) {
-            expectedHash = parsed;
-            updateInfo.expectedSha256 = parsed;
-          }
-        }
-      } catch {
-        // If checksum file cannot be fetched, continue with HTTPS transport verification
-      }
-    }
-
     const hash = crypto.createHash('sha256');
     let speedSamples: { bytes: number; time: number }[] = [];
+    let fileHandle: fs.promises.FileHandle | null = null;
 
     try {
       const response = await this.fetchImpl(downloadUrl, {
@@ -452,19 +506,14 @@ export class AppUpdateService {
 
       // Verify final response URL (after redirects)
       if (response.url && !this.isTrustedDownloadUrl(response.url)) {
-        throw new Error(`Security Error: Redirected to untrusted URL: ${response.url}`);
+        throw new Error('Security Error: Update download was redirected to an untrusted host.');
       }
 
-      const contentLength = Number(response.headers.get('content-length'));
-      const finalTotalBytes = contentLength > 0 ? contentLength : totalBytes;
-
-      const fileStream = fs.createWriteStream(partFilePath, { flags: 'w' });
-
-      // Handle stream body
       if (!response.body) {
         throw new Error('Update response contained no data stream.');
       }
 
+      fileHandle = await fs.promises.open(partFilePath, 'wx', 0o600);
       const reader = response.body.getReader();
 
       while (true) {
@@ -473,9 +522,12 @@ export class AppUpdateService {
 
         if (value) {
           const chunk = Buffer.from(value);
-          fileStream.write(chunk);
-          hash.update(chunk);
           bytesDownloaded += chunk.length;
+          if (bytesDownloaded > expectedSize) {
+            throw new Error('Security Error: Downloaded installer is larger than the signed size. Download rejected.');
+          }
+          await fileHandle.write(chunk);
+          hash.update(chunk);
 
           const now = Date.now();
           speedSamples.push({ bytes: chunk.length, time: now });
@@ -485,64 +537,55 @@ export class AppUpdateService {
           const bytesSpan = speedSamples.reduce((acc, s) => acc + s.bytes, 0);
           const speedBytesPerSec = timeSpan > 0 ? Math.round(bytesSpan / timeSpan) : 0;
 
-          const percent = finalTotalBytes > 0 ? Math.min(100, Math.round((bytesDownloaded / finalTotalBytes) * 1000) / 10) : 0;
+          const percent = Math.min(100, Math.round((bytesDownloaded / expectedSize) * 1000) / 10);
 
           if (now - this.lastProgressEmitTime >= 200 || percent === 100) {
             this.lastProgressEmitTime = now;
             this.emitProgress({
               bytesDownloaded,
-              totalBytes: finalTotalBytes,
+              totalBytes: expectedSize,
               percent,
               speedBytesPerSec,
               transferredMb: Math.round((bytesDownloaded / (1024 * 1024)) * 100) / 100,
-              totalMb: Math.round((finalTotalBytes / (1024 * 1024)) * 100) / 100,
+              totalMb: Math.round((expectedSize / (1024 * 1024)) * 100) / 100,
             });
           }
         }
       }
 
-      await new Promise<void>((resolve, reject) => {
-        fileStream.end((err?: Error | null) => {
-          if (err) reject(err);
-          else resolve();
-        });
-      });
+      await fileHandle.sync();
+      await fileHandle.close();
+      fileHandle = null;
 
-      // Verify SHA-256
-      const computedHash = hash.digest('hex').toLowerCase();
-      if (expectedHash && computedHash !== expectedHash.toLowerCase()) {
-        try {
-          fs.unlinkSync(partFilePath);
-        } catch {
-          // ignore
-        }
-        const mismatchError = `Security Error: Downloaded file checksum (${computedHash.slice(0, 8)}...) did not match official SHA-256 (${expectedHash.slice(0, 8)}...). Download rejected.`;
-        this.setStatus('error', mismatchError);
-        return { success: false, message: mismatchError };
+      const computedHash = hash.digest('hex');
+      if (bytesDownloaded !== expectedSize || computedHash !== manifest.installer.sha256) {
+        throw new Error(
+          'Security Error: Downloaded installer does not match the signed release manifest. Download rejected.'
+        );
       }
 
-      // Rename .part to final
-      if (fs.existsSync(targetFilePath)) {
-        try {
-          fs.unlinkSync(targetFilePath);
-        } catch {
-          // ignore
-        }
-      }
+      fs.rmSync(targetFilePath, { force: true });
       fs.renameSync(partFilePath, targetFilePath);
 
       this.downloadAbortController = null;
+      this.verifiedDownload = {
+        filePath: targetFilePath,
+        sha256: computedHash,
+        size: expectedSize,
+        version: manifest.version,
+      };
       this.state.downloadedFilePath = targetFilePath;
-      this.state.downloadedVersion = updateInfo.version;
+      this.state.downloadedVersion = manifest.version;
       this.setStatus('downloaded');
 
       return { success: true };
     } catch (err) {
       this.downloadAbortController = null;
+      if (fileHandle) {
+        await fileHandle.close().catch(() => undefined);
+      }
       try {
-        if (fs.existsSync(partFilePath)) {
-          fs.unlinkSync(partFilePath);
-        }
+        fs.rmSync(partFilePath, { force: true });
       } catch {
         // ignore
       }
@@ -609,7 +652,7 @@ export class AppUpdateService {
   }
 
   /**
-   * Execute the downloaded installer and restart the application cleanly.
+   * Re-verify the downloaded installer immediately before executing it, then quit.
    */
   public async installAndRestart(options?: { silent?: boolean }): Promise<{ success: boolean; message?: string }> {
     const precheck = this.precheckInstall();
@@ -617,18 +660,33 @@ export class AppUpdateService {
       return { success: false, message: precheck.message };
     }
 
-    const installerPath = this.state.downloadedFilePath;
-    if (!installerPath || !fs.existsSync(installerPath)) {
-      return { success: false, message: 'Installer executable not found. Please download the update again.' };
+    const download = this.verifiedDownload;
+    if (!download || !this.verifiedManifest || download.version !== this.verifiedManifest.version) {
+      return { success: false, message: 'No verified installer is available. Please download the update again.' };
+    }
+
+    try {
+      const stat = fs.lstatSync(download.filePath);
+      if (!stat.isFile() || stat.isSymbolicLink() || stat.size !== download.size) {
+        throw new Error('size');
+      }
+      if ((await sha256File(download.filePath)) !== download.sha256) {
+        throw new Error('hash');
+      }
+    } catch {
+      this.clearVerifiedDownload(true);
+      const msg = 'Security Error: The downloaded installer changed or is missing since it was verified. Please download the update again.';
+      this.setStatus('error', msg);
+      return { success: false, message: msg };
     }
 
     const args: string[] = [];
-    if (options?.silent) {
+    if (options?.silent === true) {
       args.push('/S');
     }
 
     try {
-      const installerProcess = this.spawnImpl(installerPath, args, {
+      const installerProcess = this.spawnImpl(download.filePath, args, {
         detached: true,
         stdio: 'ignore',
       });

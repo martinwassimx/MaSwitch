@@ -1938,6 +1938,15 @@ export const SettingsPage: React.FC = () => {
                       >
                         Cancel Download
                       </button>
+                    ) : !updaterState.latestCheckResult.updateInfo.signatureVerified ? (
+                      <span
+                        data-testid="update-unverified-notice"
+                        className="inline-flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold text-amber-300 border border-amber-500/40 bg-amber-500/10"
+                        title={updaterState.latestCheckResult.updateInfo.verificationError}
+                      >
+                        <AlertTriangle className="w-3.5 h-3.5" />
+                        <span>Unverified release — automatic install disabled</span>
+                      </span>
                     ) : (
                       <button
                         type="button"
