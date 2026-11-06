@@ -106,9 +106,15 @@ describe('RiotDesktopLoginAutomationService', () => {
     const mockCoordinator = new RiotWindowsProcessCoordinator({
       processLister: async () => [{ pid: 1234, imageNameLower: 'riotclientservices.exe' }],
     });
-    const mockService = new RiotDesktopLoginAutomationService(vault, mockCoordinator);
+    const windowDiscoverer = vi.fn(async () => []);
+    const workerRunner = vi.fn();
+    const mockService = new RiotDesktopLoginAutomationService(vault, mockCoordinator, {
+      windowDiscoverer,
+      workerRunner,
+    });
 
     const progressEvents: RiotDesktopLoginProgressPayload[] = [];
+    const startedAt = Date.now();
     const promise = mockService.executeAutofill({
       profileId: 'profile-1',
       autoLaunchClient: false,
@@ -124,6 +130,9 @@ describe('RiotDesktopLoginAutomationService', () => {
     expect(result.success).toBe(false);
     expect(result.error).toBe('CANCELLED');
     expect(progressEvents.some((p) => p.status === 'cancelled')).toBe(true);
+    expect(windowDiscoverer).toHaveBeenCalled();
+    expect(workerRunner).not.toHaveBeenCalled();
+    expect(Date.now() - startedAt).toBeLessThan(2000);
   });
 
   describe('caller-selected targets without test opt-in (production wiring)', () => {
@@ -272,8 +281,9 @@ describe('RiotDesktopLoginAutomationService', () => {
     });
 
     expect(result.success).toBe(false);
+    expect(['INVALID_WINDOW_HANDLE', 'WINDOW_PROCESS_MISMATCH']).toContain(result.error);
     expect(progressEvents.some((p) => p.status === 'failed')).toBe(true);
-  });
+  }, 60_000);
 
   it('executes synthetic UI automation and injects exact vault credentials into a synthetic form', async () => {
     await vault.saveCredentials('profile-synth', 'AutomatedMelynelasUser', 'AutomatedMelynelasPass123!');
@@ -340,7 +350,7 @@ $form.Add_Shown({
       let targetPid: number | null = null;
 
       // Wait for synthetic window to initialize
-      for (let i = 0; i < 40; i++) {
+      for (let i = 0; i < 150; i++) {
         await new Promise((r) => setTimeout(r, 200));
         if (fs.existsSync(formReadyPath)) {
           const data = JSON.parse(fs.readFileSync(formReadyPath, 'utf8'));
@@ -388,7 +398,7 @@ $form.Add_Shown({
     } finally {
       formProc.kill();
     }
-  }, 15000);
+  }, 60_000);
   it('respects autoSubmit: false and skips pressing login button', async () => {
     await vault.saveCredentials('profile-no-submit', 'ManualSubmitUser', 'ManualSubmitPass123!');
 
@@ -453,7 +463,7 @@ $form.Add_Shown({
       let targetHwnd: string | null = null;
       let targetPid: number | null = null;
 
-      for (let i = 0; i < 40; i++) {
+      for (let i = 0; i < 150; i++) {
         await new Promise((r) => setTimeout(r, 200));
         if (fs.existsSync(formReadyPath)) {
           const data = JSON.parse(fs.readFileSync(formReadyPath, 'utf8'));
@@ -486,6 +496,6 @@ $form.Add_Shown({
     } finally {
       formProc.kill();
     }
-  }, 15000);
+  }, 60_000);
 
 });

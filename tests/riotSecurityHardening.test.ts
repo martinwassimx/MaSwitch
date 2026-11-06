@@ -359,6 +359,7 @@ describe('Phase 11: Riot Live Switching Security Hardening & Adversarial Audits'
         riotDataDir: syntheticRiotDataDir,
         safeStorageOverride: mockSafeStorage,
         processLister: slowProcessLister,
+        clientLauncher: async () => {},
       });
 
       const targetPkg = await storage.exportLiveSession();
@@ -498,6 +499,7 @@ describe('Phase 11: Riot Live Switching Security Hardening & Adversarial Audits'
         riotDataDir: syntheticRiotDataDir,
         safeStorageOverride: mockSafeStorage,
         processLister: async () => [],
+        clientLauncher: async () => {},
       });
 
       const targetPkg = await storage.exportLiveSession();

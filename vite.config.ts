@@ -35,5 +35,7 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: ['./tests/setup.ts'],
     include: ['tests/**/*.test.{ts,tsx}'],
+    // File-backed SQLite commits fsync on every transaction; hosted Windows runners are ~30x slower than local disks.
+    testTimeout: 30_000,
   },
 });

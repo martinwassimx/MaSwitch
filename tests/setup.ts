@@ -8,6 +8,19 @@ import {
   generateLocalGameHeroSvg,
 } from '../src/shared/utils/proceduralCover';
 
+// Tests run on machines with a real Riot Client installed; launching it is never acceptable.
+vi.mock('node:child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:child_process')>();
+  const riotExecutable = /(^|[\\/])(riotclientservices|riotclientux|riot client|leagueclient|league of legends|valorant)\.exe$/i;
+  const spawn = ((command: string, ...rest: unknown[]) => {
+    if (typeof command === 'string' && riotExecutable.test(command.trim())) {
+      throw new Error(`Tests must not launch a real Riot executable: ${command}`);
+    }
+    return (actual.spawn as (...args: unknown[]) => unknown)(command, ...rest);
+  }) as typeof actual.spawn;
+  return { ...actual, default: { ...actual, spawn }, spawn };
+});
+
 let mockDiskSettings: MaSwitchSettings = sanitizeSettings(DEFAULT_SETTINGS);
 let mockIsMaximized = false;
 let mockRealLibraryGames: GameItem[] = [];
