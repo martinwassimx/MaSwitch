@@ -588,6 +588,10 @@ export class RiotDesktopLoginAutomationService {
     this.adapters = adapters;
   }
 
+  public isLoginInProgress(): boolean {
+    return this.isAutomating;
+  }
+
   private emitProgress(
     payload: RiotDesktopLoginProgressPayload,
     onProgress?: (p: RiotDesktopLoginProgressPayload) => void

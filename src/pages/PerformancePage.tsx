@@ -42,6 +42,7 @@ export const PerformancePage: React.FC = () => {
   const settings = useAppStore((s) => s.settings);
   const featuresManifest = useAppStore((s) => s.featuresManifest);
   const inGameMode = useAppStore((s) => s.inGameMode);
+  const isWindowVisible = useAppStore((s) => s.isWindowVisible);
   const setActiveSection = useAppStore((s) => s.setActiveSection);
 
   const isPerfMonitorInstalled = featuresManifest?.features.performanceMonitor?.installed ?? true;
@@ -89,38 +90,62 @@ export const PerformancePage: React.FC = () => {
     }));
   };
 
-  // Telemetry polling: Only while telemetry tab is active
+  const effectivePollingMs = inGameMode
+    ? Math.max(intervalChoice, 10000)
+    : settings.lowEndPcMode
+      ? Math.max(intervalChoice, 5000)
+      : intervalChoice;
+
+  // Telemetry polling: Only while telemetry tab is active and window is visible
   useEffect(() => {
-    if (activeTab !== 'telemetry' || !isPerfMonitorEnabled) return;
+    if (activeTab !== 'telemetry' || !isPerfMonitorEnabled || !isWindowVisible) {
+      return;
+    }
 
     void fetchPerformanceMetrics();
-    void setPerformanceMonitoringActive(true, intervalChoice);
+    void setPerformanceMonitoringActive(true, effectivePollingMs as 3000 | 5000 | 10000);
 
     const intId = setInterval(() => {
       void fetchPerformanceMetrics();
-    }, intervalChoice);
+    }, effectivePollingMs);
 
     return () => {
       clearInterval(intId);
       void setPerformanceMonitoringActive(false);
     };
-  }, [activeTab, isPerfMonitorEnabled, fetchPerformanceMetrics, setPerformanceMonitoringActive, intervalChoice]);
+  }, [
+    activeTab,
+    isPerfMonitorEnabled,
+    isWindowVisible,
+    fetchPerformanceMetrics,
+    setPerformanceMonitoringActive,
+    effectivePollingMs,
+  ]);
 
-  // Memory polling: Only while memory tab is active
+  // Memory polling: Only while memory tab is active and window is visible
   useEffect(() => {
-    if (activeTab !== 'memory' || !isMemMgmtEnabled) return;
+    if (activeTab !== 'memory' || !isMemMgmtEnabled || !isWindowVisible) {
+      return;
+    }
 
     void fetchMemoryMetrics();
     void fetchCleanupHistory();
 
     const intId = setInterval(() => {
       void fetchMemoryMetrics();
-    }, intervalChoice);
+    }, effectivePollingMs);
 
     return () => {
       clearInterval(intId);
     };
-  }, [activeTab, isMemMgmtEnabled, fetchMemoryMetrics, fetchCleanupHistory, intervalChoice]);
+  }, [
+    activeTab,
+    isMemMgmtEnabled,
+    isWindowVisible,
+    fetchMemoryMetrics,
+    fetchCleanupHistory,
+    effectivePollingMs,
+  ]);
 
   const handleOpenCleanupModal = () => {
     setCleanupFeedback(null);

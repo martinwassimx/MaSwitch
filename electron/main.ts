@@ -5,6 +5,7 @@ import { Readable } from 'node:stream';
 import {
   app,
   BrowserWindow,
+  nativeImage,
   powerMonitor,
   protocol,
   session,
@@ -39,6 +40,7 @@ import { createProductionRiotLiveSwitchingEngine } from './services/accounts/rio
 import { RiotCredentialVault } from './services/accounts/riotCredentialVault';
 import { RiotDesktopLoginAutomationService } from './services/accounts/riotDesktopLoginAutomation';
 import { InstalledFeaturesManager } from './services/features/installedFeaturesManager';
+import { AppUpdateService } from './services/updater/appUpdateService';
 
 // Register privileged custom scheme for streaming local artwork & extracted icons
 protocol.registerSchemesAsPrivileged([
@@ -64,6 +66,7 @@ let isExplicitQuit = false;
 let sqliteDatabase: MaSwitchSqliteDatabase | null = null;
 let playtimeTracker: PlaytimeTrackerEngine | null = null;
 let trayService: MaSwitchTrayService | null = null;
+let updateServiceInstance: AppUpdateService | null = null;
 
 if (process.platform === 'win32') {
   app.setAppUserModelId('com.maswitch.desktop');
@@ -73,7 +76,12 @@ if (!app.isPackaged) {
   app.commandLine.appendSwitch('remote-debugging-port', '9222');
 }
 
-app.disableHardwareAcceleration();
+if (
+  process.argv.includes('--disable-gpu') ||
+  process.env.MASWITCH_DISABLE_GPU === '1'
+) {
+  app.disableHardwareAcceleration();
+}
 
 const logFile = path.join(app.getPath('userData'), 'desktop-launch.log');
 const logStartup = (msg: string) => {
@@ -150,6 +158,9 @@ function performCompleteShutdown(): void {
   }
   if (trayService) {
     trayService.destroy();
+  }
+  if (updateServiceInstance) {
+    updateServiceInstance.stopAutoCheckScheduler();
   }
   if (sqliteDatabase) {
     sqliteDatabase.close();
@@ -388,7 +399,7 @@ app.whenReady().then(() => {
   const userDataDir = app.getPath('userData');
   const artworkCacheService = new ArtworkCacheService(userDataDir);
 
-  // Register maswitch-asset:// streaming handler
+  // Register maswitch-asset:// streaming & automatic thumbnailing handler
   protocol.handle('maswitch-asset', (request) => {
     try {
       const parsedUrl = new URL(request.url);
@@ -398,6 +409,28 @@ app.whenReady().then(() => {
 
       if (!filename || filename === '.' || filename === '..') {
         return new Response('Bad Request', { status: 400 });
+      }
+
+      const lowerName = filename.toLowerCase();
+      const targetMaxWidth =
+        category === 'icon' || lowerName.includes('_icon_')
+          ? 96
+          : lowerName.includes('_hero_')
+            ? 1280
+            : lowerName.includes('_logo_')
+              ? 480
+              : 360;
+
+      const cacheKey = `${category}:${filename}:${targetMaxWidth}`;
+      const memCached = artworkCacheService.getCachedBuffer(cacheKey);
+      if (memCached) {
+        return new Response(new Uint8Array(memCached.buffer), {
+          status: 200,
+          headers: {
+            'Content-Type': memCached.mimeType,
+            'Cache-Control': 'public, max-age=31536000, immutable',
+          },
+        });
       }
 
       const primaryDir =
@@ -423,6 +456,82 @@ app.whenReady().then(() => {
           targetFile = altFile;
         } else {
           return new Response('Not Found', { status: 404 });
+        }
+      }
+
+      const ext = path.extname(targetFile).toLowerCase();
+      const isRasterResizable =
+        ext === '.png' || ext === '.jpg' || ext === '.jpeg' || ext === '.webp';
+
+      if (isRasterResizable) {
+        const preserveAlpha =
+          category === 'icon' ||
+          lowerName.includes('_icon_') ||
+          lowerName.includes('_logo_');
+        const thumbExt = preserveAlpha ? '.png' : '.jpg';
+        const thumbMime = preserveAlpha ? 'image/png' : 'image/jpeg';
+        const thumbPath = path.join(
+          artworkCacheService.getThumbsDir(),
+          `w${targetMaxWidth}_${filename}${thumbExt}`
+        );
+
+        if (fs.existsSync(thumbPath)) {
+          const thumbBuf = fs.readFileSync(thumbPath);
+          artworkCacheService.setCachedBuffer(cacheKey, thumbBuf, thumbMime);
+          return new Response(new Uint8Array(thumbBuf), {
+            status: 200,
+            headers: {
+              'Content-Type': thumbMime,
+              'Cache-Control': 'public, max-age=31536000, immutable',
+            },
+          });
+        }
+
+        try {
+          const stat = fs.statSync(targetFile);
+          if (stat.size > 36 * 1024) {
+            const img = nativeImage.createFromPath(targetFile);
+            if (!img.isEmpty()) {
+              const size = img.getSize();
+              if (size.width > targetMaxWidth) {
+                const resized = img.resize({
+                  width: targetMaxWidth,
+                  quality: 'good',
+                });
+                const outBuf = preserveAlpha
+                  ? resized.toPNG()
+                  : resized.toJPEG(86);
+                try {
+                  fs.writeFileSync(thumbPath, outBuf);
+                } catch {
+                  // Ignore disk cache write errors
+                }
+                artworkCacheService.setCachedBuffer(cacheKey, outBuf, thumbMime);
+                return new Response(new Uint8Array(outBuf), {
+                  status: 200,
+                  headers: {
+                    'Content-Type': thumbMime,
+                    'Cache-Control': 'public, max-age=31536000, immutable',
+                  },
+                });
+              }
+            }
+          }
+
+          if (stat.size <= 1024 * 1024) {
+            const rawMime = getAssetMimeType(targetFile);
+            const rawBuf = fs.readFileSync(targetFile);
+            artworkCacheService.setCachedBuffer(cacheKey, rawBuf, rawMime);
+            return new Response(new Uint8Array(rawBuf), {
+              status: 200,
+              headers: {
+                'Content-Type': rawMime,
+                'Cache-Control': 'public, max-age=31536000, immutable',
+              },
+            });
+          }
+        } catch {
+          // Fallback to stream below
         }
       }
 
@@ -511,9 +620,11 @@ app.whenReady().then(() => {
     inGamePollIntervalMs: 15000,
     lowEndPollIntervalMs: 15000,
     gracePolls: 2,
-    onSessionUpdated: () => {
+    onSessionUpdated: (lifecycleChanged) => {
       broadcastToRenderer(IPC_CHANNELS.TRACKER_SESSION_UPDATED_EVENT);
-      broadcastToRenderer(IPC_CHANNELS.LIBRARY_UPDATED_EVENT);
+      if (lifecycleChanged !== false) {
+        broadcastToRenderer(IPC_CHANNELS.LIBRARY_UPDATED_EVENT);
+      }
     },
     onGameRunningStateChanged: (gameId, isRunning) => {
       launcherEngine.setGameStatus(
@@ -676,6 +787,26 @@ app.whenReady().then(() => {
 
   const installedFeaturesManager = new InstalledFeaturesManager();
 
+  const updateService = new AppUpdateService({
+    currentVersion: app.getVersion(),
+    userDataDir,
+    getTrackerStatus: () => trackerEngine.getStatus(),
+    isRiotLoginInProgress: () => riotDesktopLoginAutomation.isLoginInProgress(),
+    quitApp: () => {
+      performCompleteShutdown();
+    },
+    loadSettings: () => settingsStore.load(),
+    saveSettings: (partial) => settingsStore.save(partial),
+    broadcastStatusChanged: (state) => {
+      broadcastToRenderer(IPC_CHANNELS.UPDATER_STATUS_CHANGED_EVENT, state);
+    },
+    broadcastProgress: (progress) => {
+      broadcastToRenderer(IPC_CHANNELS.UPDATER_PROGRESS_EVENT, progress);
+    },
+  });
+  updateServiceInstance = updateService;
+  updateService.startAutoCheckScheduler();
+
   registerIpcHandlers(
     () => mainWindow,
     {
@@ -694,6 +825,7 @@ app.whenReady().then(() => {
       riotCredentialVault,
       riotDesktopLoginAutomation,
       installedFeaturesManager,
+      updateService,
       onRequestWindowClose: () => {
         if (!mainWindow || mainWindow.isDestroyed()) {
           return;
@@ -737,6 +869,9 @@ app.on('before-quit', (_e) => {
   }
   if (trayService) {
     trayService.destroy();
+  }
+  if (updateServiceInstance) {
+    updateServiceInstance.stopAutoCheckScheduler();
   }
   if (sqliteDatabase) {
     sqliteDatabase.close();

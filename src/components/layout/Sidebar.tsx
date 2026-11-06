@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   Home,
   Library,
@@ -21,15 +21,20 @@ interface NavItemConfig {
   count?: number;
 }
 
-export const Sidebar: React.FC = () => {
+export const Sidebar: React.FC = React.memo(() => {
   const activeSection = useAppStore((s) => s.activeSection);
   const selectedGameId = useAppStore((s) => s.selectedGameId);
   const setActiveSection = useAppStore((s) => s.setActiveSection);
   const openGameDetails = useAppStore((s) => s.openGameDetails);
   const games = useAppStore((s) => s.games);
-  const settings = useAppStore((s) => s.settings);
+  const favoriteGameIds = useAppStore((s) => s.settings.favoriteGameIds);
+  const isCollapsed = useAppStore((s) => s.settings.sidebarCollapsed);
+  const showSidebarCounts = useAppStore((s) => s.settings.showSidebarCounts);
   const updateSettings = useAppStore((s) => s.updateSettings);
   const featuresManifest = useAppStore((s) => s.featuresManifest);
+  const hasUpdate = useAppStore(
+    (s) => s.updaterState.status === 'available' || s.updaterState.status === 'downloaded'
+  );
 
   const isPerfEnabled = featuresManifest
     ? Boolean(featuresManifest.features.performanceMonitor?.enabled) ||
@@ -39,26 +44,29 @@ export const Sidebar: React.FC = () => {
     ? Boolean(featuresManifest.features.gameNews?.enabled)
     : true;
 
-  const navItems: NavItemConfig[] = [
-    { id: 'home', label: 'Home', icon: Home },
-    { id: 'library', label: 'Library', icon: Library, count: games.length },
-    { id: 'accounts', label: 'Accounts', icon: Users },
-    { id: 'platforms', label: 'Platforms', icon: Layers },
-    { id: 'statistics', label: 'Statistics', icon: BarChart3 },
-    ...(isPerfEnabled
-      ? [{ id: 'performance' as const, label: 'Performance', icon: Gauge }]
-      : []),
-    ...(isNewsEnabled
-      ? [{ id: 'news' as const, label: 'Game News', icon: Newspaper }]
-      : []),
-    { id: 'settings', label: 'Settings', icon: Settings },
-  ];
-
-  const favoriteGames = games.filter((g) =>
-    settings.favoriteGameIds.includes(g.id)
+  const navItems: NavItemConfig[] = useMemo(
+    () => [
+      { id: 'home', label: 'Home', icon: Home },
+      { id: 'library', label: 'Library', icon: Library, count: games.length },
+      { id: 'accounts', label: 'Accounts', icon: Users },
+      { id: 'platforms', label: 'Platforms', icon: Layers },
+      { id: 'statistics', label: 'Statistics', icon: BarChart3 },
+      ...(isPerfEnabled
+        ? [{ id: 'performance' as const, label: 'Performance', icon: Gauge }]
+        : []),
+      ...(isNewsEnabled
+        ? [{ id: 'news' as const, label: 'Game News', icon: Newspaper }]
+        : []),
+      { id: 'settings', label: 'Settings', icon: Settings },
+    ],
+    [games.length, isPerfEnabled, isNewsEnabled]
   );
 
-  const isCollapsed = settings.sidebarCollapsed;
+  const favoriteGames = useMemo(() => {
+    if (favoriteGameIds.length === 0) return [];
+    const favSet = new Set(favoriteGameIds);
+    return games.filter((g) => favSet.has(g.id));
+  }, [games, favoriteGameIds]);
 
   return (
     <aside
@@ -105,8 +113,21 @@ export const Sidebar: React.FC = () => {
                   )}
                 </div>
 
+                {item.id === 'settings' && hasUpdate && (
+                  isCollapsed ? (
+                    <span
+                      title="Update Available"
+                      className="absolute top-2 right-2 w-2 h-2 rounded-full bg-purple-400 animate-pulse shadow-[0_0_6px_rgba(168,85,247,0.8)]"
+                    />
+                  ) : (
+                    <span className="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/40 animate-pulse">
+                      Update
+                    </span>
+                  )
+                )}
+
                 {!isCollapsed &&
-                  settings.showSidebarCounts &&
+                  showSidebarCounts &&
                   item.count !== undefined && (
                     <span className={`text-xs tabular-nums px-2 py-0.5 rounded-md border transition-colors ${
                       isActive
@@ -148,12 +169,16 @@ export const Sidebar: React.FC = () => {
                       <img
                         src={game.iconImage}
                         alt=""
+                        loading="lazy"
+                        decoding="async"
                         className="w-5 h-5 rounded-sm object-contain shrink-0"
                       />
                     ) : (
                       <img
                         src={game.coverImage}
                         alt=""
+                        loading="lazy"
+                        decoding="async"
                         className="w-5 h-7 rounded-sm object-cover shrink-0 bg-ms-card border border-ms-border/50"
                       />
                     )}
@@ -192,4 +217,4 @@ export const Sidebar: React.FC = () => {
       </div>
     </aside>
   );
-};
+});

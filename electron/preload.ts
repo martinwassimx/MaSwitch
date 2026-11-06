@@ -144,6 +144,16 @@ const IPC_CHANNELS = {
   MEMORY_PERFORM_CLEANUP: 'maswitch:memory:perform-cleanup',
   MEMORY_GET_HISTORY: 'maswitch:memory:get-history',
   MEMORY_CLEAR_HISTORY: 'maswitch:memory:clear-history',
+
+  // Application Updates
+  UPDATER_CHECK_FOR_UPDATES: 'maswitch:updater:check-for-updates',
+  UPDATER_GET_STATUS: 'maswitch:updater:get-status',
+  UPDATER_START_DOWNLOAD: 'maswitch:updater:start-download',
+  UPDATER_CANCEL_DOWNLOAD: 'maswitch:updater:cancel-download',
+  UPDATER_INSTALL_AND_RESTART: 'maswitch:updater:install-and-restart',
+  UPDATER_PRECHECK_INSTALL: 'maswitch:updater:precheck-install',
+  UPDATER_STATUS_CHANGED_EVENT: 'maswitch:updater:status-changed',
+  UPDATER_PROGRESS_EVENT: 'maswitch:updater:progress',
 } as const;
 
 const bridge: MaSwitchBridge = {
@@ -531,6 +541,36 @@ const bridge: MaSwitchBridge = {
     performCleanup: (request) => ipcRenderer.invoke(IPC_CHANNELS.MEMORY_PERFORM_CLEANUP, request),
     getHistory: () => ipcRenderer.invoke(IPC_CHANNELS.MEMORY_GET_HISTORY),
     clearHistory: () => ipcRenderer.invoke(IPC_CHANNELS.MEMORY_CLEAR_HISTORY),
+  },
+  updater: {
+    checkForUpdates: (channel) => ipcRenderer.invoke(IPC_CHANNELS.UPDATER_CHECK_FOR_UPDATES, channel),
+    getStatus: () => ipcRenderer.invoke(IPC_CHANNELS.UPDATER_GET_STATUS),
+    startDownload: () => ipcRenderer.invoke(IPC_CHANNELS.UPDATER_START_DOWNLOAD),
+    cancelDownload: () => ipcRenderer.invoke(IPC_CHANNELS.UPDATER_CANCEL_DOWNLOAD),
+    installAndRestart: (options) => ipcRenderer.invoke(IPC_CHANNELS.UPDATER_INSTALL_AND_RESTART, options),
+    precheckInstall: () => ipcRenderer.invoke(IPC_CHANNELS.UPDATER_PRECHECK_INSTALL),
+    onStatusChanged: (callback) => {
+      const listener = (_event: IpcRendererEvent, state: import('../src/shared/types/updater').UpdaterState) => {
+        if (state && typeof state === 'object') {
+          callback(state);
+        }
+      };
+      ipcRenderer.on(IPC_CHANNELS.UPDATER_STATUS_CHANGED_EVENT, listener);
+      return () => {
+        ipcRenderer.removeListener(IPC_CHANNELS.UPDATER_STATUS_CHANGED_EVENT, listener);
+      };
+    },
+    onDownloadProgress: (callback) => {
+      const listener = (_event: IpcRendererEvent, progress: import('../src/shared/types/updater').UpdateDownloadProgress) => {
+        if (progress && typeof progress === 'object') {
+          callback(progress);
+        }
+      };
+      ipcRenderer.on(IPC_CHANNELS.UPDATER_PROGRESS_EVENT, listener);
+      return () => {
+        ipcRenderer.removeListener(IPC_CHANNELS.UPDATER_PROGRESS_EVENT, listener);
+      };
+    },
   },
 };
 

@@ -3,7 +3,7 @@ import { Minus, Square, Copy, X, Search, Loader2 } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
 import { BrandLogo } from '../common/BrandLogo';
 
-export const TitleBar: React.FC = () => {
+export const TitleBar: React.FC = React.memo(() => {
   const [isMaximized, setIsMaximized] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -13,7 +13,9 @@ export const TitleBar: React.FC = () => {
   const setActiveSection = useAppStore((s) => s.setActiveSection);
   const isScanning = useAppStore((s) => s.isScanning);
   const scanProgress = useAppStore((s) => s.scanProgress);
-  const trackerStatus = useAppStore((s) => s.trackerStatus);
+  const activeSessionTitle = useAppStore(
+    (s) => s.trackerStatus.activeSessions[0]?.gameTitle ?? null
+  );
 
   useEffect(() => {
     const controls = window.maswitch?.windowControls;
@@ -80,8 +82,6 @@ export const TitleBar: React.FC = () => {
     }
   };
 
-  const activeSession = trackerStatus.activeSessions[0];
-
   return (
     <header
       data-testid="custom-titlebar"
@@ -102,11 +102,11 @@ export const TitleBar: React.FC = () => {
           </div>
         )}
 
-        {!isScanning && activeSession && (
+        {!isScanning && activeSessionTitle && (
           <div className="hidden sm:flex items-center gap-2 px-2.5 py-1 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-400 truncate">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
             <span className="font-medium truncate">
-              In-Game: {activeSession.gameTitle}
+              In-Game: {activeSessionTitle}
             </span>
           </div>
         )}
@@ -176,4 +176,4 @@ export const TitleBar: React.FC = () => {
       </div>
     </header>
   );
-};
+});

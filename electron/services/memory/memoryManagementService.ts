@@ -110,6 +110,7 @@ export class MemoryManagementService {
   private readonly db: MaSwitchSqliteDatabase;
   private readonly trackerEngine?: PlaytimeTrackerEngine;
   private readonly adapters?: MemoryServiceAdapters;
+  private isCleaning = false;
 
   private lastCleanupTimeIso: string | null = null;
   private lastCleanupBeforeMb: number | null = null;
@@ -218,8 +219,14 @@ export class MemoryManagementService {
     };
   }
 
+  public isCleanupInProgress(): boolean {
+    return this.isCleaning;
+  }
+
   public async performCleanup(request: MemoryCleanupRequest): Promise<MemoryCleanupResult> {
-    const metricsBefore = this.getSystemMemoryMetrics();
+    this.isCleaning = true;
+    try {
+      const metricsBefore = this.getSystemMemoryMetrics();
     const ramBeforeMb = metricsBefore.usedPhysicalMb;
 
     // Safety Gate 1: Reject cleanup if a game is actively running
@@ -363,16 +370,19 @@ export class MemoryManagementService {
       // Safe DB logging
     }
 
-    return {
-      success: true,
-      mode: request.mode,
-      status,
-      ramBeforeMb,
-      ramAfterMb,
-      freedMb,
-      message,
-      historyEntry,
-    };
+      return {
+        success: true,
+        mode: request.mode,
+        status,
+        ramBeforeMb,
+        ramAfterMb,
+        freedMb,
+        message,
+        historyEntry,
+      };
+    } finally {
+      this.isCleaning = false;
+    }
   }
 
   public getCleanupHistory(limit: number = 50): MemoryCleanupHistoryEntry[] {

@@ -121,7 +121,7 @@ export interface PlaytimeTrackerOptions {
   gracePolls?: number;
   processProvider?: () => Promise<RunningProcessEntry[]>;
   nowFn?: () => number;
-  onSessionUpdated?: () => void;
+  onSessionUpdated?: (lifecycleChanged?: boolean) => void;
   onGameRunningStateChanged?: (gameId: string, isRunning: boolean) => void;
   onGameModeChanged?: (inGame: boolean, activeGameCount: number) => void;
 }
@@ -134,7 +134,7 @@ export class PlaytimeTrackerEngine {
   private readonly gracePolls: number;
   private readonly processProvider: () => Promise<RunningProcessEntry[]>;
   private readonly nowFn: () => number;
-  private readonly onSessionUpdated?: () => void;
+  private readonly onSessionUpdated?: (lifecycleChanged?: boolean) => void;
   private readonly onGameRunningStateChanged?: (
     gameId: string,
     isRunning: boolean
@@ -446,6 +446,7 @@ export class PlaytimeTrackerEngine {
       }
 
       let hasChanges = false;
+      let lifecycleChanged = false;
 
       // 1. Update or close existing active sessions
       for (const [gameId, session] of this.activeSessions.entries()) {
@@ -495,6 +496,7 @@ export class PlaytimeTrackerEngine {
           this.activeSessions.delete(gameId);
           this.onGameRunningStateChanged?.(gameId, false);
           hasChanges = true;
+          lifecycleChanged = true;
         }
       }
 
@@ -540,6 +542,7 @@ export class PlaytimeTrackerEngine {
 
         this.onGameRunningStateChanged?.(gameId, true);
         hasChanges = true;
+        lifecycleChanged = true;
       }
 
       const isInGame = this.activeSessions.size > 0;
@@ -549,7 +552,7 @@ export class PlaytimeTrackerEngine {
       }
 
       if (hasChanges) {
-        this.onSessionUpdated?.();
+        this.onSessionUpdated?.(lifecycleChanged);
       }
     } finally {
       this.isPolling = false;

@@ -93,6 +93,11 @@ import type {
   MemoryCleanupResult,
   SystemMemoryMetrics,
 } from '../shared/types/memory';
+import type {
+  UpdateChannel,
+  UpdateCheckResult,
+  UpdaterState,
+} from '../shared/types/updater';
 
 export interface AppStoreState {
   isHydrated: boolean;
@@ -340,6 +345,22 @@ export interface AppStoreState {
   performMemoryCleanup: (request: MemoryCleanupRequest) => Promise<MemoryCleanupResult>;
   fetchCleanupHistory: () => Promise<MemoryCleanupHistoryEntry[]>;
   clearCleanupHistory: () => Promise<void>;
+
+  // Application Updater
+  updaterState: UpdaterState;
+  isCheckingUpdates: boolean;
+  isDownloadingUpdate: boolean;
+  showUpdateBanner: boolean;
+  showUpdateModal: boolean;
+  dismissedUpdateVersion: string | null;
+  checkForUpdates: (channel?: UpdateChannel) => Promise<UpdateCheckResult>;
+  setUpdateChannel: (channel: UpdateChannel) => Promise<void>;
+  startUpdateDownload: () => Promise<boolean>;
+  cancelUpdateDownload: () => Promise<boolean>;
+  installAndRestartUpdate: (options?: { silent?: boolean }) => Promise<{ success: boolean; message?: string }>;
+  dismissUpdateBanner: (version?: string) => void;
+  setShowUpdateModal: (show: boolean) => void;
+  initUpdaterListeners: () => () => void;
 }
 
 const initialSettings = localDatabaseService.readCachedSettings();
@@ -494,6 +515,23 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
   lastCleanupResult: null,
   beforeGamePrompt: null,
 
+  // Application Updater State
+  updaterState: {
+    status: 'idle',
+    channel: initialSettings.updateChannel ?? 'stable',
+    currentVersion: '1.0.4',
+    latestCheckResult: null,
+    downloadProgress: null,
+    downloadedFilePath: null,
+    downloadedVersion: null,
+    error: null,
+  },
+  isCheckingUpdates: false,
+  isDownloadingUpdate: false,
+  showUpdateBanner: false,
+  showUpdateModal: false,
+  dismissedUpdateVersion: null,
+
   setInGameMode: (inGame: boolean, activeGameCount: number) => {
     set({ inGameMode: inGame, activeGameCount });
   },
@@ -607,6 +645,11 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
           progress.status !== 'idle',
       });
     });
+
+    // Initialize application updater state & listeners
+    const initialUpdaterState = await localDatabaseService.getUpdaterStatus();
+    set({ updaterState: initialUpdaterState });
+    get().initUpdaterListeners();
   },
 
   refreshLibraryAndStats: async () => {
@@ -2055,5 +2098,107 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
     await memoryManagementService.clearHistory();
     set({ cleanupHistory: [], lastCleanupResult: null });
     await get().fetchMemoryMetrics();
+  },
+
+  // Application Updater Actions
+  checkForUpdates: async (channel) => {
+    set({ isCheckingUpdates: true });
+    try {
+      const res = await localDatabaseService.checkForUpdates(channel ?? get().updaterState.channel);
+      const updatedState = await localDatabaseService.getUpdaterStatus();
+      const currentRemind = get().settings.remindLaterVersion;
+      const shouldShowBanner =
+        res.updateAvailable &&
+        Boolean(res.updateInfo && res.updateInfo.version !== currentRemind);
+      set({
+        updaterState: updatedState,
+        isCheckingUpdates: false,
+        showUpdateBanner: shouldShowBanner,
+      });
+      return res;
+    } catch (err) {
+      set({ isCheckingUpdates: false });
+      return {
+        updateAvailable: false,
+        currentVersion: get().updaterState.currentVersion,
+        latestVersion: get().updaterState.currentVersion,
+        channel: channel ?? get().updaterState.channel,
+        error: err instanceof Error ? err.message : String(err),
+        checkedAtIso: new Date().toISOString(),
+      };
+    }
+  },
+
+  setUpdateChannel: async (channel) => {
+    await get().updateSettings({ updateChannel: channel });
+    set((prev) => ({
+      updaterState: { ...prev.updaterState, channel },
+    }));
+    void get().checkForUpdates(channel);
+  },
+
+  startUpdateDownload: async () => {
+    set({ isDownloadingUpdate: true });
+    const res = await localDatabaseService.startUpdateDownload();
+    if (!res.success) {
+      set({ isDownloadingUpdate: false });
+    }
+    return res.success;
+  },
+
+  cancelUpdateDownload: async () => {
+    const success = await localDatabaseService.cancelUpdateDownload();
+    set({ isDownloadingUpdate: false });
+    return success;
+  },
+
+  installAndRestartUpdate: async (options) => {
+    return await localDatabaseService.installAndRestartUpdate(options);
+  },
+
+  dismissUpdateBanner: (version) => {
+    set({ showUpdateBanner: false });
+    if (version) {
+      set({ dismissedUpdateVersion: version });
+      void get().updateSettings({ remindLaterVersion: version });
+    }
+  },
+
+  setShowUpdateModal: (show) => {
+    set({ showUpdateModal: show });
+  },
+
+  initUpdaterListeners: () => {
+    const unbindStatus = localDatabaseService.onUpdaterStatusChanged((state) => {
+      const currentRemind = get().settings.remindLaterVersion;
+      const isAvailable = state.status === 'available';
+      const isDownloaded = state.status === 'downloaded';
+      const shouldShowBanner =
+        (isAvailable || isDownloaded) &&
+        Boolean(
+          state.latestCheckResult?.updateInfo &&
+          state.latestCheckResult.updateInfo.version !== currentRemind
+        );
+
+      set({
+        updaterState: state,
+        isDownloadingUpdate: state.status === 'downloading',
+        showUpdateBanner: shouldShowBanner,
+      });
+    });
+
+    const unbindProgress = localDatabaseService.onUpdaterDownloadProgress((progress) => {
+      set((s) => ({
+        updaterState: {
+          ...s.updaterState,
+          downloadProgress: progress,
+        },
+      }));
+    });
+
+    return () => {
+      unbindStatus();
+      unbindProgress();
+    };
   },
 }));

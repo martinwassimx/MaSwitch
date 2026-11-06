@@ -16,7 +16,7 @@ interface GameCoverCardProps {
   onLaunchGame?: (gameId: string) => void;
 }
 
-export const GameCoverCard: React.FC<GameCoverCardProps> = ({
+export const GameCoverCard: React.FC<GameCoverCardProps> = React.memo(({
   game,
   isFavorite,
   isSelected = false,
@@ -65,10 +65,10 @@ export const GameCoverCard: React.FC<GameCoverCardProps> = ({
     >
       {/* Cover Image or Neutral Cartridge Fallback */}
       <div
-        className={`relative w-full overflow-hidden rounded-xl bg-ms-card border transition-all duration-200 aspect-[2/3] ${
+        className={`relative w-full overflow-hidden rounded-xl bg-ms-card border transition-colors duration-200 aspect-[2/3] ${
           isSelected
-            ? 'border-violet-500 ring-2 ring-violet-500/40 shadow-[0_0_20px_rgba(139,92,246,0.35)]'
-            : 'border-ms-border group-hover:border-violet-500/50 group-hover:shadow-[0_8px_24px_-6px_rgba(139,92,246,0.25)]'
+            ? 'border-violet-500 ring-2 ring-violet-500/40'
+            : 'border-ms-border group-hover:border-violet-500/50'
         }`}
       >
         {!imageError && game.coverImage ? (
@@ -78,6 +78,7 @@ export const GameCoverCard: React.FC<GameCoverCardProps> = ({
             onError={() => setImageError(true)}
             className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
             loading="lazy"
+            decoding="async"
           />
         ) : (
           /* Stylized Neutral Cartridge Fallback */
@@ -88,11 +89,12 @@ export const GameCoverCard: React.FC<GameCoverCardProps> = ({
                   src={game.iconImage}
                   alt=""
                   onError={() => setIconError(true)}
-                  className="w-12 h-12 rounded-xl object-contain drop-shadow-md transition-transform duration-200 group-hover:scale-105"
+                  className="w-12 h-12 rounded-xl object-contain transition-transform duration-200 group-hover:scale-105"
                   loading="lazy"
+                  decoding="async"
                 />
               ) : (
-                <div className="w-12 h-12 rounded-xl bg-ms-elevated border border-ms-border/70 flex items-center justify-center text-ms-muted shadow-sm transition-transform duration-200 group-hover:scale-105">
+                <div className="w-12 h-12 rounded-xl bg-ms-elevated border border-ms-border/70 flex items-center justify-center text-ms-muted transition-transform duration-200 group-hover:scale-105">
                   <PlatformLogo platformId={game.platformId} size="lg" />
                 </div>
               )}
@@ -123,10 +125,10 @@ export const GameCoverCard: React.FC<GameCoverCardProps> = ({
             e.stopPropagation();
             onToggleFavorite(game.id);
           }}
-          className={`absolute top-2.5 right-2.5 w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-150 backdrop-blur-md ${
+          className={`absolute top-2.5 right-2.5 w-8 h-8 rounded-lg flex items-center justify-center transition-opacity duration-150 ${
             isFavorite
-              ? 'opacity-100 bg-ms-bg/80 text-amber-400 border border-amber-400/30'
-              : 'opacity-0 group-hover:opacity-100 bg-ms-bg/75 text-ms-muted hover:text-ms-text border border-ms-border/80'
+              ? 'opacity-100 bg-[#0d0f14]/90 text-amber-400 border border-amber-400/30'
+              : 'opacity-0 group-hover:opacity-100 bg-[#0d0f14]/85 text-ms-muted hover:text-ms-text border border-ms-border/80'
           }`}
         >
           <Star
@@ -138,7 +140,7 @@ export const GameCoverCard: React.FC<GameCoverCardProps> = ({
 
         {/* Running status pill or Quick Play button on hover */}
         {launchState === 'running' ? (
-          <div className="absolute bottom-2.5 left-2.5 right-2.5 flex items-center justify-between px-3 py-1.5 rounded-lg bg-emerald-950/85 backdrop-blur-md border border-emerald-500/40 text-xs font-semibold text-emerald-400 shadow-lg">
+          <div className="absolute bottom-2.5 left-2.5 right-2.5 flex items-center justify-between px-3 py-1.5 rounded-lg bg-emerald-950/95 border border-emerald-500/40 text-xs font-semibold text-emerald-400">
             <span className="inline-flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
               Running
@@ -156,7 +158,7 @@ export const GameCoverCard: React.FC<GameCoverCardProps> = ({
                   e.stopPropagation();
                   onLaunchGame?.(game.id);
                 }}
-                className="h-9 px-3.5 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-white text-xs font-bold inline-flex items-center gap-1.5 shadow-[0_0_15px_rgba(16,185,129,0.4)] disabled:opacity-60 transition-transform active:scale-95"
+                className="h-9 px-3.5 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-white text-xs font-bold inline-flex items-center gap-1.5 disabled:opacity-60 transition-transform active:scale-95"
               >
                 {launchState === 'launching' ? (
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -179,7 +181,7 @@ export const GameCoverCard: React.FC<GameCoverCardProps> = ({
           {game.isInstalled && (
             <span
               title="Installed locally"
-              className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)] shrink-0"
+              className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0"
             />
           )}
         </div>
@@ -195,4 +197,4 @@ export const GameCoverCard: React.FC<GameCoverCardProps> = ({
       </div>
     </div>
   );
-};
+});

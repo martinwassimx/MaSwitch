@@ -26,6 +26,10 @@ import {
   PackageCheck,
   Sparkles,
   HardDrive,
+  ArrowDownCircle,
+  CheckCircle2,
+  ExternalLink,
+  Loader2,
 } from 'lucide-react';
 import type {
   AccentColorId,
@@ -47,6 +51,7 @@ import { localDatabaseService } from '../services/localDatabaseService';
 export type SettingsTabId =
   | 'all'
   | 'general'
+  | 'updates'
   | 'features'
   | 'appearance'
   | 'performance'
@@ -146,6 +151,18 @@ export const SettingsPage: React.FC = () => {
   const applyInstallPreset = useAppStore((s) => s.applyInstallPreset);
   const launchInstallerModify = useAppStore((s) => s.launchInstallerModify);
   const clearFeaturesFeedback = useAppStore((s) => s.clearFeaturesFeedback);
+
+  // Application Updater State
+  const updaterState = useAppStore((s) => s.updaterState);
+  const isCheckingUpdates = useAppStore((s) => s.isCheckingUpdates);
+  const isDownloadingUpdate = useAppStore((s) => s.isDownloadingUpdate);
+  const checkForUpdates = useAppStore((s) => s.checkForUpdates);
+  const setUpdateChannel = useAppStore((s) => s.setUpdateChannel);
+  const startUpdateDownload = useAppStore((s) => s.startUpdateDownload);
+  const cancelUpdateDownload = useAppStore((s) => s.cancelUpdateDownload);
+  const installAndRestartUpdate = useAppStore((s) => s.installAndRestartUpdate);
+  const [updaterPrecheckError, setUpdaterPrecheckError] = useState<string | null>(null);
+  const [isInstallingUpdate, setIsInstallingUpdate] = useState(false);
 
   useEffect(() => {
     void loadFeaturesManifest();
@@ -520,6 +537,7 @@ export const SettingsPage: React.FC = () => {
         {[
           { id: 'all' as const, label: 'All Settings', icon: Sliders },
           { id: 'general' as const, label: 'General', icon: Monitor },
+          { id: 'updates' as const, label: 'Application Updates', icon: ArrowDownCircle },
           { id: 'features' as const, label: 'Installed Features', icon: Boxes },
           { id: 'appearance' as const, label: 'Appearance', icon: Palette },
           { id: 'performance' as const, label: 'Performance', icon: Zap },
@@ -1746,6 +1764,329 @@ export const SettingsPage: React.FC = () => {
                 className="w-5 h-5 accent-[#4C8DFF] rounded cursor-pointer shrink-0"
               />
             </label>
+          </div>
+        </section>
+      )}
+
+      {/* SECTION: Application Updates */}
+      {shouldShowSection('updates') && (
+        <section
+          data-testid="section-application-updates"
+          aria-label="Application Updates"
+          className="space-y-6"
+        >
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-1">
+            <div>
+              <h2 className="text-sm font-bold text-ms-muted uppercase tracking-wider flex items-center gap-2">
+                <ArrowDownCircle className="w-4 h-4 text-purple-400" />
+                <span>Application Updates</span>
+              </h2>
+              <p className="text-xs text-ms-muted mt-0.5">
+                Check for updates, manage release channels, and safely update MaSwitch.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              data-testid="btn-check-updates-header"
+              disabled={isCheckingUpdates || isDownloadingUpdate}
+              onClick={() => void checkForUpdates()}
+              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white shadow-md shadow-purple-500/20 active:scale-95 transition-all disabled:opacity-50"
+            >
+              {isCheckingUpdates ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>Checking GitHub...</span>
+                </>
+              ) : (
+                <>
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Check for Updates</span>
+                </>
+              )}
+            </button>
+          </div>
+
+          <div className="rounded-2xl bg-ms-card border border-ms-border divide-y divide-ms-border shadow-card overflow-hidden">
+            {/* Version & Status Overview Header */}
+            <div className="p-6 bg-gradient-to-r from-purple-950/20 via-slate-900/30 to-purple-950/10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-2xl bg-purple-600/20 border border-purple-500/30 flex items-center justify-center text-purple-400 shadow-inner shrink-0">
+                  <ArrowDownCircle className="w-6 h-6" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-base font-bold text-ms-text">MaSwitch Desktop</span>
+                    <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30 font-mono">
+                      v{updaterState.currentVersion}
+                    </span>
+                  </div>
+                  <div className="text-xs text-ms-muted mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+                    <span>
+                      Channel:{' '}
+                      <strong className="text-slate-300 capitalize">{updaterState.channel}</strong>
+                    </span>
+                    <span>•</span>
+                    <span>
+                      Last checked:{' '}
+                      {settings.lastUpdateCheckIso
+                        ? new Date(settings.lastUpdateCheckIso).toLocaleString(undefined, {
+                            dateStyle: 'medium',
+                            timeStyle: 'short',
+                          })
+                        : 'Never checked'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Status pill badge */}
+              <div className="shrink-0">
+                {updaterState.status === 'downloaded' ? (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>Update Ready to Install</span>
+                  </span>
+                ) : updaterState.status === 'downloading' ? (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Downloading ({updaterState.downloadProgress?.percent ?? 0}%)</span>
+                  </span>
+                ) : updaterState.status === 'available' ? (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-purple-500/20 text-purple-300 border border-purple-500/30 animate-pulse">
+                    <ArrowDownCircle className="w-3.5 h-3.5" />
+                    <span>New Version Available</span>
+                  </span>
+                ) : updaterState.status === 'checking' ? (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-slate-800 text-slate-300 border border-slate-700">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Checking Releases...</span>
+                  </span>
+                ) : updaterState.status === 'error' ? (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                    <AlertTriangle className="w-3.5 h-3.5" />
+                    <span>Check Failed</span>
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                    <Check className="w-3.5 h-3.5" />
+                    <span>Up to Date</span>
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Live Interactive Update Card (when update available, downloading, or downloaded) */}
+            {updaterState.latestCheckResult?.updateInfo && (
+              <div className="p-6 space-y-4 bg-purple-950/10">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-bold text-white flex items-center gap-2">
+                      <span>MaSwitch v{updaterState.latestCheckResult.updateInfo.version}</span>
+                      <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-purple-900/60 text-purple-300 border border-purple-500/40">
+                        {updaterState.latestCheckResult.updateInfo.isPrerelease ? 'Beta Release' : 'Official Release'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Published on{' '}
+                      {new Date(updaterState.latestCheckResult.updateInfo.publishedAtIso).toLocaleDateString(undefined, {
+                        year: 'numeric',
+                        month: 'short',
+                        day: 'numeric',
+                      })}
+                      {' • '}
+                      Installer size:{' '}
+                      {(updaterState.latestCheckResult.updateInfo.installerAsset.size / (1024 * 1024)).toFixed(1)} MB
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    {updaterState.status === 'downloaded' ? (
+                      <button
+                        type="button"
+                        data-testid="btn-install-and-restart"
+                        disabled={isInstallingUpdate}
+                        onClick={async () => {
+                          setIsInstallingUpdate(true);
+                          setUpdaterPrecheckError(null);
+                          const res = await installAndRestartUpdate();
+                          setIsInstallingUpdate(false);
+                          if (!res.success) {
+                            setUpdaterPrecheckError(res.message || 'Installation precheck failed.');
+                          }
+                        }}
+                        className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 shadow-md shadow-emerald-500/20 active:scale-95 transition-all disabled:opacity-50"
+                      >
+                        {isInstallingUpdate ? (
+                          <>
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            <span>Launching Installer...</span>
+                          </>
+                        ) : (
+                          <>
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            <span>Install & Restart Now</span>
+                          </>
+                        )}
+                      </button>
+                    ) : updaterState.status === 'downloading' ? (
+                      <button
+                        type="button"
+                        data-testid="btn-cancel-update-download"
+                        onClick={() => void cancelUpdateDownload()}
+                        className="px-3.5 py-2 rounded-xl text-xs font-semibold text-rose-300 border border-rose-500/40 bg-rose-500/10 hover:bg-rose-500/20 transition-all"
+                      >
+                        Cancel Download
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        data-testid="btn-start-update-download"
+                        onClick={() => void startUpdateDownload()}
+                        className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 shadow-md shadow-purple-500/20 active:scale-95 transition-all"
+                      >
+                        <ArrowDownCircle className="w-3.5 h-3.5" />
+                        <span>Download Update</span>
+                      </button>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const url = updaterState.latestCheckResult?.updateInfo?.htmlUrl;
+                        if (url) {
+                          if (window.maswitch?.news?.openExternalLink) {
+                            void window.maswitch.news.openExternalLink(url);
+                          } else {
+                            window.open(url, '_blank');
+                          }
+                        }
+                      }}
+                      className="p-2 rounded-xl text-slate-400 hover:text-white bg-white/5 hover:bg-white/10 transition-colors"
+                      title="View Release on GitHub"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Progress bar during download */}
+                {updaterState.status === 'downloading' && updaterState.downloadProgress && (
+                  <div className="space-y-1.5 p-3.5 rounded-xl bg-slate-900/60 border border-purple-500/20">
+                    <div className="flex items-center justify-between text-xs font-mono">
+                      <span className="text-purple-300">
+                        {updaterState.downloadProgress.transferredMb} MB of {updaterState.downloadProgress.totalMb} MB
+                      </span>
+                      <span className="text-slate-400">
+                        {updaterState.downloadProgress.percent}% @{' '}
+                        {updaterState.downloadProgress.speedBytesPerSec > 1024 * 1024
+                          ? `${(updaterState.downloadProgress.speedBytesPerSec / (1024 * 1024)).toFixed(1)} MB/s`
+                          : `${(updaterState.downloadProgress.speedBytesPerSec / 1024).toFixed(0)} KB/s`}
+                      </span>
+                    </div>
+                    <div className="w-full h-2 rounded-full bg-slate-800 overflow-hidden">
+                      <div
+                        className="h-full bg-gradient-to-r from-purple-500 to-cyan-400 transition-all duration-150"
+                        style={{ width: `${updaterState.downloadProgress.percent}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Release Notes */}
+                <div className="space-y-1.5">
+                  <div className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+                    What's New in v{updaterState.latestCheckResult.updateInfo.version}
+                  </div>
+                  <div className="p-3.5 rounded-xl bg-slate-950/70 border border-ms-border max-h-48 overflow-y-auto text-xs text-slate-300 font-mono whitespace-pre-wrap select-text custom-scrollbar">
+                    {updaterState.latestCheckResult.updateInfo.releaseNotes}
+                  </div>
+                </div>
+
+                {/* Precheck Error Banner */}
+                {updaterPrecheckError && (
+                  <div className="flex items-start gap-2.5 p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs">
+                    <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                    <span>{updaterPrecheckError}</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Error Message when check fails */}
+            {updaterState.status === 'error' && (
+              <div className="p-6 bg-rose-950/10 space-y-3">
+                <div className="flex items-start gap-3">
+                  <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
+                  <div>
+                    <div className="text-sm font-bold text-rose-200">Update Check Notice</div>
+                    <div className="text-xs text-slate-300 mt-1">
+                      {updaterState.error || 'Failed to communicate with GitHub Releases.'}
+                    </div>
+                  </div>
+                </div>
+                <div className="pt-1">
+                  <button
+                    type="button"
+                    onClick={() => void checkForUpdates()}
+                    className="px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-rose-600 hover:bg-rose-500 text-white transition-colors"
+                  >
+                    Retry Update Check
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Setting: Automatic Update Checking */}
+            <label className="p-6 flex items-center justify-between gap-4 cursor-pointer hover:bg-ms-elevated/30 transition-colors">
+              <div>
+                <div className="text-sm font-bold text-ms-text">Automatically Check for Updates</div>
+                <div className="text-xs text-ms-muted">
+                  Check GitHub in the background once every 24 hours. Automatically pauses while gaming.
+                </div>
+              </div>
+              <input
+                type="checkbox"
+                data-testid="pref-auto-check-updates"
+                checked={settings.autoCheckForUpdates}
+                onChange={(e) => void updateSettings({ autoCheckForUpdates: e.target.checked })}
+                className="w-5 h-5 accent-purple-600 rounded cursor-pointer shrink-0"
+              />
+            </label>
+
+            {/* Setting: Release Channel */}
+            <div className="p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <label htmlFor="update-channel-select" className="text-sm font-bold text-ms-text block">
+                  Update Release Channel
+                </label>
+                <div className="text-xs text-ms-muted">
+                  Choose between thoroughly tested Stable releases and early-access Beta builds
+                </div>
+              </div>
+              <select
+                id="update-channel-select"
+                data-testid="select-update-channel"
+                value={updaterState.channel}
+                onChange={(e) => void setUpdateChannel(e.target.value as 'stable' | 'beta')}
+                className="h-9 px-3 bg-ms-bg border border-ms-border rounded-xl text-xs text-ms-text focus:outline-none focus:border-purple-500 shadow-sm"
+              >
+                <option value="stable">Stable (Recommended)</option>
+                <option value="beta">Beta (Preview Builds)</option>
+              </select>
+            </div>
+
+            {/* Data & Modular Configuration Safety Guarantee */}
+            <div className="p-6 bg-slate-950/30 text-xs space-y-2">
+              <div className="flex items-center gap-2 font-bold text-purple-300">
+                <ShieldCheck className="w-4 h-4 text-purple-400" />
+                <span>Update Safety & Integrity Assurance</span>
+              </div>
+              <p className="text-ms-muted leading-relaxed">
+                MaSwitch updates are distributed exclusively via official GitHub Releases and verified against SHA-256 cryptographic hashes.
+                Your library database (<code className="font-mono text-slate-300">maswitch-library.sqlite</code>), DPAPI-encrypted credential vault (<code className="font-mono text-slate-300">vault.enc</code>), and modular installer component preferences are strictly preserved across updates.
+              </p>
+            </div>
           </div>
         </section>
       )}

@@ -144,20 +144,34 @@ export class PerformanceMonitorService {
     };
   }
 
+  private getEffectiveIntervalMs(): number {
+    const activeSessions = this.trackerEngine?.getStatus().activeSessions ?? [];
+    if (activeSessions.length > 0) {
+      return Math.max(this.intervalMs, 10000);
+    }
+    if (this.getLowEndModeFn && this.getLowEndModeFn()) {
+      return Math.max(this.intervalMs, 5000);
+    }
+    return this.intervalMs;
+  }
+
   private startTimer(): void {
     this.stopTimer();
+    const effectiveInterval = this.getEffectiveIntervalMs();
     this.timer = setInterval(() => {
       if (!this.active) {
         this.stopTimer();
         return;
       }
 
-      const metrics = this.getCurrentMetrics();
       const win = this.getWindowFn ? this.getWindowFn() : null;
-      if (win && !win.isDestroyed()) {
-        win.webContents.send(IPC_CHANNELS.PERFORMANCE_METRICS_UPDATED_EVENT, metrics);
+      if (!win || win.isDestroyed() || win.isMinimized() || !win.isVisible()) {
+        return;
       }
-    }, this.intervalMs);
+
+      const metrics = this.getCurrentMetrics();
+      win.webContents.send(IPC_CHANNELS.PERFORMANCE_METRICS_UPDATED_EVENT, metrics);
+    }, effectiveInterval);
   }
 
   private stopTimer(): void {

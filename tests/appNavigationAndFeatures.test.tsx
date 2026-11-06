@@ -31,6 +31,18 @@ describe('MaSwitch Desktop Application Integration (Phase 1 & Phase 2)', () => {
         animationsEnabled: false,
       },
       accountGroups: accountManagerService.getInitialPreviewGroups(),
+      updaterState: {
+        status: 'idle',
+        channel: 'stable',
+        currentVersion: '1.0.4',
+        latestCheckResult: null,
+        downloadProgress: null,
+        downloadedFilePath: null,
+        downloadedVersion: null,
+        error: null,
+      },
+      showUpdateBanner: false,
+      showUpdateModal: false,
     });
   });
 

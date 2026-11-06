@@ -141,7 +141,7 @@ export class LocalDatabaseService {
     }
     return {
       appName: 'MaSwitch',
-      appVersion: '1.0.3',
+      appVersion: '1.0.4',
       phaseLabel: 'MaSwitch 3.0 — Windows Gaming Launcher & Account Manager',
       electronVersion: '33.x',
       chromeVersion: '130.x',
@@ -1127,6 +1127,84 @@ export class LocalDatabaseService {
   ): () => void {
     if (window.maswitch?.features?.onFeaturesUpdated) {
       return window.maswitch.features.onFeaturesUpdated(callback);
+    }
+    return () => {};
+  }
+
+  // Application Updates
+  public async checkForUpdates(
+    channel?: import('../shared/types/updater').UpdateChannel
+  ): Promise<import('../shared/types/updater').UpdateCheckResult> {
+    if (window.maswitch?.updater?.checkForUpdates) {
+      return await window.maswitch.updater.checkForUpdates(channel);
+    }
+    return {
+      updateAvailable: false,
+      currentVersion: '1.0.4',
+      latestVersion: '1.0.4',
+      channel: channel ?? 'stable',
+      checkedAtIso: new Date().toISOString(),
+    };
+  }
+
+  public async getUpdaterStatus(): Promise<import('../shared/types/updater').UpdaterState> {
+    if (window.maswitch?.updater?.getStatus) {
+      return await window.maswitch.updater.getStatus();
+    }
+    return {
+      status: 'idle',
+      channel: 'stable',
+      currentVersion: '1.0.4',
+      latestCheckResult: null,
+      downloadProgress: null,
+      downloadedFilePath: null,
+      downloadedVersion: null,
+      error: null,
+    };
+  }
+
+  public async startUpdateDownload(): Promise<{ success: boolean; message?: string }> {
+    if (window.maswitch?.updater?.startDownload) {
+      return await window.maswitch.updater.startDownload();
+    }
+    return { success: false, message: 'Desktop updater bridge unavailable' };
+  }
+
+  public async cancelUpdateDownload(): Promise<boolean> {
+    if (window.maswitch?.updater?.cancelDownload) {
+      return await window.maswitch.updater.cancelDownload();
+    }
+    return false;
+  }
+
+  public async precheckUpdateInstall(): Promise<import('../shared/types/updater').UpdateInstallPrecheckResult> {
+    if (window.maswitch?.updater?.precheckInstall) {
+      return await window.maswitch.updater.precheckInstall();
+    }
+    return { canInstall: false, message: 'Desktop updater bridge unavailable' };
+  }
+
+  public async installAndRestartUpdate(options?: { silent?: boolean }): Promise<{ success: boolean; message?: string }> {
+    if (window.maswitch?.updater?.installAndRestart) {
+      return await window.maswitch.updater.installAndRestart(options);
+    }
+    return { success: false, message: 'Desktop updater bridge unavailable' };
+  }
+
+  public onUpdaterStatusChanged(
+    callback: (state: import('../shared/types/updater').UpdaterState) => void
+  ): () => void {
+    if (window.maswitch?.updater?.onStatusChanged) {
+      return window.maswitch.updater.onStatusChanged(callback);
+    }
+    return () => {};
+  }
+
+  public onUpdaterDownloadProgress(
+    callback: (progress: import('../shared/types/updater').UpdateDownloadProgress) => void
+  ): () => void {
+    if (window.maswitch?.updater?.onDownloadProgress) {
+      return window.maswitch.updater.onDownloadProgress(callback);
     }
     return () => {};
   }

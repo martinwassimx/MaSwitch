@@ -299,6 +299,31 @@ beforeEach(() => {
         }
       ),
     },
+    updater: {
+      checkForUpdates: vi.fn(async () => ({
+        updateAvailable: false,
+        currentVersion: '1.0.4',
+        latestVersion: '1.0.4',
+        channel: 'stable' as const,
+        checkedAtIso: new Date().toISOString(),
+      })),
+      getStatus: vi.fn(async () => ({
+        status: 'idle' as const,
+        channel: 'stable' as const,
+        currentVersion: '1.0.4',
+        latestCheckResult: null,
+        downloadProgress: null,
+        downloadedFilePath: null,
+        downloadedVersion: null,
+        error: null,
+      })),
+      startDownload: vi.fn(async () => ({ success: true })),
+      cancelDownload: vi.fn(async () => true),
+      installAndRestart: vi.fn(async () => ({ success: true })),
+      precheckInstall: vi.fn(async () => ({ canInstall: true })),
+      onStatusChanged: vi.fn(() => () => undefined),
+      onDownloadProgress: vi.fn(() => () => undefined),
+    },
   };
 });
 

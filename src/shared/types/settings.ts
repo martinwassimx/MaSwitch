@@ -1,4 +1,5 @@
 import type { LibraryViewMode } from './game';
+import type { UpdateChannel } from './updater';
 
 export type NavigationSection =
   | 'home'
@@ -72,6 +73,12 @@ export interface MaSwitchSettings {
   confirmBeforeCleanup: boolean;
   enableAdvancedMemoryMode: boolean;
   preparePcBeforeLaunch: boolean;
+
+  // Application Updater Settings
+  autoCheckForUpdates: boolean;
+  updateChannel: UpdateChannel;
+  lastUpdateCheckIso: string | null;
+  remindLaterVersion: string | null;
 }
 
 export const DEFAULT_EXCLUDED_APPLICATIONS: ExcludedApplicationRule[] = [
@@ -143,6 +150,12 @@ export const DEFAULT_SETTINGS: MaSwitchSettings = {
   confirmBeforeCleanup: true,
   enableAdvancedMemoryMode: false,
   preparePcBeforeLaunch: false,
+
+  // Application Updater defaults
+  autoCheckForUpdates: true,
+  updateChannel: 'stable',
+  lastUpdateCheckIso: null,
+  remindLaterVersion: null,
 };
 
 export interface WindowsStartupState {

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   Star,
   ArrowRight,
@@ -44,34 +44,64 @@ export const HomePage: React.FC = () => {
   const launchGameById = useAppStore((s) => s.launchGame);
   const updateSettings = useAppStore((s) => s.updateSettings);
 
-  const recentlyPlayedGames = [...games]
-    .filter((g) => g.lastPlayedIso !== null)
-    .sort((a, b) => {
-      const tA = a.lastPlayedIso ? Date.parse(a.lastPlayedIso) : 0;
-      const tB = b.lastPlayedIso ? Date.parse(b.lastPlayedIso) : 0;
-      return tB - tA;
-    });
-
-  const activeSessionGame =
-    trackerStatus.activeSessions.length > 0
-      ? games.find((g) => g.id === trackerStatus.activeSessions[0].gameId)
-      : undefined;
-
-  const continuePlayingGame =
-    activeSessionGame ??
-    recentlyPlayedGames[0] ??
-    games.find((g) => g.isFeatured) ??
-    games[0];
-
-  const favoriteGames = games.filter((g) =>
-    settings.favoriteGameIds.includes(g.id)
+  const favoriteIdSet = useMemo(
+    () => new Set(settings.favoriteGameIds),
+    [settings.favoriteGameIds]
   );
 
-  const totalPlaytimeHours = games.reduce(
-    (sum, g) => sum + g.playtimeHours,
-    0
+  const recentlyPlayedGames = useMemo(() => {
+    const withTs: Array<{ game: (typeof games)[number]; ts: number }> = [];
+    for (const g of games) {
+      if (g.lastPlayedIso !== null) {
+        const ts = Date.parse(g.lastPlayedIso);
+        withTs.push({ game: g, ts: Number.isNaN(ts) ? 0 : ts });
+      }
+    }
+    withTs.sort((a, b) => b.ts - a.ts);
+    return withTs.map((item) => item.game);
+  }, [games]);
+
+  const activeSessionGameId = trackerStatus.activeSessions[0]?.gameId;
+  const activeSessionGameTitle = trackerStatus.activeSessions[0]?.gameTitle;
+
+  const activeSessionGame = useMemo(
+    () =>
+      activeSessionGameId
+        ? games.find((g) => g.id === activeSessionGameId)
+        : undefined,
+    [games, activeSessionGameId]
   );
-  const installedCount = installedGameScannerService.getInstalledCount(games);
+
+  const continuePlayingGame = useMemo(
+    () =>
+      activeSessionGame ??
+      recentlyPlayedGames[0] ??
+      games.find((g) => g.isFeatured) ??
+      games[0],
+    [activeSessionGame, recentlyPlayedGames, games]
+  );
+
+  const favoriteGames = useMemo(
+    () => games.filter((g) => favoriteIdSet.has(g.id)),
+    [games, favoriteIdSet]
+  );
+
+  const totalPlaytimeHours = useMemo(
+    () => games.reduce((sum, g) => sum + g.playtimeHours, 0),
+    [games]
+  );
+  const installedCount = useMemo(
+    () => installedGameScannerService.getInstalledCount(games),
+    [games]
+  );
+
+  const platformCounts = useMemo(() => {
+    const counts = new Map<PlatformId, number>();
+    for (const g of games) {
+      counts.set(g.platformId, (counts.get(g.platformId) ?? 0) + 1);
+    }
+    return counts;
+  }, [games]);
 
   const featuredLaunchState = continuePlayingGame
     ? launchStatuses[continuePlayingGame.id] ?? 'idle'
@@ -80,10 +110,13 @@ export const HomePage: React.FC = () => {
     ? launchMessages[continuePlayingGame.id]
     : undefined;
 
-  const handlePlatformClick = (platformId: PlatformId) => {
-    setPlatformFilter(platformId);
-    setActiveSection('library');
-  };
+  const handlePlatformClick = useCallback(
+    (platformId: PlatformId) => {
+      setPlatformFilter(platformId);
+      setActiveSection('library');
+    },
+    [setPlatformFilter, setActiveSection]
+  );
 
   return (
     <div data-testid="page-home" className="max-w-7xl mx-auto space-y-10 pb-16">
@@ -96,8 +129,8 @@ export const HomePage: React.FC = () => {
           <p className="text-sm text-ms-muted">
             {isScanning && scanProgress
               ? `${scanProgress.message} (${scanProgress.percent}% · ${scanProgress.discoveredCount} detected)`
-              : trackerStatus.activeSessions.length > 0
-              ? `Currently running ${trackerStatus.activeSessions[0].gameTitle}`
+              : activeSessionGameTitle
+              ? `Currently running ${activeSessionGameTitle}`
               : `${installedCount} games installed · ${totalPlaytimeHours.toFixed(1)}h total playtime`}
           </p>
         </div>
@@ -247,6 +280,7 @@ export const HomePage: React.FC = () => {
               <img
                 src={continuePlayingGame.heroBackgroundImage}
                 alt={continuePlayingGame.title}
+                decoding="async"
                 className="absolute inset-0 w-full h-full object-cover opacity-40 scale-105"
               />
               <div className="absolute inset-0 bg-gradient-to-r from-ms-bg via-ms-bg/90 to-transparent" />
@@ -259,6 +293,7 @@ export const HomePage: React.FC = () => {
                     <img
                       src={continuePlayingGame.coverImage}
                       alt=""
+                      decoding="async"
                       className="w-full h-full object-cover"
                     />
                   </div>
@@ -366,7 +401,7 @@ export const HomePage: React.FC = () => {
               <GameCoverCard
                 key={game.id}
                 game={game}
-                isFavorite={settings.favoriteGameIds.includes(game.id)}
+                isFavorite={favoriteIdSet.has(game.id)}
                 launchState={launchStatuses[game.id] ?? 'idle'}
                 onOpenDetails={openGameDetails}
                 onToggleFavorite={toggleFavoriteGame}
@@ -430,7 +465,7 @@ export const HomePage: React.FC = () => {
               <GameCoverCard
                 key={game.id}
                 game={game}
-                isFavorite={settings.favoriteGameIds.includes(game.id)}
+                isFavorite={favoriteIdSet.has(game.id)}
                 launchState={launchStatuses[game.id] ?? 'idle'}
                 onOpenDetails={openGameDetails}
                 onToggleFavorite={toggleFavoriteGame}
@@ -459,7 +494,7 @@ export const HomePage: React.FC = () => {
 
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
           {platforms.map((p) => {
-            const count = games.filter((g) => g.platformId === p.id).length;
+            const count = platformCounts.get(p.id) ?? 0;
             return (
               <button
                 key={p.id}

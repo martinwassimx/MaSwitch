@@ -306,26 +306,26 @@ FunctionEnd
 !macro customInstall
   DetailPrint "Configuring MaSwitch 3.0 Installed Features..."
 
-  ; Ensure fallback defaults if ran silently without UI
+  ; If $BoolCollections == "", check whether installed-features.json already exists in APPDATA or INSTDIR.
+  ; In unattended update or upgrade mode, preserve the user's existing feature selection.
   ${If} $BoolCollections == ""
+    ${If} ${FileExists} "$APPDATA\maswitch\installed-features.json"
+      DetailPrint "Preserving existing user feature configuration from AppData..."
+      CopyFiles /SILENT "$APPDATA\maswitch\installed-features.json" "$INSTDIR\installed-features.json"
+      Goto skipFeatureOverwrite
+    ${ElseIf} ${FileExists} "$INSTDIR\installed-features.json"
+      DetailPrint "Preserving existing user feature configuration from install directory..."
+      ${If} ${FileExists} "$APPDATA\maswitch\*"
+        CopyFiles /SILENT "$INSTDIR\installed-features.json" "$APPDATA\maswitch\installed-features.json"
+      ${EndIf}
+      Goto skipFeatureOverwrite
+    ${EndIf}
     StrCpy $BoolCollections "true"
-  ${EndIf}
-  ${If} $BoolBackup == ""
     StrCpy $BoolBackup "true"
-  ${EndIf}
-  ${If} $BoolYearInReview == ""
     StrCpy $BoolYearInReview "false"
-  ${EndIf}
-  ${If} $BoolPerfMon == ""
     StrCpy $BoolPerfMon "false"
-  ${EndIf}
-  ${If} $BoolNews == ""
     StrCpy $BoolNews "false"
-  ${EndIf}
-  ${If} $BoolMemoryMgmt == ""
     StrCpy $BoolMemoryMgmt "false"
-  ${EndIf}
-  ${If} $PresetChoice == ""
     StrCpy $PresetChoice "recommended"
   ${EndIf}
 
@@ -376,6 +376,8 @@ FunctionEnd
       FileClose $1
     ${EndIf}
   ${EndIf}
+
+skipFeatureOverwrite:
 !macroend
 
 !endif

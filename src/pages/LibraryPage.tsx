@@ -189,6 +189,11 @@ export const LibraryPage: React.FC = () => {
     setShowAddCustomModal(false);
   };
 
+  const favoriteIdSet = useMemo(
+    () => new Set(settings.favoriteGameIds),
+    [settings.favoriteGameIds]
+  );
+
   const filteredGames = useMemo(
     () =>
       filterAndSortGames(games, {
@@ -212,11 +217,14 @@ export const LibraryPage: React.FC = () => {
     ]
   );
 
-  const inspectedGame =
-    filteredGames.find((g) => g.id === inspectedLibraryGameId) ??
-    filteredGames[0] ??
-    games.find((g) => g.id === inspectedLibraryGameId) ??
-    games[0];
+  const inspectedGame = useMemo(
+    () =>
+      filteredGames.find((g) => g.id === inspectedLibraryGameId) ??
+      filteredGames[0] ??
+      games.find((g) => g.id === inspectedLibraryGameId) ??
+      games[0],
+    [filteredGames, games, inspectedLibraryGameId]
+  );
 
   const hasActiveFilters =
     searchQuery.trim() !== '' ||
@@ -758,14 +766,14 @@ export const LibraryPage: React.FC = () => {
                 <GameCoverCard
                   key={game.id}
                   game={game}
-                  isFavorite={settings.favoriteGameIds.includes(game.id)}
+                  isFavorite={favoriteIdSet.has(game.id)}
                   isSelected={inspectedGame?.id === game.id}
                   compact={settings.compactGameCards}
                   launchState={launchStatuses[game.id] ?? 'idle'}
                   onSelect={setInspectedLibraryGameId}
                   onOpenDetails={openGameDetails}
-                  onToggleFavorite={(id) => void toggleFavoriteGame(id)}
-                  onLaunchGame={(id) => void launchGameById(id)}
+                  onToggleFavorite={toggleFavoriteGame}
+                  onLaunchGame={launchGameById}
                 />
               ))}
             </div>
@@ -775,7 +783,7 @@ export const LibraryPage: React.FC = () => {
               className="rounded-2xl bg-ms-card border border-ms-border divide-y divide-ms-border overflow-hidden shadow-card"
             >
               {filteredGames.map((game) => {
-                const isFav = settings.favoriteGameIds.includes(game.id);
+                const isFav = favoriteIdSet.has(game.id);
                 const isSelected = inspectedGame?.id === game.id;
 
                 return (
@@ -793,12 +801,16 @@ export const LibraryPage: React.FC = () => {
                         <img
                           src={game.iconImage}
                           alt=""
+                          loading="lazy"
+                          decoding="async"
                           className="w-9 h-9 rounded object-contain shrink-0"
                         />
                       ) : (
                         <img
                           src={game.coverImage}
                           alt={game.title}
+                          loading="lazy"
+                          decoding="async"
                           className="w-9 h-12 rounded object-cover shrink-0 border border-ms-border bg-ms-bg"
                         />
                       )}
@@ -896,6 +908,7 @@ export const LibraryPage: React.FC = () => {
               <img
                 src={inspectedGame.heroBackgroundImage || inspectedGame.coverImage}
                 alt={inspectedGame.title}
+                decoding="async"
                 className="w-full h-full object-cover opacity-60 transition-transform duration-500 hover:scale-105"
               />
               <div className="absolute inset-0 bg-gradient-to-t from-ms-card via-ms-card/40 to-black/30" />
@@ -907,7 +920,7 @@ export const LibraryPage: React.FC = () => {
                   size="xs"
                 />
                 {inspectedGame.isInstalled && (
-                  <span className="px-2.5 py-1 rounded-md text-[11px] font-semibold bg-emerald-950/85 border border-emerald-500/40 text-emerald-400 backdrop-blur-md inline-flex items-center gap-1.5 shadow-md">
+                  <span className="px-2.5 py-1 rounded-md text-[11px] font-semibold bg-emerald-950/95 border border-emerald-500/40 text-emerald-400 inline-flex items-center gap-1.5">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                     <span>Installed</span>
                   </span>

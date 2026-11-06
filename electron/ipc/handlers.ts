@@ -46,6 +46,8 @@ import { NewsService } from '../services/newsService';
 import { BackupService } from '../services/backupService';
 import { InstalledFeaturesManager } from '../services/features/installedFeaturesManager';
 import { MemoryManagementService } from '../services/memory/memoryManagementService';
+import { AppUpdateService } from '../services/updater/appUpdateService';
+import type { UpdateChannel } from '../../src/shared/types/updater';
 import type { MemoryCleanupRequest } from '../../src/shared/types/memory';
 import type { CreateCollectionInput, UpdateCollectionInput } from '../../src/shared/types/collection';
 import type { PerformanceMonitoringConfig } from '../../src/shared/types/performance';
@@ -109,6 +111,7 @@ export interface MainServicesContainer {
   backupService?: BackupService;
   memoryService?: MemoryManagementService;
   installedFeaturesManager?: InstalledFeaturesManager;
+  updateService?: AppUpdateService;
   riotLiveServices?: {
     engine: RiotLiveSwitchingEngine;
     vault: RiotWindowsSessionVault;
@@ -1634,5 +1637,65 @@ export function registerIpcHandlers(
     assertTrustedSender(event, getMainWindow, devServerUrl);
     const memService = getMemoryService();
     memService.clearCleanupHistory();
+  });
+
+  // 8. Application Updates Handlers
+  const updateService = services.updateService;
+
+  ipcMain.handle(IPC_CHANNELS.UPDATER_CHECK_FOR_UPDATES, async (event, channel?: UpdateChannel) => {
+    assertTrustedSender(event, getMainWindow, devServerUrl);
+    if (!updateService) {
+      throw new Error('Update service is not initialized.');
+    }
+    return await updateService.checkForUpdates(channel, true);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.UPDATER_GET_STATUS, (event) => {
+    assertTrustedSender(event, getMainWindow, devServerUrl);
+    if (!updateService) {
+      return {
+        status: 'idle',
+        channel: 'stable',
+        currentVersion: app.getVersion(),
+        latestCheckResult: null,
+        downloadProgress: null,
+        downloadedFilePath: null,
+        downloadedVersion: null,
+        error: null,
+      };
+    }
+    return updateService.getState();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.UPDATER_START_DOWNLOAD, async (event) => {
+    assertTrustedSender(event, getMainWindow, devServerUrl);
+    if (!updateService) {
+      throw new Error('Update service is not initialized.');
+    }
+    return await updateService.startDownload();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.UPDATER_CANCEL_DOWNLOAD, (event) => {
+    assertTrustedSender(event, getMainWindow, devServerUrl);
+    if (!updateService) {
+      return false;
+    }
+    return updateService.cancelDownload();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.UPDATER_PRECHECK_INSTALL, (event) => {
+    assertTrustedSender(event, getMainWindow, devServerUrl);
+    if (!updateService) {
+      return { canInstall: false, message: 'Update service is not initialized.' };
+    }
+    return updateService.precheckInstall();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.UPDATER_INSTALL_AND_RESTART, async (event, options?: { silent?: boolean }) => {
+    assertTrustedSender(event, getMainWindow, devServerUrl);
+    if (!updateService) {
+      throw new Error('Update service is not initialized.');
+    }
+    return await updateService.installAndRestart(options);
   });
 }

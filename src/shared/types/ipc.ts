@@ -168,6 +168,16 @@ export const IPC_CHANNELS = {
   MEMORY_PERFORM_CLEANUP: 'maswitch:memory:perform-cleanup',
   MEMORY_GET_HISTORY: 'maswitch:memory:get-history',
   MEMORY_CLEAR_HISTORY: 'maswitch:memory:clear-history',
+
+  // Application Updates
+  UPDATER_CHECK_FOR_UPDATES: 'maswitch:updater:check-for-updates',
+  UPDATER_GET_STATUS: 'maswitch:updater:get-status',
+  UPDATER_START_DOWNLOAD: 'maswitch:updater:start-download',
+  UPDATER_CANCEL_DOWNLOAD: 'maswitch:updater:cancel-download',
+  UPDATER_INSTALL_AND_RESTART: 'maswitch:updater:install-and-restart',
+  UPDATER_PRECHECK_INSTALL: 'maswitch:updater:precheck-install',
+  UPDATER_STATUS_CHANGED_EVENT: 'maswitch:updater:status-changed',
+  UPDATER_PROGRESS_EVENT: 'maswitch:updater:progress',
 } as const;
 
 export type AllowedIpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];
@@ -401,6 +411,16 @@ export interface MaSwitchBridge {
     performCleanup: (request: import('./memory').MemoryCleanupRequest) => Promise<import('./memory').MemoryCleanupResult>;
     getHistory: () => Promise<import('./memory').MemoryCleanupHistoryEntry[]>;
     clearHistory: () => Promise<void>;
+  };
+  updater?: {
+    checkForUpdates: (channel?: import('./updater').UpdateChannel) => Promise<import('./updater').UpdateCheckResult>;
+    getStatus: () => Promise<import('./updater').UpdaterState>;
+    startDownload: () => Promise<{ success: boolean; message?: string }>;
+    cancelDownload: () => Promise<boolean>;
+    installAndRestart: (options?: { silent?: boolean }) => Promise<{ success: boolean; message?: string }>;
+    precheckInstall: () => Promise<import('./updater').UpdateInstallPrecheckResult>;
+    onStatusChanged: (callback: (state: import('./updater').UpdaterState) => void) => () => void;
+    onDownloadProgress: (callback: (progress: import('./updater').UpdateDownloadProgress) => void) => () => void;
   };
 }
 

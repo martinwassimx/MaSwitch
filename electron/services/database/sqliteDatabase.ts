@@ -449,6 +449,7 @@ export class MaSwitchSqliteDatabase {
   private readonly dbFilePath: string;
   private corruptedBackupPath: string | null = null;
   private yearInReviewCache = new Map<string, YearInReviewData>();
+  private installedExecutableMatchersCache: InstalledExecutableMatcher[] | null = null;
 
   constructor(customFilePath: string) {
     this.dbFilePath = customFilePath;
@@ -467,6 +468,16 @@ export class MaSwitchSqliteDatabase {
     if (this.dbFilePath !== ':memory:') {
       const dir = path.dirname(this.dbFilePath);
       fs.mkdirSync(dir, { recursive: true });
+
+      // Clean up orphaned lock directory from prior ungraceful exits if present
+      const lockPath = `${this.dbFilePath}.lock`;
+      if (fs.existsSync(lockPath)) {
+        try {
+          fs.rmSync(lockPath, { recursive: true, force: true });
+        } catch {
+          // ignore
+        }
+      }
     }
 
     try {
@@ -522,6 +533,12 @@ export class MaSwitchSqliteDatabase {
     }
 
     this.db.exec('PRAGMA foreign_keys = ON;');
+    this.db.exec('PRAGMA busy_timeout = 5000;');
+    try {
+      this.db.exec('PRAGMA journal_mode = WAL;');
+    } catch {
+      // WAL fallback in restricted environments
+    }
     this.runMigrations();
     this.seedBasePlatforms();
     this.reconcileExistingLibraryPlatforms();
@@ -795,6 +812,7 @@ export class MaSwitchSqliteDatabase {
       }
     });
 
+    this.installedExecutableMatchersCache = null;
     return reconciledCount;
   }
 
@@ -1065,6 +1083,7 @@ export class MaSwitchSqliteDatabase {
       }
     });
 
+    this.installedExecutableMatchersCache = null;
     return affected;
   }
 
@@ -1249,6 +1268,7 @@ export class MaSwitchSqliteDatabase {
       );
     });
 
+    this.installedExecutableMatchersCache = null;
     const created = this.getGameById(targetGameId);
     if (!created) {
       throw new Error('Failed to retrieve newly created custom game.');
@@ -1264,6 +1284,7 @@ export class MaSwitchSqliteDatabase {
       'UPDATE games SET is_hidden = 1, updated_at = ? WHERE id = ?',
       [new Date().toISOString(), gameId]
     );
+    this.installedExecutableMatchersCache = null;
     return res.changes > 0;
   }
 
@@ -1275,6 +1296,7 @@ export class MaSwitchSqliteDatabase {
       'UPDATE games SET is_hidden = 0, updated_at = ? WHERE id = ?',
       [new Date().toISOString(), gameId]
     );
+    this.installedExecutableMatchersCache = null;
     return res.changes > 0;
   }
 
@@ -1445,6 +1467,7 @@ export class MaSwitchSqliteDatabase {
       );
     });
 
+    this.installedExecutableMatchersCache = null;
     return this.getGameById(gameId);
   }
 
@@ -1882,6 +1905,10 @@ export class MaSwitchSqliteDatabase {
    * Returns all installed games with known executable names/paths for the background Playtime Tracker.
    */
   public getInstalledExecutableMatchers(): InstalledExecutableMatcher[] {
+    if (this.installedExecutableMatchersCache) {
+      return this.installedExecutableMatchersCache;
+    }
+
     const rows = this.db.all(
       `SELECT
         g.id AS game_id,
@@ -1895,7 +1922,7 @@ export class MaSwitchSqliteDatabase {
       WHERE g.is_hidden = 0 AND i.is_installed = 1 AND i.executable_name IS NOT NULL`
     ) as Array<Record<string, unknown>>;
 
-    return rows.map((r) => {
+    const matchers = rows.map((r) => {
       const gameTitle = String(r.game_title);
       const platformId = String(r.platform_id) as PlatformId;
       const primaryExe = String(r.executable_name);
@@ -1915,6 +1942,9 @@ export class MaSwitchSqliteDatabase {
             : null,
       };
     });
+
+    this.installedExecutableMatchersCache = matchers;
+    return matchers;
   }
 
   /**

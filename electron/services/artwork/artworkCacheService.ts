@@ -36,15 +36,24 @@ export interface SteamStoreMetadata {
 export class ArtworkCacheService {
   private readonly artworkDir: string;
   private readonly iconDir: string;
+  private readonly thumbsDir: string;
   private steamInstallDirCache: string | null | undefined = undefined;
+  private readonly memoryBufferCache = new Map<
+    string,
+    { buffer: Buffer; mimeType: string }
+  >();
+  private memoryCacheBytes = 0;
+  private static readonly MAX_MEMORY_CACHE_BYTES = 24 * 1024 * 1024; // 24 MB cap
 
   constructor(userDataDir: string) {
     this.artworkDir = path.join(userDataDir, 'artwork_cache');
     this.iconDir = path.join(userDataDir, 'icon_cache');
+    this.thumbsDir = path.join(userDataDir, 'artwork_thumbs');
 
     try {
       fs.mkdirSync(this.artworkDir, { recursive: true });
       fs.mkdirSync(this.iconDir, { recursive: true });
+      fs.mkdirSync(this.thumbsDir, { recursive: true });
     } catch {
       // Ignore if exists
     }
@@ -56,6 +65,52 @@ export class ArtworkCacheService {
 
   public getIconDir(): string {
     return this.iconDir;
+  }
+
+  public getThumbsDir(): string {
+    return this.thumbsDir;
+  }
+
+  public getCachedBuffer(
+    key: string
+  ): { buffer: Buffer; mimeType: string } | undefined {
+    const entry = this.memoryBufferCache.get(key);
+    if (entry) {
+      // Refresh LRU order
+      this.memoryBufferCache.delete(key);
+      this.memoryBufferCache.set(key, entry);
+    }
+    return entry;
+  }
+
+  public setCachedBuffer(
+    key: string,
+    buffer: Buffer,
+    mimeType: string
+  ): void {
+    if (buffer.byteLength > 2 * 1024 * 1024) {
+      return; // Do not store single buffers > 2 MB in RAM
+    }
+    const existing = this.memoryBufferCache.get(key);
+    if (existing) {
+      this.memoryCacheBytes -= existing.buffer.byteLength;
+      this.memoryBufferCache.delete(key);
+    }
+    while (
+      this.memoryCacheBytes + buffer.byteLength >
+        ArtworkCacheService.MAX_MEMORY_CACHE_BYTES &&
+      this.memoryBufferCache.size > 0
+    ) {
+      const oldestKey = this.memoryBufferCache.keys().next().value;
+      if (!oldestKey) break;
+      const oldest = this.memoryBufferCache.get(oldestKey);
+      if (oldest) {
+        this.memoryCacheBytes -= oldest.buffer.byteLength;
+      }
+      this.memoryBufferCache.delete(oldestKey);
+    }
+    this.memoryBufferCache.set(key, { buffer, mimeType });
+    this.memoryCacheBytes += buffer.byteLength;
   }
 
   /**
@@ -140,6 +195,9 @@ export class ArtworkCacheService {
 
     clearFolder(this.artworkDir);
     clearFolder(this.iconDir);
+    clearFolder(this.thumbsDir);
+    this.memoryBufferCache.clear();
+    this.memoryCacheBytes = 0;
 
     return { clearedFilesCount, freedBytes };
   }

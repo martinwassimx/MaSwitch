@@ -97,7 +97,7 @@ function resolveSizePx(size: PlatformLogoSize): number {
   }
 }
 
-export const PlatformLogo: React.FC<PlatformLogoProps> = ({
+export const PlatformLogo: React.FC<PlatformLogoProps> = React.memo(({
   platformId,
   size = 'md',
   colorMode = 'brand',
@@ -117,9 +117,10 @@ export const PlatformLogo: React.FC<PlatformLogoProps> = ({
         title={showTitle ? name : undefined}
         width={pixelSize}
         height={pixelSize}
-        className={`shrink-0 object-contain select-none drop-shadow-sm ${className}`}
+        className={`shrink-0 object-contain select-none ${className}`}
         style={{ width: `${pixelSize}px`, height: `${pixelSize}px` }}
         loading="lazy"
+        decoding="async"
       />
     );
   }
@@ -156,4 +157,4 @@ export const PlatformLogo: React.FC<PlatformLogoProps> = ({
     default:
       return <CustomPcLogo {...commonProps} />;
   }
-};
+});

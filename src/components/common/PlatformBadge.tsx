@@ -12,7 +12,7 @@ interface PlatformBadgeProps {
   className?: string;
 }
 
-export const PlatformBadge: React.FC<PlatformBadgeProps> = ({
+export const PlatformBadge: React.FC<PlatformBadgeProps> = React.memo(({
   platformId,
   size = 'sm',
   variant = 'pill',
@@ -59,7 +59,7 @@ export const PlatformBadge: React.FC<PlatformBadgeProps> = ({
 
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-md font-medium bg-black/75 backdrop-blur-md text-white/95 border border-white/15 shadow-md ${paddingClass} ${className}`}
+      className={`inline-flex items-center gap-1.5 rounded-md font-medium bg-[#0d0f14]/90 text-white/95 border border-white/15 ${paddingClass} ${className}`}
     >
       <PlatformLogo
         platformId={platformId}
@@ -70,4 +70,4 @@ export const PlatformBadge: React.FC<PlatformBadgeProps> = ({
       <span className="tracking-tight text-xs">{name}</span>
     </span>
   );
-};
+});

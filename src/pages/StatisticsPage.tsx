@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Pause, Play, BarChart2, TrendingUp, Clock, Zap, Sparkles } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { DemoNoticeBanner } from '../components/common/DemoNoticeBanner';
@@ -21,30 +21,37 @@ export const StatisticsPage: React.FC = () => {
     : true;
   const [chartView, setChartView] = useState<'weekly' | 'monthly'>('weekly');
 
-  const mostPlayedGames = [...games]
-    .sort((a, b) => b.playtimeHours - a.playtimeHours)
-    .slice(0, 5);
-
-  const recentlyPlayedGames = [...games]
-    .filter((g) => g.lastPlayedIso !== null)
-    .sort((a, b) => {
-      const tA = a.lastPlayedIso ? Date.parse(a.lastPlayedIso) : 0;
-      const tB = b.lastPlayedIso ? Date.parse(b.lastPlayedIso) : 0;
-      return tB - tA;
-    })
-    .slice(0, 5);
-
-  const maxWeeklyHours = Math.max(
-    ...statistics.weeklyActivity.map((d) => d.hoursPlayed),
-    1
+  const mostPlayedGames = useMemo(
+    () =>
+      [...games]
+        .sort((a, b) => b.playtimeHours - a.playtimeHours)
+        .slice(0, 5),
+    [games]
   );
-  const maxMonthlyHours = Math.max(
-    ...statistics.monthlyActivity.map((m) => m.hoursPlayed),
-    1
+
+  const recentlyPlayedGames = useMemo(() => {
+    const withTs: Array<{ game: (typeof games)[number]; ts: number }> = [];
+    for (const g of games) {
+      if (g.lastPlayedIso !== null) {
+        const ts = Date.parse(g.lastPlayedIso);
+        withTs.push({ game: g, ts: Number.isNaN(ts) ? 0 : ts });
+      }
+    }
+    withTs.sort((a, b) => b.ts - a.ts);
+    return withTs.slice(0, 5).map((item) => item.game);
+  }, [games]);
+
+  const maxWeeklyHours = useMemo(
+    () => Math.max(...statistics.weeklyActivity.map((d) => d.hoursPlayed), 1),
+    [statistics.weeklyActivity]
   );
-  const maxMostPlayedHours = Math.max(
-    ...mostPlayedGames.map((g) => g.playtimeHours),
-    1
+  const maxMonthlyHours = useMemo(
+    () => Math.max(...statistics.monthlyActivity.map((m) => m.hoursPlayed), 1),
+    [statistics.monthlyActivity]
+  );
+  const maxMostPlayedHours = useMemo(
+    () => Math.max(...mostPlayedGames.map((g) => g.playtimeHours), 1),
+    [mostPlayedGames]
   );
 
   const isDemoStats = Boolean(
@@ -426,12 +433,16 @@ export const StatisticsPage: React.FC = () => {
                         <img
                           src={game.iconImage}
                           alt=""
+                          loading="lazy"
+                          decoding="async"
                           className="w-8 h-8 rounded object-contain shrink-0"
                         />
                       ) : (
                         <img
                           src={game.coverImage}
                           alt=""
+                          loading="lazy"
+                          decoding="async"
                           className="w-8 h-10 rounded object-cover shrink-0 bg-ms-bg border border-ms-border"
                         />
                       )}
@@ -489,12 +500,16 @@ export const StatisticsPage: React.FC = () => {
                     <img
                       src={game.iconImage}
                       alt=""
+                      loading="lazy"
+                      decoding="async"
                       className="w-8 h-8 rounded object-contain shrink-0"
                     />
                   ) : (
                     <img
                       src={game.coverImage}
                       alt=""
+                      loading="lazy"
+                      decoding="async"
                       className="w-8 h-10 rounded object-cover shrink-0 bg-ms-bg border border-ms-border"
                     />
                   )}

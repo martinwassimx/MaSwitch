@@ -17,12 +17,16 @@ describe('Electron Security & Settings Validation', () => {
       accentColor: 'neon-cyan',
       sidebarCollapsed: true,
       favoriteGameIds: ['cyber-odyssey-2099', '<script>alert(1)</script>', ''],
+      updateChannel: 'untrusted-channel',
+      autoCheckForUpdates: 'not-a-boolean',
     });
 
     expect(result.theme).toBe(DEFAULT_SETTINGS.theme);
     expect(result.accentColor).toBe('neon-cyan');
     expect(result.sidebarCollapsed).toBe(true);
     expect(result.favoriteGameIds).toEqual(['cyber-odyssey-2099']);
+    expect(result.updateChannel).toBe('stable');
+    expect(result.autoCheckForUpdates).toBe(true);
   });
 
   it('validates trusted renderer sender URLs strictly', () => {

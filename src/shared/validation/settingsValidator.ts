@@ -288,6 +288,22 @@ export function sanitizeSettings(
       typeof raw.preparePcBeforeLaunch === 'boolean'
         ? raw.preparePcBeforeLaunch
         : fallback.preparePcBeforeLaunch ?? false,
+    autoCheckForUpdates:
+      typeof raw.autoCheckForUpdates === 'boolean'
+        ? raw.autoCheckForUpdates
+        : fallback.autoCheckForUpdates ?? true,
+    updateChannel:
+      raw.updateChannel === 'beta' || raw.updateChannel === 'stable'
+        ? raw.updateChannel
+        : fallback.updateChannel ?? 'stable',
+    lastUpdateCheckIso:
+      typeof raw.lastUpdateCheckIso === 'string'
+        ? raw.lastUpdateCheckIso
+        : fallback.lastUpdateCheckIso ?? null,
+    remindLaterVersion:
+      typeof raw.remindLaterVersion === 'string'
+        ? raw.remindLaterVersion
+        : fallback.remindLaterVersion ?? null,
   };
 }
 

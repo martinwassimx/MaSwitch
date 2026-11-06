@@ -8,7 +8,7 @@ interface BrandLogoProps {
   showSubtitle?: boolean;
 }
 
-export const BrandMarkImg: React.FC<{ size?: number; className?: string }> = ({
+export const BrandMarkImg: React.FC<{ size?: number; className?: string }> = React.memo(({
   size = 28,
   className = '',
 }) => (
@@ -17,14 +17,15 @@ export const BrandMarkImg: React.FC<{ size?: number; className?: string }> = ({
     alt="MaSwitch"
     width={size}
     height={size}
-    className={`shrink-0 object-contain select-none drop-shadow-sm ${className}`}
+    decoding="async"
+    className={`shrink-0 object-contain select-none ${className}`}
     style={{ width: `${size}px`, height: `${size}px` }}
   />
-);
+));
 
 export const BrandMarkSvg = BrandMarkImg;
 
-export const BrandLogo: React.FC<BrandLogoProps> = ({
+export const BrandLogo: React.FC<BrandLogoProps> = React.memo(({
   compact = false,
   size = 'md',
   className = '',
@@ -58,7 +59,7 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({
 
       {!compact && (
         <div className="flex flex-col leading-none">
-          <span className={`${textClass} tracking-tight font-black bg-gradient-to-r from-white via-slate-100 to-slate-200 bg-clip-text text-transparent drop-shadow-sm`}>
+          <span className={`${textClass} tracking-tight font-black bg-gradient-to-r from-white via-slate-100 to-slate-200 bg-clip-text text-transparent`}>
             MaSwitch
           </span>
           {showSubtitle && (
@@ -70,4 +71,4 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({
       )}
     </div>
   );
-};
+});

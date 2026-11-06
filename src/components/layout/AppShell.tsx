@@ -4,6 +4,8 @@ import { AlertTriangle, Sparkles } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
 import { TitleBar } from './TitleBar';
 import { Sidebar } from './Sidebar';
+import { UpdateBanner } from '../updater/UpdateBanner';
+import { UpdateAvailableDialog } from '../updater/UpdateAvailableDialog';
 import { HomePage } from '../../pages/HomePage';
 import { LibraryPage as EagerLibraryPage } from '../../pages/LibraryPage';
 import { GameDetailsPage as EagerGameDetailsPage } from '../../pages/GameDetailsPage';
@@ -78,10 +80,14 @@ export const AppShell: React.FC = () => {
   const setInGameMode = useAppStore((s) => s.setInGameMode);
   const setWindowVisible = useAppStore((s) => s.setWindowVisible);
   const beforeGamePrompt = useAppStore((s) => s.beforeGamePrompt);
+  const beforeGamePromptTitle = useAppStore((s) =>
+    s.beforeGamePrompt
+      ? s.games.find((g) => g.id === s.beforeGamePrompt?.gameId)?.title || 'Game'
+      : 'Game'
+  );
   const setBeforeGamePrompt = useAppStore((s) => s.setBeforeGamePrompt);
   const performMemoryCleanup = useAppStore((s) => s.performMemoryCleanup);
   const launchGame = useAppStore((s) => s.launchGame);
-  const games = useAppStore((s) => s.games);
 
   useEffect(() => {
     void initializeApp();
@@ -104,25 +110,6 @@ export const AppShell: React.FC = () => {
               progress.phase === 'failed'
                 ? progress.message
                 : state.scanError,
-          }));
-        })
-      );
-    }
-
-    if (window.maswitch?.launcher?.onStatusChanged) {
-      cleanups.push(
-        window.maswitch.launcher.onStatusChanged((result) => {
-          useAppStore.setState((s) => ({
-            launchStatuses: {
-              ...s.launchStatuses,
-              [result.gameId]: result.status,
-            },
-            launchMessages: {
-              ...s.launchMessages,
-              ...(result.message
-                ? { [result.gameId]: result.message }
-                : {}),
-            },
           }));
         })
       );
@@ -152,9 +139,20 @@ export const AppShell: React.FC = () => {
     if (window.maswitch?.tracker?.onSessionUpdated) {
       cleanups.push(
         window.maswitch.tracker.onSessionUpdated(() => {
-          // In game mode, avoid re-aggregating whole library stats on each session tick
-          if (!useAppStore.getState().inGameMode) {
-            void refreshLibraryAndStats();
+          const state = useAppStore.getState();
+          if (
+            !state.inGameMode &&
+            state.isWindowVisible &&
+            window.maswitch?.tracker?.getStatus
+          ) {
+            void window.maswitch.tracker
+              .getStatus()
+              .then((trackerStatus) => {
+                useAppStore.setState({ trackerStatus });
+              })
+              .catch(() => {
+                // Ignore transient status fetch failure
+              });
           }
         })
       );
@@ -355,6 +353,7 @@ export const AppShell: React.FC = () => {
       className="h-screen w-screen overflow-hidden bg-ms-bg text-ms-text flex flex-col font-sans text-[13px]"
     >
       <TitleBar />
+      <UpdateBanner />
 
       <div className="flex-1 flex min-h-0 overflow-hidden">
         <Sidebar />
@@ -402,7 +401,7 @@ export const AppShell: React.FC = () => {
               <div className="text-ms-text font-semibold">
                 Game:{' '}
                 <span className="text-violet-300 font-bold">
-                  {games.find((g) => g.id === beforeGamePrompt.gameId)?.title || 'Game'}
+                  {beforeGamePromptTitle}
                 </span>
               </div>
               <div className="text-ms-muted">
@@ -461,6 +460,9 @@ export const AppShell: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Application Update Modal */}
+      <UpdateAvailableDialog />
     </div>
   );
 };
