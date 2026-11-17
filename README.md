@@ -8,11 +8,11 @@
   **Official website: [maswitch.martinx.work](https://maswitch.martinx.work/)**
 
   [![Website](https://img.shields.io/badge/Website-maswitch.martinx.work-a855f7?style=for-the-badge)](https://maswitch.martinx.work/)
-  [![Release](https://img.shields.io/badge/Release-v1.1.0-8b5cf6?style=for-the-badge)](https://github.com/martinwassimx/MaSwitch/releases/tag/v1.1.0)
-  [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011%20(x64)-0ea5e9?style=for-the-badge)](https://github.com/martinwassimx/MaSwitch/releases/tag/v1.1.0)
+  [![Release](https://img.shields.io/badge/Release-v1.2.0-8b5cf6?style=for-the-badge)](https://github.com/martinwassimx/MaSwitch/releases/tag/v1.2.0)
+  [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011%20(x64)-0ea5e9?style=for-the-badge)](https://github.com/martinwassimx/MaSwitch/releases/tag/v1.2.0)
   [![License](https://img.shields.io/badge/License-MIT-10b981?style=for-the-badge)](LICENSE)
 
-  [**Download Latest Windows Installer (`MaSwitch-Setup-1.1.0.exe`)**](https://github.com/martinwassimx/MaSwitch/releases/tag/v1.1.0) · [Website](https://maswitch.martinx.work/) · [FAQ](https://maswitch.martinx.work/faq) · [Report Issue](https://github.com/martinwassimx/MaSwitch/issues) · [Security Policy](SECURITY.md) · [Changelog](CHANGELOG.md)
+  [**Download Latest Windows Installer (`MaSwitch-Setup-1.2.0.exe`)**](https://github.com/martinwassimx/MaSwitch/releases/tag/v1.2.0) · [Website](https://maswitch.martinx.work/) · [FAQ](https://maswitch.martinx.work/faq) · [Report Issue](https://github.com/martinwassimx/MaSwitch/issues) · [Security Policy](SECURITY.md) · [Changelog](CHANGELOG.md)
 </div>
 
 ---
@@ -25,8 +25,9 @@
 
 ## Key Features
 
-### 1. Riot Games Account Management & Automatic Login
-- **Multi-Account Identity Cards**: Organize multiple Riot Games accounts (`League of Legends`, `VALORANT`, `Teamfight Tactics`) with display names, Riot IDs, regions (`EUW`, `NA`, `EUNE`, `KR`, etc.), and preferred-account stars.
+### 1. Riot Games Account Management, PIN Lock & 1-Click Auto-Login
+- **Password-First Main Screen**: Opens directly to **Passwords & Accounts** with a streamlined interface, 1-click Login, and a single unified Add/Edit Account & Password dialog.
+- **Startup PIN Code Lock**: Protects saved passwords behind a 4–6 digit PIN code verified in the Electron main process (`scrypt` + Windows DPAPI + brute-force cooldown), locking automatically each time MaSwitch starts.
 - **Windows DPAPI Encrypted Vault**: Credentials are encrypted locally on your machine using the native Windows Data Protection API (`CryptProtectData` / Electron `safeStorage`) bound to your Windows user login.
 - **Official Riot Client UI Automation**: Launches or focuses the official Riot Client, automatically waits for the login window to initialize, fills your credentials without using the Windows clipboard, optionally presses the Sign In button, and hands off cleanly for 2FA/MFA or CAPTCHA verification.
 
@@ -92,15 +93,15 @@ Account management is currently active exclusively for **Riot Games**. Multi-acc
 
 ## Installation
 
-1. Go to the [**MaSwitch download page**](https://maswitch.martinx.work/download) or the [**Latest GitHub Release (`v1.1.0`)**](https://github.com/martinwassimx/MaSwitch/releases/tag/v1.1.0).
-2. Download **`MaSwitch-Setup-1.1.0.exe`** (and optionally `SHA256SUMS.txt` to verify file integrity).
-3. Run **`MaSwitch-Setup-1.1.0.exe`**.
+1. Go to the [**MaSwitch download page**](https://maswitch.martinx.work/download) or the [**Latest GitHub Release (`v1.2.0`)**](https://github.com/martinwassimx/MaSwitch/releases/tag/v1.2.0).
+2. Download **`MaSwitch-Setup-1.2.0.exe`** (or **`MaSwitch-Portable-1.2.0.exe`**, and optionally `SHA256SUMS.txt` to verify file integrity).
+3. Run **`MaSwitch-Setup-1.2.0.exe`**.
 4. Choose your preferred setup preset (**Minimal**, **Recommended**, **Complete**, or **Custom**).
 5. Complete installation and launch **MaSwitch** from your Desktop or Start Menu.
 
 > **Note on Windows SmartScreen**: Because this open-source release is built without a commercial EV/OV Authenticode certificate, Windows Defender SmartScreen may display an *"Unknown Publisher"* prompt on first download. You can verify the installer's SHA-256 hash against `SHA256SUMS.txt` before running:
 > ```powershell
-> Get-FileHash -Algorithm SHA256 .\MaSwitch-Setup-1.1.0.exe
+> Get-FileHash -Algorithm SHA256 .\MaSwitch-Setup-1.2.0.exe
 > ```
 
 ---

@@ -155,10 +155,8 @@ describe('Riot Games Production Account Switching Workflow', () => {
 
     const panel = screen.getByTestId('security-overview-panel');
     expect(panel).toBeInTheDocument();
-    expect(panel).toHaveTextContent('Security Overview');
-    expect(panel).toHaveTextContent('Windows DPAPI Active');
-    expect(panel).toHaveTextContent('Configured Credentials:');
-    expect(panel).toHaveTextContent('Requiring Setup:');
+    expect(panel).toHaveTextContent('Windows DPAPI');
+    expect(panel).toHaveTextContent('Saved Passwords:');
     expect(screen.getByTestId('riot-section-open-launcher-btn')).toBeInTheDocument();
   });
 

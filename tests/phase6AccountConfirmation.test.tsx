@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -77,46 +77,23 @@ describe('Accounts page non-Riot preservation & backend service integrity', () =
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
-  it('defaults to Riot Games and displays active Riot account cards with Login, Set Up Credentials, Edit Account, and overflow menu Delete', () => {
+  it('displays active Riot account cards with direct Login, Password, Edit, Preferred, and Delete controls', () => {
     render(<AccountsPage />);
     expect(screen.getByTestId(`account-card-${riotId}`)).toBeInTheDocument();
-    expect(screen.getByTestId(`status-badge-preferred-${riotId}`)).toHaveTextContent(
-      'Preferred'
-    );
+    expect(screen.getByTestId(`preferred-toggle-${riotId}`)).toBeInTheDocument();
     expect(screen.getByTestId(`riot-login-btn-${riotId}`)).toBeInTheDocument();
     expect(screen.getByTestId(`setup-credentials-btn-${riotId}`)).toBeInTheDocument();
     expect(screen.getByTestId(`edit-profile-${riotId}`)).toBeInTheDocument();
-
-    // Open overflow menu to access Delete and Make Preferred
-    fireEvent.click(screen.getByTestId(`more-menu-btn-${riotId}`));
     expect(screen.getByTestId(`delete-profile-${riotId}`)).toBeInTheDocument();
   });
 
-  it('marks non-Riot platforms as Coming Soon in the UI while preserving existing SQLite records safely', () => {
+  it('keeps non-Riot accounts out of the simplified Riot password UI while preserving existing SQLite records safely', () => {
     render(<AccountsPage />);
 
-    // Select Epic Games tab
-    fireEvent.click(screen.getByTestId('accounts-filter-epic'));
-    expect(screen.getByTestId('platform-coming-soon-state')).toBeInTheDocument();
-    expect(screen.getByTestId('coming-soon-platform-title')).toHaveTextContent(
-      'Epic Games Account Management'
-    );
-    expect(screen.getByTestId('coming-soon-platform-description')).toHaveTextContent(
-      'Multi-account management for Epic Games is planned for a future MaSwitch update.'
-    );
-    expect(
-      screen.getByText(/1 saved Epic Games profile\(s\) are safely preserved/i)
-    ).toBeInTheDocument();
-
-    // Verify no misleading functional controls are displayed for Epic Games
+    // Verify no misleading functional controls are displayed for Epic Games or Steam
+    expect(screen.queryByTestId(`account-card-${epicId}`)).toBeNull();
+    expect(screen.queryByTestId(`account-card-${steamId}`)).toBeNull();
     expect(screen.queryByTestId(`switch-btn-${epicId}`)).toBeNull();
-    expect(screen.queryByTestId('add-account-profile-btn')).toBeNull();
-
-    // Select Steam tab
-    fireEvent.click(screen.getByTestId('accounts-filter-steam'));
-    expect(screen.getByTestId('coming-soon-platform-title')).toHaveTextContent(
-      'Steam Account Management'
-    );
     expect(screen.queryByTestId(`switch-btn-${steamId}`)).toBeNull();
 
     // Confirm SQLite database records for Epic and Steam are untouched

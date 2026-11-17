@@ -2,7 +2,6 @@ import type { LibraryViewMode } from './game';
 import type { UpdateChannel } from './updater';
 
 export type NavigationSection =
-  | 'home'
   | 'library'
   | 'accounts'
   | 'platforms'
@@ -79,6 +78,7 @@ export interface MaSwitchSettings {
   updateChannel: UpdateChannel;
   lastUpdateCheckIso: string | null;
   remindLaterVersion: string | null;
+  accountsMainMigrationVersion?: number;
 }
 
 export const DEFAULT_EXCLUDED_APPLICATIONS: ExcludedApplicationRule[] = [
@@ -121,7 +121,7 @@ export const DEFAULT_SETTINGS: MaSwitchSettings = {
   showSidebarCounts: true,
   compactGameCards: false,
   defaultLibraryView: 'grid',
-  defaultLandingPage: 'home',
+  defaultLandingPage: 'accounts',
   launchOnWindowsStartupPreference: false,
   startMinimizedToTrayPreference: false,
   showDemoNotices: true,
@@ -156,6 +156,7 @@ export const DEFAULT_SETTINGS: MaSwitchSettings = {
   updateChannel: 'stable',
   lastUpdateCheckIso: null,
   remindLaterVersion: null,
+  accountsMainMigrationVersion: 1,
 };
 
 export interface WindowsStartupState {

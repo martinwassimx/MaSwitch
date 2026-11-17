@@ -64,64 +64,8 @@ const mockProfiles: AccountProfile[] = [
   },
 ];
 
-const mockLauncherStatuses: Partial<Record<PlatformId, PlatformLauncherStatus>> = {
-  riot: {
-    platformId: 'riot',
-    isInstalled: true,
-    isRunning: true,
-    installPath: 'C:\\Riot Games\\Riot Client\\RiotClientServices.exe',
-    verifiedActiveAccountUsername: null,
-    lastCheckedAtIso: '2026-11-06T00:00:00.000Z',
-  },
-  steam: {
-    platformId: 'steam',
-    isInstalled: true,
-    isRunning: false,
-    installPath: 'C:\\Program Files (x86)\\Steam\\steam.exe',
-    verifiedActiveAccountUsername: null,
-    lastCheckedAtIso: '2026-11-06T00:00:00.000Z',
-  },
-  epic: {
-    platformId: 'epic',
-    isInstalled: true,
-    isRunning: false,
-    installPath:
-      'C:\\Program Files (x86)\\Epic Games\\Launcher\\Portal\\Binaries\\Win64\\EpicGamesLauncher.exe',
-    verifiedActiveAccountUsername: null,
-    lastCheckedAtIso: '2026-11-06T00:00:00.000Z',
-  },
-};
-
-const mockCapabilities: Partial<Record<PlatformId, PlatformCapabilities>> = {
-  riot: {
-    selectionCapability: 'manual-sign-in',
-    authenticationStatus: 'unknown',
-    platformId: 'riot',
-    platformName: 'Riot Games',
-    canOpenLauncher: true,
-    canDetectInstalled: true,
-    canDetectRunning: true,
-    canDetectActiveAccount: false,
-    supportedSwitchingMethod: 'manual-launcher-sign-in',
-    switchingMethodName: 'Desktop Login Automation',
-    switchingMethodDescription:
-      'Encrypted Windows DPAPI desktop UI Automation into official Riot Client.',
-    requiresManualSignIn: true,
-    securityNote: 'Zero file swapping or session injection.',
-  },
-};
-
-describe('MaSwitch 3.0 — Accounts Page Redesign & Riot-First Account Management', () => {
+describe('Streamlined Passwords & Accounts Main Screen', () => {
   beforeEach(() => {
-    const activeProfiles: Partial<Record<PlatformId, ActivePlatformProfile>> = {
-      riot: {
-        platformId: 'riot',
-        accountId: 'riot-euw-1',
-        confirmedAt: '2026-11-05T19:00:00.000Z',
-        verificationStatus: 'user-confirmed',
-      },
-    };
-
     useAppStore.setState({
       isHydrated: true,
       activeSection: 'accounts',
@@ -132,17 +76,9 @@ describe('MaSwitch 3.0 — Accounts Page Redesign & Riot-First Account Managemen
         riotAutoSubmitLogin: true,
       },
       accountProfiles: [...mockProfiles],
-      activePlatformProfiles: activeProfiles as Record<PlatformId, ActivePlatformProfile>,
-      launcherStatuses: mockLauncherStatuses as Record<PlatformId, PlatformLauncherStatus>,
-      platformCapabilities: mockCapabilities as Record<PlatformId, PlatformCapabilities>,
-      gameAccountAssociations: [
-        {
-          gameId: 'game-lol',
-          accountId: 'riot-euw-1',
-          platformId: 'riot',
-          assignedAt: '2026-11-05T00:00:00.000Z',
-        },
-      ],
+      activePlatformProfiles: {} as Record<PlatformId, ActivePlatformProfile>,
+      launcherStatuses: {} as Record<PlatformId, PlatformLauncherStatus>,
+      platformCapabilities: {} as Record<PlatformId, PlatformCapabilities>,
       riotCredentialStatuses: {
         'riot-euw-1': {
           hasSavedCredentials: true,
@@ -151,113 +87,66 @@ describe('MaSwitch 3.0 — Accounts Page Redesign & Riot-First Account Managemen
         },
         'riot-na-2': {
           hasSavedCredentials: false,
-          username: undefined,
-          updatedAtIso: undefined,
         },
       },
+      vaultPinStatus: {
+        isConfigured: true,
+        isUnlocked: true,
+        failedAttempts: 0,
+        lockedUntilIso: null,
+      },
+      isPinModalOpen: false,
+      loadRiotCredentialStatuses: vi.fn().mockResolvedValue(undefined),
+      loadVaultPinStatus: vi.fn().mockResolvedValue({
+        isConfigured: true,
+        isUnlocked: true,
+        failedAttempts: 0,
+        lockedUntilIso: null,
+      }),
       isRiotLoginAutomating: false,
       riotLoginAutomationProgress: null,
       riotCredentialError: null,
-      activeSwitchResult: null,
-      pendingSwitchAccountId: null,
-      switchError: null,
     });
   });
 
-  it('1. renders modern top header with Riot account count, active badge, Check Launchers, and Add Riot Account CTA', () => {
+  it('1. renders simplified Passwords & Accounts header with PIN lock controls, Open Riot Client, and Add Account', () => {
     render(<AccountsPage />);
 
-    expect(screen.getByText('Accounts')).toBeInTheDocument();
-    expect(screen.getByText('Manage and switch your gaming identities')).toBeInTheDocument();
+    expect(screen.getByText('Passwords & Accounts')).toBeInTheDocument();
     expect(screen.getByTestId('total-account-slots-count')).toHaveTextContent('2 accounts');
-    expect(screen.getByTestId('active-platform-badge')).toHaveTextContent('Riot Games Active');
-    expect(screen.getByTestId('refresh-launcher-status-btn')).toBeInTheDocument();
-    expect(screen.getByTestId('add-account-profile-btn')).toHaveTextContent('Add Riot Account');
+    expect(screen.getByTestId('vault-lock-badge')).toHaveTextContent('Unlocked');
+    expect(screen.getByTestId('pin-lock-header-btn')).toBeInTheDocument();
+    expect(screen.getByTestId('pin-change-header-btn')).toBeInTheDocument();
+    expect(screen.getByTestId('riot-section-open-launcher-btn')).toBeInTheDocument();
+    expect(screen.getByTestId('add-account-profile-btn')).toHaveTextContent('Add Account');
   });
 
-  it('2. defaults to Riot Games and displays Coming Soon states for Steam, Epic Games, EA App, Ubisoft, GOG, Rockstar, and Discord without functional buttons', () => {
-    render(<AccountsPage />);
-
-    // Riot Games is active by default and displays its 2 saved accounts
-    expect(screen.getByTestId('accounts-filter-riot')).toHaveTextContent('Riot Games');
-    expect(screen.getByTestId('accounts-filter-riot')).toHaveTextContent('2');
-    expect(screen.getByTestId('accounts-card-grid')).toBeInTheDocument();
-    expect(screen.getByTestId('account-card-riot-euw-1')).toBeInTheDocument();
-    expect(screen.getByTestId('account-card-riot-na-2')).toBeInTheDocument();
-
-    // Non-Riot tabs display "Soon" badges
-    const comingSoonPlatforms: Array<{ id: PlatformId; name: string }> = [
-      { id: 'steam', name: 'Steam' },
-      { id: 'epic', name: 'Epic Games' },
-      { id: 'ea', name: 'EA App' },
-      { id: 'ubisoft', name: 'Ubisoft Connect' },
-      { id: 'gog', name: 'GOG Galaxy' },
-      { id: 'rockstar', name: 'Rockstar Games' },
-      { id: 'discord', name: 'Discord' },
-    ];
-
-    for (const p of comingSoonPlatforms) {
-      expect(screen.getByTestId(`coming-soon-badge-${p.id}`)).toHaveTextContent('Soon');
-    }
-
-    // Selecting Steam shows the Coming Soon state and hides Add/Login/Switch controls
-    fireEvent.click(screen.getByTestId('accounts-filter-steam'));
-    expect(screen.getByTestId('platform-coming-soon-state')).toBeInTheDocument();
-    expect(screen.getByTestId('coming-soon-platform-title')).toHaveTextContent(
-      'Steam Account Management'
-    );
-    expect(screen.getByTestId('coming-soon-platform-description')).toHaveTextContent(
-      'Multi-account management for Steam is planned for a future MaSwitch update.'
-    );
-    expect(screen.queryByTestId('add-account-profile-btn')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('accounts-card-grid')).not.toBeInTheDocument();
-
-    // Selecting Epic Games shows the Coming Soon state for Epic Games
-    fireEvent.click(screen.getByTestId('accounts-filter-epic'));
-    expect(screen.getByTestId('coming-soon-platform-title')).toHaveTextContent(
-      'Epic Games Account Management'
-    );
-    expect(screen.getByTestId('coming-soon-platform-description')).toHaveTextContent(
-      'Multi-account management for Epic Games is planned for a future MaSwitch update.'
-    );
-
-    // Clicking "Return to Riot Games Accounts" restores the Riot Games view
-    fireEvent.click(screen.getByTestId('return-to-riot-btn'));
-    expect(screen.getByTestId('accounts-card-grid')).toBeInTheDocument();
-    expect(screen.getByTestId('add-account-profile-btn')).toBeInTheDocument();
-  });
-
-  it('3. supports fast client-side search, credential status filter, preferred filter, and sorting for Riot accounts', () => {
+  it('2. supports client-side search, password status filter, and preferred filter', () => {
     render(<AccountsPage />);
 
     expect(screen.getByTestId('account-card-riot-euw-1')).toBeInTheDocument();
     expect(screen.getByTestId('account-card-riot-na-2')).toBeInTheDocument();
 
-    // Search by region "EUW"
     const searchInput = screen.getByTestId('accounts-search-input');
     fireEvent.change(searchInput, { target: { value: 'EUW' } });
     expect(screen.getByTestId('account-card-riot-euw-1')).toBeInTheDocument();
     expect(screen.queryByTestId('account-card-riot-na-2')).not.toBeInTheDocument();
 
-    // Clear search
     fireEvent.click(screen.getByTestId('accounts-search-clear-btn'));
     expect(screen.getByTestId('account-card-riot-na-2')).toBeInTheDocument();
 
-    // Filter by "Credentials Missing"
     fireEvent.change(screen.getByTestId('accounts-credential-filter'), {
       target: { value: 'missing' },
     });
     expect(screen.getByTestId('account-card-riot-na-2')).toBeInTheDocument();
     expect(screen.queryByTestId('account-card-riot-euw-1')).not.toBeInTheDocument();
 
-    // Filter by "Credentials Saved"
     fireEvent.change(screen.getByTestId('accounts-credential-filter'), {
       target: { value: 'configured' },
     });
     expect(screen.getByTestId('account-card-riot-euw-1')).toBeInTheDocument();
     expect(screen.queryByTestId('account-card-riot-na-2')).not.toBeInTheDocument();
 
-    // Reset credential filter and toggle Preferred filter
     fireEvent.change(screen.getByTestId('accounts-credential-filter'), {
       target: { value: 'all' },
     });
@@ -266,45 +155,36 @@ describe('MaSwitch 3.0 — Accounts Page Redesign & Riot-First Account Managemen
     expect(screen.queryByTestId('account-card-riot-na-2')).not.toBeInTheDocument();
   });
 
-  it('4. renders Riot account cards with region badge, DPAPI credential status, Set Up Credentials action, and Login modal without exposing passwords', async () => {
+  it('3. triggers 1-click desktop login immediately when clicking Login on an unlocked account with saved password', async () => {
+    const startRiotDesktopLoginSpy = vi.fn().mockResolvedValue({
+      success: true,
+      profileId: 'riot-euw-1',
+      message: 'Signed in.',
+    });
+    useAppStore.setState({ startRiotDesktopLogin: startRiotDesktopLoginSpy });
+
     render(<AccountsPage />);
 
-    // Region extraction
-    expect(screen.getByTestId('account-region-riot-euw-1')).toHaveTextContent('EUW');
-    expect(screen.getByTestId('account-region-riot-na-2')).toHaveTextContent('NA');
-
-    // Credential status badges
     expect(screen.getByTestId('status-badge-credentials-riot-euw-1')).toHaveTextContent(
-      'Credentials Saved'
+      'Password Saved'
     );
     expect(screen.getByTestId('status-badge-credentials-riot-na-2')).toHaveTextContent(
-      'Setup Required'
+      'No Password Set'
     );
 
-    // Secondary action row contains Set Up Credentials and Edit Account on every card
-    expect(screen.getByTestId('setup-credentials-btn-riot-euw-1')).toBeInTheDocument();
-    expect(screen.getByTestId('edit-profile-riot-euw-1')).toHaveTextContent('Edit Account');
-    const setupBtn = screen.getByTestId('setup-credentials-btn-riot-na-2');
-    expect(setupBtn).toBeInTheDocument();
-
-    // Clicking "Set Up Credentials" opens the DPAPI credentials modal
-    fireEvent.click(setupBtn);
-    expect(screen.getByTestId('riot-credentials-modal')).toBeInTheDocument();
-
-    // Clicking "Login" on a configured Riot account opens the Desktop Login Automation modal
     fireEvent.click(screen.getByTestId('riot-login-btn-riot-euw-1'));
     await waitFor(() => {
-      expect(screen.getByTestId('riot-desktop-login-modal')).toBeInTheDocument();
+      expect(startRiotDesktopLoginSpy).toHaveBeenCalledWith('riot-euw-1', true, true);
     });
   });
 
-  it('5. supports creating a Riot account with inline DPAPI credentials while non-Riot platform buttons in modal are disabled as Coming Soon', async () => {
+  it('4. creates a Riot account and saves its encrypted password in a single unified form', async () => {
     const createAccountProfileSpy = vi.fn().mockResolvedValue({
       id: 'riot-kr-new',
       platformId: 'riot',
-      displayName: 'LOL KR — FakerFan',
-      username: 'FakerFan#KR1',
-      nickname: 'League of Legends — KR',
+      displayName: 'My KR Account',
+      username: 'faker_kr_login',
+      nickname: 'My KR Account',
       avatarUrl: null,
       isPreferred: true,
       isLastSelected: false,
@@ -313,39 +193,35 @@ describe('MaSwitch 3.0 — Accounts Page Redesign & Riot-First Account Managemen
       createdAt: '2026-11-06T00:00:00.000Z',
       updatedAt: '2026-11-06T00:00:00.000Z',
     } satisfies AccountProfile);
-    const saveRiotCredentialsSpy = vi.fn().mockResolvedValue(true);
+    const saveRiotCredentialsSpy = vi.fn().mockResolvedValue({
+      success: true,
+      updatedAtIso: '2026-11-06T00:00:00.000Z',
+    });
+    const setRiotRegionsSpy = vi.fn().mockResolvedValue(undefined);
 
     useAppStore.setState({
       createAccountProfile: createAccountProfileSpy,
       saveRiotCredentials: saveRiotCredentialsSpy,
+      setRiotRegions: setRiotRegionsSpy,
     });
 
     render(<AccountsPage />);
 
-    // Open Add Riot Account modal
     fireEvent.click(screen.getByTestId('add-account-profile-btn'));
     expect(screen.getByTestId('account-profile-form-modal')).toBeInTheDocument();
 
-    // Verify non-Riot platform tiles in the modal are disabled ("Soon")
-    expect(screen.getByTestId('form-platform-steam')).toBeDisabled();
-    expect(screen.getByTestId('form-platform-epic')).toBeDisabled();
-    expect(screen.getByTestId('form-platform-riot')).not.toBeDisabled();
-
-    // Fill out new Riot account + inline DPAPI credentials
-    fireEvent.change(screen.getByTestId('input-nickname'), {
-      target: { value: 'My KR Account' },
-    });
     fireEvent.change(screen.getByTestId('input-username'), {
-      target: { value: 'faker_login' },
-    });
-    fireEvent.change(screen.getByTestId('input-lol-region'), {
-      target: { value: 'KR' },
-    });
-    fireEvent.change(screen.getByTestId('form-riot-login-username'), {
       target: { value: 'faker_kr_login' },
     });
     fireEvent.change(screen.getByTestId('form-riot-login-password'), {
       target: { value: 'SuperSecretPassword123!' },
+    });
+    fireEvent.change(screen.getByTestId('input-nickname'), {
+      target: { value: 'My KR Account' },
+    });
+    fireEvent.click(screen.getByTestId('toggle-more-account-options'));
+    fireEvent.change(screen.getByTestId('input-lol-region'), {
+      target: { value: 'KR' },
     });
     fireEvent.click(screen.getByTestId('checkbox-is-preferred'));
 
@@ -368,20 +244,33 @@ describe('MaSwitch 3.0 — Accounts Page Redesign & Riot-First Account Managemen
     });
   });
 
-  it('6. renders compact Security Overview panel and More actions dropdown menu', () => {
+  it('5. prompts PIN unlock before allowing Login or Add Account when vault is PIN-locked', async () => {
+    const openPinModalSpy = vi.fn();
+    const startRiotDesktopLoginSpy = vi.fn();
+
+    useAppStore.setState({
+      vaultPinStatus: {
+        isConfigured: true,
+        isUnlocked: false,
+        failedAttempts: 0,
+        lockedUntilIso: null,
+      },
+      openPinModal: openPinModalSpy,
+      startRiotDesktopLogin: startRiotDesktopLoginSpy,
+    });
+
     render(<AccountsPage />);
 
-    // Compact Security Overview Panel (single unified security section)
-    const securityPanel = screen.getByTestId('security-overview-panel');
-    expect(securityPanel).toBeInTheDocument();
-    expect(screen.getByText('Windows DPAPI Active')).toBeInTheDocument();
-    expect(screen.getByTestId('security-configured-count')).toHaveTextContent('1');
-    expect(screen.getByTestId('security-missing-count')).toHaveTextContent('1');
+    expect(screen.getByTestId('vault-locked-banner')).toBeInTheDocument();
+    expect(screen.getByTestId('status-badge-credentials-riot-euw-1')).toHaveTextContent(
+      'Password Saved (Locked)'
+    );
+    expect(screen.getByTestId('riot-login-btn-riot-euw-1')).toHaveTextContent(
+      'Unlock & Login'
+    );
 
-    // Open More menu on a card (contains Make Preferred and Delete Account)
-    fireEvent.click(screen.getByTestId('more-menu-btn-riot-euw-1'));
-    expect(screen.getByTestId('more-menu-dropdown-riot-euw-1')).toBeInTheDocument();
-    expect(screen.getByTestId('preferred-toggle-riot-euw-1')).toBeInTheDocument();
-    expect(screen.getByTestId('delete-profile-riot-euw-1')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('riot-login-btn-riot-euw-1'));
+    expect(startRiotDesktopLoginSpy).not.toHaveBeenCalled();
+    expect(openPinModalSpy).toHaveBeenCalledWith('unlock', expect.any(Function));
   });
 });

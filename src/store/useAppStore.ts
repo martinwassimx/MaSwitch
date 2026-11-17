@@ -98,6 +98,10 @@ import type {
   UpdateCheckResult,
   UpdaterState,
 } from '../shared/types/updater';
+import type {
+  VaultPinOperationResult,
+  VaultPinStatus,
+} from '../shared/types/vaultPin';
 
 export interface AppStoreState {
   isHydrated: boolean;
@@ -171,6 +175,12 @@ export interface AppStoreState {
   riotLoginAutomationProgress: RiotDesktopLoginProgressPayload | null;
   isRiotLoginAutomating: boolean;
   riotLoginAutomationResult: RiotDesktopLoginResultPayload | null;
+
+  // Vault PIN Lock Protection
+  vaultPinStatus: VaultPinStatus;
+  isPinModalOpen: boolean;
+  pinModalMode: 'setup' | 'unlock' | 'change';
+  pendingPinCallback: (() => void) | null;
 
   // Persisted settings & runtime info
   settings: MaSwitchSettings;
@@ -275,6 +285,15 @@ export interface AppStoreState {
   setRiotRegions: (profileId: string, regions: { lolRegion: string | null; valorantRegion: string | null }) => Promise<void>;
   cancelRiotDesktopLogin: () => Promise<void>;
   clearRiotLoginAutomationProgress: () => void;
+
+  // Vault PIN Actions
+  loadVaultPinStatus: () => Promise<VaultPinStatus>;
+  openPinModal: (mode: 'setup' | 'unlock' | 'change', onSuccess?: () => void) => void;
+  closePinModal: () => void;
+  setupVaultPin: (pin: string) => Promise<VaultPinOperationResult>;
+  unlockVaultPin: (pin: string) => Promise<VaultPinOperationResult>;
+  lockVaultPin: () => Promise<VaultPinStatus>;
+  changeVaultPin: (currentPin: string, newPin: string) => Promise<VaultPinOperationResult>;
 
   // Feature 1: Year in Review
   availableYears: number[];
@@ -390,7 +409,7 @@ const emptyRealStats: StatisticsOverview = {
 export const useAppStore = create<AppStoreState>((set, get) => ({
   isHydrated: false,
   activeSection: initialSettings.defaultLandingPage,
-  previousSection: 'home',
+  previousSection: 'accounts',
   selectedGameId: null,
   inspectedLibraryGameId: initialDemoGames[0]?.id ?? 'cyber-odyssey-2099',
 
@@ -469,6 +488,16 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
   isRiotLoginAutomating: false,
   riotLoginAutomationResult: null,
 
+  vaultPinStatus: {
+    isConfigured: true,
+    isUnlocked: true,
+    failedAttempts: 0,
+    lockedUntilIso: null,
+  },
+  isPinModalOpen: false,
+  pinModalMode: 'unlock',
+  pendingPinCallback: null,
+
   settings: initialSettings,
   runtimeInfo: null,
 
@@ -521,7 +550,7 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
   updaterState: {
     status: 'idle',
     channel: initialSettings.updateChannel ?? 'stable',
-    currentVersion: '1.1.0',
+    currentVersion: '1.2.0',
     latestCheckResult: null,
     downloadProgress: null,
     downloadedFilePath: null,
@@ -562,6 +591,10 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
       platformCapabilities,
       launcherStatuses,
       gameAccountAssociations,
+      activePlatformProfiles,
+      riotCredentialStatuses,
+      enrolledRiotProfileIds,
+      vaultPinStatus,
     ] = await Promise.all([
       localDatabaseService.loadSettings(),
       localDatabaseService.getRuntimeInfo(),
@@ -577,6 +610,10 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
       localDatabaseService.getPlatformCapabilities(),
       localDatabaseService.getPlatformLauncherStatuses(),
       localDatabaseService.getGameAccountAssociations(),
+      localDatabaseService.getActivePlatformProfiles(),
+      localDatabaseService.riotGetAllCredentialStatuses(),
+      localDatabaseService.riotGetEnrolledProfiles(),
+      localDatabaseService.pinGetStatus(),
     ]);
 
     if (get().isHydrated) {
@@ -595,6 +632,10 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
     const activeAssociations = loadedSettings.demoModeEnabled
       ? DEMO_GAME_ACCOUNT_ASSOCIATIONS
       : gameAccountAssociations;
+
+    const shouldPromptPinOnOpen =
+      !loadedSettings.demoModeEnabled &&
+      (!vaultPinStatus.isConfigured || !vaultPinStatus.isUnlocked);
 
     set({
       settings: loadedSettings,
@@ -616,10 +657,21 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
       realAccountProfiles,
       platformCapabilities,
       launcherStatuses,
+      activePlatformProfiles,
       gameAccountAssociations: activeAssociations,
       accountProfiles: activeAccounts,
+      riotCredentialStatuses,
+      enrolledRiotProfileIds,
+      vaultPinStatus,
+      isPinModalOpen: shouldPromptPinOnOpen,
+      pinModalMode: vaultPinStatus.isConfigured ? 'unlock' : 'setup',
       featuresManifest: await localDatabaseService.getFeaturesManifest(),
       isHydrated: true,
+    });
+
+    localDatabaseService.onPinStatusChanged((status) => {
+      set({ vaultPinStatus: status });
+      void get().loadRiotCredentialStatuses();
     });
 
     localDatabaseService.onFeaturesUpdated((manifest) => {
@@ -1591,6 +1643,9 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
   clearRiotLiveSwitchError: () => set({ riotLiveSwitchError: null }),
 
   loadRiotCredentialStatuses: async () => {
+    if (!window.maswitch?.accounts?.riotGetAllCredentialStatuses) {
+      return;
+    }
     try {
       const statuses = await localDatabaseService.riotGetAllCredentialStatuses();
       set({ riotCredentialStatuses: statuses });
@@ -1676,6 +1731,18 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
         autoLaunchClient,
         shouldAutoSubmit
       );
+      if (result.error === 'PIN_LOCKED') {
+        set({
+          riotLoginAutomationResult: result,
+          isRiotLoginAutomating: false,
+          riotLoginAutomationProgress: null,
+        });
+        const pinStatus = await get().loadVaultPinStatus();
+        get().openPinModal(pinStatus.isConfigured ? 'unlock' : 'setup', () => {
+          void get().startRiotDesktopLogin(profileId, autoLaunchClient, shouldAutoSubmit);
+        });
+        return result;
+      }
       if (result.success) {
         try {
           await localDatabaseService.riotRefreshRegions(profileId);
@@ -1745,6 +1812,70 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
       riotLoginAutomationResult: null,
       isRiotLoginAutomating: false,
     }),
+
+  loadVaultPinStatus: async () => {
+    if (!window.maswitch?.accounts?.pinGetStatus) {
+      return get().vaultPinStatus;
+    }
+    const status = await localDatabaseService.pinGetStatus();
+    set({ vaultPinStatus: status });
+    return status;
+  },
+
+  openPinModal: (mode, onSuccess) => {
+    set({
+      isPinModalOpen: true,
+      pinModalMode: mode,
+      pendingPinCallback: onSuccess ?? null,
+    });
+  },
+
+  closePinModal: () => {
+    set({
+      isPinModalOpen: false,
+      pendingPinCallback: null,
+    });
+  },
+
+  setupVaultPin: async (pin) => {
+    const res = await localDatabaseService.pinSetup(pin);
+    set({ vaultPinStatus: res.status });
+    if (res.success) {
+      const cb = get().pendingPinCallback;
+      set({ isPinModalOpen: false, pendingPinCallback: null });
+      await get().loadRiotCredentialStatuses();
+      cb?.();
+    }
+    return res;
+  },
+
+  unlockVaultPin: async (pin) => {
+    const res = await localDatabaseService.pinUnlock(pin);
+    set({ vaultPinStatus: res.status });
+    if (res.success) {
+      const cb = get().pendingPinCallback;
+      set({ isPinModalOpen: false, pendingPinCallback: null });
+      await get().loadRiotCredentialStatuses();
+      cb?.();
+    }
+    return res;
+  },
+
+  lockVaultPin: async () => {
+    const status = await localDatabaseService.pinLock();
+    set({ vaultPinStatus: status });
+    await get().loadRiotCredentialStatuses();
+    return status;
+  },
+
+  changeVaultPin: async (currentPin, newPin) => {
+    const res = await localDatabaseService.pinChange(currentPin, newPin);
+    set({ vaultPinStatus: res.status });
+    if (res.success) {
+      set({ isPinModalOpen: false, pendingPinCallback: null });
+    }
+    return res;
+  },
 
   // Feature 1: Year in Review Actions
   loadYearInReview: async (year?: number) => {

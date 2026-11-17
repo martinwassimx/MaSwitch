@@ -6,13 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ---
 
-## [Unreleased]
+## [1.2.0] - 2026-11-17 — Password-First Interface, Startup PIN Code Lock & Hydration Fix
 
 ### Added
-- Settings → About links to the official website ([maswitch.martinx.work](https://maswitch.martinx.work/)), Help & FAQ, Privacy & Security, GitHub and issue reporting. Links open in the default browser.
+- **Startup PIN Code Protection (`VaultPinService`, `VaultPinModal`)**:
+  - Added a 4–6 digit PIN lock protecting saved passwords in the Electron main process using salted `scrypt` + Windows DPAPI (`vault-pin.enc.json`), constant-time verification (`crypto.timingSafeEqual`), and persisted brute-force cooldown after 5 wrong attempts.
+  - Prompts automatically when MaSwitch opens (first launch sets your PIN; subsequent launches prompt to unlock), with 1-click **Lock** and **Change PIN** controls in the Passwords header and Settings → Accounts & Security.
+  - Preserves 100% of existing saved `.cred.enc` passwords seamlessly.
+- Settings → About links to the official website ([maswitch.martinx.work](https://maswitch.martinx.work/)), Help & FAQ, Privacy & Security, GitHub and issue reporting.
 
 ### Changed
+- **Simplified Password-First Navigation & UI**:
+  - Removed the separate Home page so MaSwitch opens directly to **Passwords & Accounts** (`Passwords` first in a streamlined sidebar, followed by `Games` and secondary tools).
+  - Replaced multi-step login confirmation popups and disabled "Coming Soon" platform filter clutter with **true 1-click Login** and a single unified **Add / Edit Account & Password** form.
 - The Windows installer's support and information links (Settings → Apps) point to the official website.
+
+### Fixed
+- **Startup Credential Hydration**: Fixed an initialization bug in `initializeApp()` where `riotGetAllCredentialStatuses()` was not loaded on app launch, previously requiring users to save/update a password before existing saved passwords appeared ready.
+- Fixed packaged `app.asar` runtime bundling by replacing the external `semver` import with a zero-dependency SemVer 2.0.0 engine (`semverUtils.ts`).
 
 ---
 

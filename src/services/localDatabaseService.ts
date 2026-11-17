@@ -141,7 +141,7 @@ export class LocalDatabaseService {
     }
     return {
       appName: 'MaSwitch',
-      appVersion: '1.1.0',
+      appVersion: '1.2.0',
       phaseLabel: 'MaSwitch 3.0 — Windows Gaming Launcher & Account Manager',
       electronVersion: '44.x',
       chromeVersion: '152.x',
@@ -844,6 +844,67 @@ export class LocalDatabaseService {
     return () => {};
   }
 
+  public async pinGetStatus(): Promise<import('../shared/types/vaultPin').VaultPinStatus> {
+    if (window.maswitch?.accounts?.pinGetStatus) {
+      return window.maswitch.accounts.pinGetStatus();
+    }
+    return {
+      isConfigured: true,
+      isUnlocked: true,
+      failedAttempts: 0,
+      lockedUntilIso: null,
+    };
+  }
+
+  public async pinSetup(
+    pin: string
+  ): Promise<import('../shared/types/vaultPin').VaultPinOperationResult> {
+    if (window.maswitch?.accounts?.pinSetup) {
+      return window.maswitch.accounts.pinSetup(pin);
+    }
+    throw new Error('PIN setup requires the MaSwitch desktop application.');
+  }
+
+  public async pinUnlock(
+    pin: string
+  ): Promise<import('../shared/types/vaultPin').VaultPinOperationResult> {
+    if (window.maswitch?.accounts?.pinUnlock) {
+      return window.maswitch.accounts.pinUnlock(pin);
+    }
+    throw new Error('PIN unlock requires the MaSwitch desktop application.');
+  }
+
+  public async pinLock(): Promise<import('../shared/types/vaultPin').VaultPinStatus> {
+    if (window.maswitch?.accounts?.pinLock) {
+      return window.maswitch.accounts.pinLock();
+    }
+    return {
+      isConfigured: true,
+      isUnlocked: false,
+      failedAttempts: 0,
+      lockedUntilIso: null,
+    };
+  }
+
+  public async pinChange(
+    currentPin: string,
+    newPin: string
+  ): Promise<import('../shared/types/vaultPin').VaultPinOperationResult> {
+    if (window.maswitch?.accounts?.pinChange) {
+      return window.maswitch.accounts.pinChange(currentPin, newPin);
+    }
+    throw new Error('Changing PIN requires the MaSwitch desktop application.');
+  }
+
+  public onPinStatusChanged(
+    callback: (status: import('../shared/types/vaultPin').VaultPinStatus) => void
+  ): () => void {
+    if (window.maswitch?.accounts?.onPinStatusChanged) {
+      return window.maswitch.accounts.onPinStatusChanged(callback);
+    }
+    return () => {};
+  }
+
   // Feature 1: Year in Review
   public async getAvailableYears(): Promise<number[]> {
     if (window.maswitch?.yearInReview) {
@@ -1144,8 +1205,8 @@ export class LocalDatabaseService {
     }
     return {
       updateAvailable: false,
-      currentVersion: '1.1.0',
-      latestVersion: '1.1.0',
+      currentVersion: '1.2.0',
+      latestVersion: '1.2.0',
       channel: channel ?? 'stable',
       checkedAtIso: new Date().toISOString(),
     };
@@ -1158,7 +1219,7 @@ export class LocalDatabaseService {
     return {
       status: 'idle',
       channel: 'stable',
-      currentVersion: '1.1.0',
+      currentVersion: '1.2.0',
       latestCheckResult: null,
       downloadProgress: null,
       downloadedFilePath: null,

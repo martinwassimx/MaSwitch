@@ -1,75 +1,49 @@
-# MaSwitch v1.1.0 — Security Hardening, Signed Updates & Riot Quick Switch
+# MaSwitch v1.2.0 — Password-First Interface & Startup PIN Code Protection
 
 ## About MaSwitch
 
-**MaSwitch** is a lightweight Windows gaming launcher and account manager that organizes your installed games, manages Riot Games accounts, and provides gaming utilities.
+**MaSwitch** is a lightweight Windows account & password switcher and gaming launcher designed to manage Riot Games accounts securely with 1-click desktop auto-login alongside your installed PC games.
 
 Official website: [maswitch.martinx.work](https://maswitch.martinx.work/) · [FAQ](https://maswitch.martinx.work/faq) · [Privacy & Security](https://maswitch.martinx.work/privacy)
 
 ---
 
-## Important for existing users
+## What's New in `v1.2.0`
 
-**A one-time manual installation is required to move to the new secure update system.**
+### 1. Simplified Password-First Interface (Home Removed)
+- **Opens Straight to Passwords & Accounts**: Removed the separate Home page so MaSwitch opens immediately to **Passwords & Accounts**, with **Passwords** placed first in a streamlined sidebar followed by **Games** and secondary tools.
+- **True 1-Click Login**: Clicking **Login** on an account immediately launches or focuses the official Riot Client and enters your username and password—eliminating intermediate confirmation modals and "Coming Soon" platform clutter.
+- **Single Unified Account & Password Form**: Add or edit your Riot login username, encrypted password, and optional display label in one simple dialog.
 
-MaSwitch 1.0.4 and earlier cannot authenticate this release, because they predate signed update manifests. Download `MaSwitch-Setup-1.1.0.exe` from this page and run it over your existing installation. Your game library, playtime history, settings, account profiles and encrypted Riot credentials are kept.
+### 2. Startup PIN Code Lock (`VaultPinService`)
+- **Session PIN Protection**: Prompts for a **4–6 digit PIN** whenever MaSwitch opens before saved passwords can be used, added, edited, or deleted (first launch guides you to set your PIN).
+- **Main-Process Cryptographic Enforcement**: Salted `scrypt` verifier protected by **Windows DPAPI** (`vault-pin.enc.json`), constant-time verification (`crypto.timingSafeEqual`), and a persisted 30-second cooldown after 5 wrong attempts.
+- **1-Click Lock & Change PIN**: Re-lock your passwords anytime from the header or **Settings → Accounts & Security**, while keeping 100% of existing saved `.cred.enc` passwords intact.
 
-From 1.1.0 onward, MaSwitch installs an update only after verifying its Ed25519-signed release manifest against the public key built into the app.
-
----
-
-## Security
-
-- **Stronger Riot credential protection**: the renderer can no longer request decrypted credentials, credential status is read without decrypting passwords, vault records are bound to their account profile, and removing an account deletes its stored credentials.
-- **Riot Client verification**: credentials are typed only into a window whose process is signed by Riot Games, Inc. (verified with Windows Authenticode on every login) and that currently has focus.
-- **Electron hardening**: Electron 44 runtime, restrictive Content Security Policy, blocked navigation, webview and drag-and-drop, packaged builds ignore development server overrides, and Electron fuses disable Node.js entry points.
-- **Secure application updates**: update manifests are signed with Ed25519 and pin the installer's SHA-256 and size. Downgrades, pre-release builds on the stable channel and unsigned releases are refused, and the installer is re-verified immediately before it runs.
-- **Safer Windows operations**: system tools are run from their absolute System32 paths, custom game executables and launch arguments require approval, administrator memory cleanup asks for confirmation every time, and file, backup and artwork paths are confined to their expected folders.
-- **Dependency updates**: updated build and test tooling. Production dependencies report no known vulnerabilities. Some moderate advisories remain in build-only tooling.
-
-## Riot Accounts
-
-- **Improved account cards** showing the account name, League of Legends region, VALORANT region and credential status.
-- **Account nicknames**: the old display-name field is now an optional nickname, used when no verified Riot ID is available.
-- **Region detection**: League of Legends and VALORANT regions are read from the Riot Client configuration on your PC after a successful login, or when you choose *Refresh regions*.
-- **Manual region selection**: choose a region yourself in *Edit Account*. Your choice is never replaced by automatic detection.
-- **VALORANT default**: when no region can be detected, VALORANT is shown as **EMEA (default)** and labelled as a default.
-- **Home Quick Account Switch**: switch Riot accounts from the top of the Home page using the same secure switching flow as the Accounts page.
-
-Known limitations:
-- Riot IDs (`Name#TAG`) are not detected automatically. The Riot Client files MaSwitch can safely read do not contain them. Cards show your nickname instead.
-- Region detection reflects the Riot Client's current configuration on this PC, not a lookup on Riot's servers. If you play on several servers, set each account's region manually.
-- MaSwitch shows which account it last selected. It does not claim to know which account is signed in to Riot Client.
-
-## Improvements
-
-- Game icons are extracted with Electron's built-in icon API instead of PowerShell.
-- More reliable game library, launching and installer component handling.
-- Performance and reliability fixes across updates, backups and artwork downloads.
+### 3. Startup Password Hydration Fix
+- Fixed an app initialization issue where saved password statuses were not hydrated on startup (`initializeApp()`), ensuring all saved passwords show **Password Saved** and work immediately when opening MaSwitch without needing to re-save any password.
+- Replaced external `semver` runtime resolution with a built-in SemVer 2.0.0 engine (`semverUtils.ts`) for reliable `app.asar` execution.
 
 ---
 
 ## Installation
 
-1. Download **`MaSwitch-Setup-1.1.0.exe`** from the **Assets** section below.
-2. Optionally verify it against `SHA256SUMS.txt` (see below).
-3. Run the installer and choose **Minimal**, **Recommended**, **Complete** or **Custom**.
+1. Download **`MaSwitch-Setup-1.2.0.exe`** (or standalone **`MaSwitch-Portable-1.2.0.exe`**) from the **Assets** section below.
+2. Optionally verify it against `SHA256SUMS.txt`.
+3. Run the installer and choose **Minimal**, **Recommended**, **Complete**, or **Custom**.
 
-**Windows SmartScreen**: the installer is not Authenticode code-signed, so Windows may show *Unknown Publisher*. Do not disable Windows Defender or your antivirus. Verify the checksum instead.
+**Windows SmartScreen**: Because this open-source release is built without a commercial EV/OV Authenticode certificate, Windows Defender SmartScreen may display an *Unknown Publisher* prompt. Do not disable Windows Defender or your antivirus—verify the SHA-256 checksum below instead.
 
-## Assets
+## Assets & SHA-256 Checksums
 
-| File | Purpose |
-| :--- | :--- |
-| `MaSwitch-Setup-1.1.0.exe` | Windows installer |
-| `SHA256SUMS.txt` | SHA-256 checksum of the installer |
-| `maswitch-update-manifest.json` | Signed update manifest used by MaSwitch's updater |
-| `maswitch-update-manifest.json.sig` | Ed25519 signature of the manifest |
-
-A checksum from the same page confirms the download is intact. It does not prove who published it. MaSwitch's built-in updater additionally checks the signed manifest.
+| File | Size | SHA-256 |
+| :--- | :--- | :--- |
+| `MaSwitch-Setup-1.2.0.exe` | `117.25 MB` | `b6504d50f627ed69f56457cf4feee897fad3f6d905129b119df3a5fd53b4ab27` |
+| `MaSwitch-Portable-1.2.0.exe` | `106.05 MB` | `4b51c748229476617997bc1432627e7c10c574f54a27eb3eccdcbbe203a00320` |
+| `SHA256SUMS.txt` | `265 B` | SHA-256 checksums of the release executables |
 
 Verify in PowerShell:
 
 ```powershell
-Get-FileHash -Algorithm SHA256 .\MaSwitch-Setup-1.1.0.exe
+Get-FileHash -Algorithm SHA256 .\MaSwitch-Setup-1.2.0.exe
 ```

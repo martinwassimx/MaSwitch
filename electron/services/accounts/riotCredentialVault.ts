@@ -218,7 +218,7 @@ export class RiotCredentialVault {
    */
   public async getCredentialStatus(
     profileId: string,
-    options?: { resolveLegacyUsername?: boolean }
+    options?: { resolveLegacyUsername?: boolean; includeUsername?: boolean }
   ): Promise<CredentialStatusInfo> {
     try {
       const envelope = this.readEnvelope(profileId);
@@ -226,9 +226,12 @@ export class RiotCredentialVault {
         return { hasSavedCredentials: false };
       }
 
-      let username = this.decryptUsernameField(envelope);
-      if (username === undefined && options?.resolveLegacyUsername) {
-        username = this.upgradeLegacyRecord(envelope);
+      let username: string | undefined;
+      if (options?.includeUsername !== false) {
+        username = this.decryptUsernameField(envelope);
+        if (username === undefined && options?.resolveLegacyUsername) {
+          username = this.upgradeLegacyRecord(envelope);
+        }
       }
 
       return {
@@ -259,7 +262,9 @@ export class RiotCredentialVault {
     }
   }
 
-  public async listAllCredentialStatuses(): Promise<Record<string, CredentialStatusInfo>> {
+  public async listAllCredentialStatuses(options?: {
+    includeUsername?: boolean;
+  }): Promise<Record<string, CredentialStatusInfo>> {
     const result: Record<string, CredentialStatusInfo> = {};
     if (!fs.existsSync(this.vaultDir)) return result;
 
@@ -268,7 +273,9 @@ export class RiotCredentialVault {
       for (const file of files) {
         if (file.endsWith(CRED_FILE_SUFFIX)) {
           const profileId = file.slice(0, -CRED_FILE_SUFFIX.length);
-          result[profileId] = await this.getCredentialStatus(profileId);
+          result[profileId] = await this.getCredentialStatus(profileId, {
+            includeUsername: options?.includeUsername,
+          });
         }
       }
     } catch {

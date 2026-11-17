@@ -11,8 +11,8 @@ describe('MaSwitch Desktop Application Integration (Phase 1 & Phase 2)', () => {
   beforeEach(() => {
     useAppStore.setState({
       isHydrated: true,
-      activeSection: 'home',
-      previousSection: 'home',
+      activeSection: 'accounts',
+      previousSection: 'accounts',
       selectedGameId: null,
       inspectedLibraryGameId: 'cyber-odyssey-2099',
       searchQuery: '',
@@ -69,16 +69,14 @@ describe('MaSwitch Desktop Application Integration (Phase 1 & Phase 2)', () => {
     expect(window.maswitch?.windowControls.close).toHaveBeenCalledTimes(1);
   });
 
-  it('navigates across all 6 main sections via the sidebar', () => {
+  it('opens directly on Passwords & Accounts with no Home section and navigates across all active sections', () => {
     render(<App />);
 
-    expect(screen.getByTestId('page-home')).toBeInTheDocument();
+    expect(screen.queryByTestId('nav-home')).not.toBeInTheDocument();
+    expect(screen.getByTestId('page-accounts')).toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId('nav-library'));
     expect(screen.getByTestId('page-library')).toBeInTheDocument();
-
-    fireEvent.click(screen.getByTestId('nav-accounts'));
-    expect(screen.getByTestId('page-accounts')).toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId('nav-platforms'));
     expect(screen.getByTestId('page-platforms')).toBeInTheDocument();
@@ -89,8 +87,8 @@ describe('MaSwitch Desktop Application Integration (Phase 1 & Phase 2)', () => {
     fireEvent.click(screen.getByTestId('nav-settings'));
     expect(screen.getByTestId('page-settings')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByTestId('nav-home'));
-    expect(screen.getByTestId('page-home')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('nav-accounts'));
+    expect(screen.getByTestId('page-accounts')).toBeInTheDocument();
   });
 
   it('supports library search, platform filtering, grid/list switching, and game details navigation in Demo Mode', async () => {
@@ -181,37 +179,19 @@ describe('MaSwitch Desktop Application Integration (Phase 1 & Phase 2)', () => {
     });
   });
 
-  it('displays all required account platforms in platform navigation, defaults to Riot Games, and shows Coming Soon for non-Riot platforms', () => {
+  it('opens streamlined Passwords & Accounts view without Coming Soon clutter and opens unified account & password form', () => {
     render(<App />);
 
     fireEvent.click(screen.getByTestId('nav-accounts'));
-    const requiredPlatforms = [
-      'steam',
-      'epic',
-      'riot',
-      'ea',
-      'ubisoft',
-      'gog',
-      'rockstar',
-      'discord',
-    ] as const;
+    expect(screen.getByTestId('page-accounts')).toBeInTheDocument();
+    expect(screen.getByText('Passwords & Accounts')).toBeInTheDocument();
+    expect(screen.queryByTestId('accounts-filter-steam')).not.toBeInTheDocument();
 
-    for (const platformId of requiredPlatforms) {
-      expect(
-        screen.getByTestId(`accounts-filter-${platformId}`)
-      ).toBeInTheDocument();
-    }
-
-    // Riot Games is active by default and supports opening the Add Riot Account modal
     const addRiotBtn = screen.getByTestId('add-account-profile-btn');
     fireEvent.click(addRiotBtn);
     expect(screen.getByTestId('account-profile-form-modal')).toBeInTheDocument();
-
-    // Selecting Steam displays the Coming Soon state without misleading action buttons
-    fireEvent.click(screen.getByTestId('accounts-filter-steam'));
-    expect(screen.getByTestId('platform-coming-soon-state')).toBeInTheDocument();
-    expect(screen.getByText('Steam Account Management')).toBeInTheDocument();
-    expect(screen.queryByTestId('add-account-profile-btn')).not.toBeInTheDocument();
+    expect(screen.getByTestId('input-username')).toBeInTheDocument();
+    expect(screen.getByTestId('form-riot-login-password')).toBeInTheDocument();
   });
 
   it('persists theme, accent color, and Windows startup preferences locally', async () => {

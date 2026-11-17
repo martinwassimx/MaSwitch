@@ -3,7 +3,6 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { useAppStore } from '../src/store/useAppStore';
 import { ScanningFeedbackBanner } from '../src/components/scanner/ScanningFeedbackBanner';
 import { ScanDiagnosticsModal } from '../src/components/scanner/ScanDiagnosticsModal';
-import { HomePage } from '../src/pages/HomePage';
 import { LibraryPage } from '../src/pages/LibraryPage';
 import type { ScanResultSummary } from '../src/shared/types/scanner';
 
@@ -210,19 +209,6 @@ describe('Scanning Feedback and Diagnostics System', () => {
   });
 
   describe('Page Diagnostics Access', () => {
-    it('provides accessible Diagnostics button on HomePage even before any scan runs', () => {
-      render(<HomePage />);
-
-      const headerDiagBtn = screen.getByTestId('home-view-diagnostics-btn');
-      expect(headerDiagBtn).toBeInTheDocument();
-      expect(headerDiagBtn).toHaveTextContent('Diagnostics');
-
-      // Click Diagnostics button
-      fireEvent.click(headerDiagBtn);
-      expect(screen.getByRole('dialog')).toBeInTheDocument();
-      expect(screen.getByText('System & Scanner Diagnostics')).toBeInTheDocument();
-    });
-
     it('provides accessible Diagnostics button on LibraryPage even before any scan runs', () => {
       render(<LibraryPage />);
 

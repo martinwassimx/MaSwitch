@@ -143,6 +143,9 @@ export const SettingsPage: React.FC = () => {
   const updateWindowsStartup = useAppStore((s) => s.updateWindowsStartup);
   const updateExcludedApplication = useAppStore((s) => s.updateExcludedApplication);
   const removeExcludedApplication = useAppStore((s) => s.removeExcludedApplication);
+  const vaultPinStatus = useAppStore((s) => s.vaultPinStatus);
+  const openPinModal = useAppStore((s) => s.openPinModal);
+  const lockVaultPin = useAppStore((s) => s.lockVaultPin);
 
   // SteamGridDB artwork state
   const steamGridDbStatus = useAppStore((s) => s.steamGridDbStatus);
@@ -1572,6 +1575,70 @@ export const SettingsPage: React.FC = () => {
                 className="w-5 h-5 accent-[#4C8DFF] rounded cursor-pointer shrink-0"
               />
             </label>
+
+            {/* Startup PIN Code Protection */}
+            <div className="p-6 flex flex-wrap items-center justify-between gap-4">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-bold text-ms-text">Startup PIN Code Lock</span>
+                  <span
+                    className={`text-[10px] font-semibold px-2 py-0.5 rounded-md border ${
+                      vaultPinStatus.isConfigured && vaultPinStatus.isUnlocked
+                        ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20'
+                        : 'text-amber-300 bg-amber-500/10 border-amber-500/20'
+                    }`}
+                  >
+                    {!vaultPinStatus.isConfigured
+                      ? 'Not Set'
+                      : vaultPinStatus.isUnlocked
+                      ? 'Unlocked'
+                      : 'Locked'}
+                  </span>
+                </div>
+                <div className="text-xs text-ms-muted max-w-2xl">
+                  Requires entering your 4–6 digit PIN each time MaSwitch opens before saved passwords can be used or modified.
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {!vaultPinStatus.isConfigured ? (
+                  <button
+                    type="button"
+                    onClick={() => openPinModal('setup')}
+                    className="h-9 px-3.5 rounded-xl bg-ms-accent hover:bg-ms-accentHover text-white text-xs font-bold transition-colors"
+                  >
+                    Set PIN
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => openPinModal('change')}
+                      className="h-9 px-3.5 rounded-xl bg-ms-bg hover:bg-ms-elevated border border-ms-border text-ms-text text-xs font-semibold transition-colors"
+                    >
+                      Change PIN
+                    </button>
+                    {vaultPinStatus.isUnlocked ? (
+                      <button
+                        type="button"
+                        onClick={() => void lockVaultPin()}
+                        className="h-9 px-3.5 rounded-xl bg-ms-bg hover:bg-ms-elevated border border-ms-border text-amber-300 text-xs font-semibold transition-colors"
+                      >
+                        Lock Now
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => openPinModal('unlock')}
+                        className="h-9 px-3.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold transition-colors"
+                      >
+                        Unlock
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
 
             {/* Windows DPAPI Credential Vault Status */}
             <div className="p-6 flex items-center justify-between gap-4">

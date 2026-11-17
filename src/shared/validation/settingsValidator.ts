@@ -27,7 +27,6 @@ const VALID_ACCENTS: readonly AccentColorId[] = [
 const VALID_VIEWS: readonly LibraryViewMode[] = ['grid', 'list'];
 
 const VALID_SECTIONS: readonly NavigationSection[] = [
-  'home',
   'library',
   'accounts',
   'platforms',
@@ -304,6 +303,10 @@ export function sanitizeSettings(
       typeof raw.remindLaterVersion === 'string'
         ? raw.remindLaterVersion
         : fallback.remindLaterVersion ?? null,
+    accountsMainMigrationVersion:
+      typeof raw.accountsMainMigrationVersion === 'number'
+        ? raw.accountsMainMigrationVersion
+        : fallback.accountsMainMigrationVersion ?? 1,
   };
 }
 

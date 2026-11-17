@@ -39,6 +39,7 @@ import { SteamGridDbSecretStore } from './services/steamgriddb/steamGridDbSecret
 import { AccountSwitcherService, createWindowsAccountLauncherAdapter } from './services/accounts/accountSwitcherService';
 import { createProductionRiotLiveSwitchingEngine } from './services/accounts/riotProductionAdapters';
 import { RiotCredentialVault } from './services/accounts/riotCredentialVault';
+import { VaultPinService } from './services/accounts/vaultPinService';
 import { RiotDesktopLoginAutomationService } from './services/accounts/riotDesktopLoginAutomation';
 import { InstalledFeaturesManager } from './services/features/installedFeaturesManager';
 import { AppUpdateService } from './services/updater/appUpdateService';
@@ -798,6 +799,7 @@ app.whenReady().then(() => {
       path.join(userDataDir, 'steam-selection-backup.json'))
   );
 
+  const vaultPinService = new VaultPinService(path.join(userDataDir, 'vault'));
   const riotCredentialVault = new RiotCredentialVault(path.join(userDataDir, 'vault', 'riot_credentials'));
   try {
     const credentialMigration = riotCredentialVault.migrateLegacyEnvelopes();
@@ -856,6 +858,7 @@ app.whenReady().then(() => {
       accountSwitcherService,
       riotLiveServices,
       riotCredentialVault,
+      vaultPinService,
       riotDesktopLoginAutomation,
       installedFeaturesManager,
       updateService,

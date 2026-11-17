@@ -6,10 +6,10 @@ import { TitleBar } from './TitleBar';
 import { Sidebar } from './Sidebar';
 import { UpdateBanner } from '../updater/UpdateBanner';
 import { UpdateAvailableDialog } from '../updater/UpdateAvailableDialog';
-import { HomePage } from '../../pages/HomePage';
+import { VaultPinModal } from '../accounts/VaultPinModal';
 import { LibraryPage as EagerLibraryPage } from '../../pages/LibraryPage';
 import { GameDetailsPage as EagerGameDetailsPage } from '../../pages/GameDetailsPage';
-import { AccountsPage as EagerAccountsPage } from '../../pages/AccountsPage';
+import { AccountsPage } from '../../pages/AccountsPage';
 import { PlatformsPage as EagerPlatformsPage } from '../../pages/PlatformsPage';
 import { StatisticsPage as EagerStatisticsPage } from '../../pages/StatisticsPage';
 import { PerformancePage as EagerPerformancePage } from '../../pages/PerformancePage';
@@ -27,9 +27,6 @@ const LazyGameDetailsPage = React.lazy(() =>
   import('../../pages/GameDetailsPage').then((m) => ({
     default: m.GameDetailsPage,
   }))
-);
-const LazyAccountsPage = React.lazy(() =>
-  import('../../pages/AccountsPage').then((m) => ({ default: m.AccountsPage }))
 );
 const LazyPlatformsPage = React.lazy(() =>
   import('../../pages/PlatformsPage').then((m) => ({ default: m.PlatformsPage }))
@@ -53,7 +50,6 @@ const LazySettingsPage = React.lazy(() =>
 
 const LibraryView = isVitest ? EagerLibraryPage : LazyLibraryPage;
 const GameDetailsView = isVitest ? EagerGameDetailsPage : LazyGameDetailsPage;
-const AccountsView = isVitest ? EagerAccountsPage : LazyAccountsPage;
 const PlatformsView = isVitest ? EagerPlatformsPage : LazyPlatformsPage;
 const StatisticsView = isVitest ? EagerStatisticsPage : LazyStatisticsPage;
 const PerformanceView = isVitest ? EagerPerformancePage : LazyPerformancePage;
@@ -227,26 +223,23 @@ export const AppShell: React.FC = () => {
           useAppStore.getState().setActiveSection('settings');
         } else if (e.key === '1') {
           e.preventDefault();
-          useAppStore.getState().setActiveSection('home');
+          useAppStore.getState().setActiveSection('accounts');
         } else if (e.key === '2') {
           e.preventDefault();
           useAppStore.getState().setActiveSection('library');
         } else if (e.key === '3') {
           e.preventDefault();
-          useAppStore.getState().setActiveSection('accounts');
+          useAppStore.getState().setActiveSection('performance');
         } else if (e.key === '4') {
           e.preventDefault();
-          useAppStore.getState().setActiveSection('platforms');
+          useAppStore.getState().setActiveSection('news');
         } else if (e.key === '5') {
           e.preventDefault();
           useAppStore.getState().setActiveSection('statistics');
         } else if (e.key === '6') {
           e.preventDefault();
-          useAppStore.getState().setActiveSection('performance');
+          useAppStore.getState().setActiveSection('platforms');
         } else if (e.key === '7') {
-          e.preventDefault();
-          useAppStore.getState().setActiveSection('news');
-        } else if (e.key === '8') {
           e.preventDefault();
           useAppStore.getState().setActiveSection('settings');
         }
@@ -296,18 +289,12 @@ export const AppShell: React.FC = () => {
     }
 
     switch (activeSection) {
-      case 'home':
-        return <HomePage />;
+      case 'accounts':
+        return <AccountsPage />;
       case 'library':
         return (
           <Suspense fallback={<ViewLoadingFallback />}>
             <LibraryView />
-          </Suspense>
-        );
-      case 'accounts':
-        return (
-          <Suspense fallback={<ViewLoadingFallback />}>
-            <AccountsView />
           </Suspense>
         );
       case 'platforms':
@@ -341,7 +328,7 @@ export const AppShell: React.FC = () => {
           </Suspense>
         );
       default:
-        return <HomePage />;
+        return <AccountsPage />;
     }
   };
 
@@ -460,6 +447,9 @@ export const AppShell: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Vault PIN Code Prompt */}
+      <VaultPinModal />
 
       {/* Application Update Modal */}
       <UpdateAvailableDialog />

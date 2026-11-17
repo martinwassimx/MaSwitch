@@ -34,7 +34,23 @@ export class ElectronSettingsStore {
 
       const rawText = fs.readFileSync(this.filePath, 'utf-8');
       const parsed = JSON.parse(rawText) as unknown;
-      const sanitized = sanitizeSettings(parsed, DEFAULT_SETTINGS);
+      let needsMigrationWrite = false;
+      let inputObj: unknown = parsed;
+      if (parsed && typeof parsed === 'object') {
+        const record = parsed as Record<string, unknown>;
+        if (record.accountsMainMigrationVersion !== 1) {
+          inputObj = {
+            ...record,
+            defaultLandingPage: 'accounts',
+            accountsMainMigrationVersion: 1,
+          };
+          needsMigrationWrite = true;
+        }
+      }
+      const sanitized = sanitizeSettings(inputObj, DEFAULT_SETTINGS);
+      if (needsMigrationWrite) {
+        this.writeToDisk(sanitized);
+      }
       this.cachedSettings = sanitized;
       return {
         ...sanitized,

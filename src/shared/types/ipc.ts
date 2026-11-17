@@ -124,6 +124,12 @@ export const IPC_CHANNELS = {
   ACCOUNTS_RIOT_LOGIN_AUTOMATION_PROGRESS: 'maswitch:accounts:riot:login-automation-progress',
   ACCOUNTS_RIOT_REFRESH_REGIONS: 'maswitch:accounts:riot:refresh-regions',
   ACCOUNTS_RIOT_SET_REGIONS: 'maswitch:accounts:riot:set-regions',
+  ACCOUNTS_PIN_GET_STATUS: 'maswitch:accounts:pin:get-status',
+  ACCOUNTS_PIN_SETUP: 'maswitch:accounts:pin:setup',
+  ACCOUNTS_PIN_UNLOCK: 'maswitch:accounts:pin:unlock',
+  ACCOUNTS_PIN_LOCK: 'maswitch:accounts:pin:lock',
+  ACCOUNTS_PIN_CHANGE: 'maswitch:accounts:pin:change',
+  ACCOUNTS_PIN_STATUS_CHANGED_EVENT: 'maswitch:accounts:pin:status-changed',
 
   // MaSwitch 3.0: Gaming Year in Review
   STATISTICS_GET_YEAR_IN_REVIEW: 'maswitch:statistics:get-year-in-review',
@@ -372,6 +378,12 @@ export interface MaSwitchBridge {
     ) => Promise<import('./account').AccountProfile | null>;
     riotCancelDesktopLogin?: () => Promise<void>;
     onRiotDesktopLoginProgress?: (callback: (payload: RiotDesktopLoginProgressPayload) => void) => () => void;
+    pinGetStatus?: () => Promise<import('./vaultPin').VaultPinStatus>;
+    pinSetup?: (pin: string) => Promise<import('./vaultPin').VaultPinOperationResult>;
+    pinUnlock?: (pin: string) => Promise<import('./vaultPin').VaultPinOperationResult>;
+    pinLock?: () => Promise<import('./vaultPin').VaultPinStatus>;
+    pinChange?: (currentPin: string, newPin: string) => Promise<import('./vaultPin').VaultPinOperationResult>;
+    onPinStatusChanged?: (callback: (status: import('./vaultPin').VaultPinStatus) => void) => () => void;
   };
   yearInReview?: {
     getAvailableYears: () => Promise<number[]>;

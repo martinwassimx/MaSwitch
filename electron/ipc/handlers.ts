@@ -49,6 +49,7 @@ import type {
   RiotWindowsProcessCoordinator,
 } from '../services/accounts/riotProductionAdapters';
 import type { RiotCredentialVault } from '../services/accounts/riotCredentialVault';
+import type { VaultPinService } from '../services/accounts/vaultPinService';
 import { RiotDesktopLoginAutomationService } from '../services/accounts/riotDesktopLoginAutomation';
 import { removeRiotAccountArtifacts } from '../services/accounts/riotAccountCleanup';
 import { readRiotClientRegions } from '../services/accounts/riotClientRegionReader';
@@ -130,6 +131,7 @@ export interface MainServicesContainer {
   onRequestWindowClose: () => void;
   onTrayStateUpdate?: () => void;
   riotCredentialVault?: RiotCredentialVault;
+  vaultPinService?: VaultPinService;
   riotDesktopLoginAutomation?: RiotDesktopLoginAutomationService;
   performanceMonitorService?: PerformanceMonitorService;
   newsService?: NewsService;
@@ -1099,6 +1101,7 @@ export function registerIpcHandlers(
       if (typeof rawProfileId !== 'string' || !rawProfileId.trim()) {
         throw new Error('Invalid account profile ID for session enrollment.');
       }
+      services.vaultPinService?.assertUnlocked();
       const profileId = rawProfileId.trim();
       const profile = sqliteDb.getAccountProfileById(profileId);
       if (!profile) {
@@ -1222,6 +1225,7 @@ export function registerIpcHandlers(
       if (typeof rawProfileId !== 'string' || !rawProfileId.trim()) {
         throw new Error('Invalid account profile ID for switching.');
       }
+      services.vaultPinService?.assertUnlocked();
       const profileId = rawProfileId.trim();
       const profile = sqliteDb.getAccountProfileById(profileId);
       if (!profile) {
@@ -1240,6 +1244,8 @@ export function registerIpcHandlers(
           'Riot live switching is disabled in settings. Enable "One-Click Riot Switching" first.'
         );
       }
+
+      services.vaultPinService?.assertUnlocked();
 
       const hasSession = await services.riotLiveServices.vault.hasSession(profileId);
       if (!hasSession) {
@@ -1270,6 +1276,78 @@ export function registerIpcHandlers(
     }
   );
 
+  // --- Vault PIN Code Protection Handlers ---
+  const broadcastPinStatus = (win: BrowserWindow) => {
+    if (!services.vaultPinService) return;
+    if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
+      win.webContents.send(
+        IPC_CHANNELS.ACCOUNTS_PIN_STATUS_CHANGED_EVENT,
+        services.vaultPinService.getStatus()
+      );
+    }
+  };
+
+  ipcMain.handle(IPC_CHANNELS.ACCOUNTS_PIN_GET_STATUS, (event) => {
+    assertTrustedSender(event, getMainWindow, devServerUrl);
+    if (!services.vaultPinService) {
+      return {
+        isConfigured: true,
+        isUnlocked: true,
+        failedAttempts: 0,
+        lockedUntilIso: null,
+      };
+    }
+    return services.vaultPinService.getStatus();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.ACCOUNTS_PIN_SETUP, (event, rawPin: unknown) => {
+    const win = assertTrustedSender(event, getMainWindow, devServerUrl);
+    if (!services.vaultPinService) {
+      throw new Error('Vault PIN service is unavailable.');
+    }
+    const res = services.vaultPinService.setupPin(rawPin);
+    broadcastPinStatus(win);
+    return res;
+  });
+
+  ipcMain.handle(IPC_CHANNELS.ACCOUNTS_PIN_UNLOCK, (event, rawPin: unknown) => {
+    const win = assertTrustedSender(event, getMainWindow, devServerUrl);
+    if (!services.vaultPinService) {
+      throw new Error('Vault PIN service is unavailable.');
+    }
+    const res = services.vaultPinService.unlock(rawPin);
+    broadcastPinStatus(win);
+    return res;
+  });
+
+  ipcMain.handle(IPC_CHANNELS.ACCOUNTS_PIN_LOCK, (event) => {
+    const win = assertTrustedSender(event, getMainWindow, devServerUrl);
+    if (!services.vaultPinService) {
+      return {
+        isConfigured: true,
+        isUnlocked: true,
+        failedAttempts: 0,
+        lockedUntilIso: null,
+      };
+    }
+    const status = services.vaultPinService.lock();
+    broadcastPinStatus(win);
+    return status;
+  });
+
+  ipcMain.handle(
+    IPC_CHANNELS.ACCOUNTS_PIN_CHANGE,
+    (event, rawCurrentPin: unknown, rawNewPin: unknown) => {
+      const win = assertTrustedSender(event, getMainWindow, devServerUrl);
+      if (!services.vaultPinService) {
+        throw new Error('Vault PIN service is unavailable.');
+      }
+      const res = services.vaultPinService.changePin(rawCurrentPin, rawNewPin);
+      broadcastPinStatus(win);
+      return res;
+    }
+  );
+
   ipcMain.handle(
     IPC_CHANNELS.ACCOUNTS_RIOT_GET_CREDENTIAL_STATUS,
     async (event, rawProfileId: unknown) => {
@@ -1280,8 +1358,10 @@ export function registerIpcHandlers(
       if (!services.riotCredentialVault) {
         return { hasSavedCredentials: false };
       }
+      const isPinUnlocked = !services.vaultPinService || services.vaultPinService.isAuthorized();
       return services.riotCredentialVault.getCredentialStatus(rawProfileId.trim(), {
-        resolveLegacyUsername: true,
+        resolveLegacyUsername: isPinUnlocked,
+        includeUsername: isPinUnlocked,
       });
     }
   );
@@ -1293,7 +1373,10 @@ export function registerIpcHandlers(
       if (!services.riotCredentialVault) {
         return {};
       }
-      return services.riotCredentialVault.listAllCredentialStatuses();
+      const isPinUnlocked = !services.vaultPinService || services.vaultPinService.isAuthorized();
+      return services.riotCredentialVault.listAllCredentialStatuses({
+        includeUsername: isPinUnlocked,
+      });
     }
   );
 
@@ -1301,6 +1384,7 @@ export function registerIpcHandlers(
     IPC_CHANNELS.ACCOUNTS_RIOT_SAVE_CREDENTIALS,
     async (event, rawProfileId: unknown, rawUsername: unknown, rawPassword: unknown) => {
       const win = assertTrustedSender(event, getMainWindow, devServerUrl);
+      services.vaultPinService?.assertUnlocked();
       if (typeof rawProfileId !== 'string' || !rawProfileId.trim()) {
         throw new Error('Invalid account profile ID.');
       }
@@ -1329,6 +1413,7 @@ export function registerIpcHandlers(
     IPC_CHANNELS.ACCOUNTS_RIOT_DELETE_CREDENTIALS,
     async (event, rawProfileId: unknown) => {
       const win = assertTrustedSender(event, getMainWindow, devServerUrl);
+      services.vaultPinService?.assertUnlocked();
       if (typeof rawProfileId !== 'string' || !rawProfileId.trim()) {
         throw new Error('Invalid account profile ID.');
       }
@@ -1396,6 +1481,16 @@ export function registerIpcHandlers(
         throw new Error('Invalid account profile ID for desktop login automation.');
       }
       const profileId = rawProfileId.trim();
+      if (services.vaultPinService && !services.vaultPinService.isAuthorized()) {
+        return {
+          success: false,
+          profileId,
+          error: 'PIN_LOCKED',
+          message: services.vaultPinService.isPinConfigured()
+            ? 'Passwords are locked. Enter your PIN code to use saved passwords.'
+            : 'Set up your 4–6 digit PIN code first to use saved passwords.',
+        };
+      }
       const profile = sqliteDb.getAccountProfileById(profileId);
       if (!profile) {
         throw new Error(`Profile with ID '${profileId}' was not found.`);
